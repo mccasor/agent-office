@@ -16,8 +16,8 @@ export interface OfficeLayout {
   seats: Seat[];
   /** cella in alto a sinistra (sedie nord) di ogni isola */
   islands: Cell[];
-  /** posto alla scrivania del boss */
-  bossSeat: Seat;
+  /** postazioni della stanza del boss (id 'boss-N'): una per sessione di Claude attiva */
+  bossSeats: Seat[];
   /** apertura nella vetrata della stanza del boss (x = BOSS_W + 1) */
   bossDoor: Cell;
   /**
@@ -37,7 +37,7 @@ export const BOARD_COLUMNS: readonly BoardColumn[] = ['todo', 'progress', 'revie
 
 export interface Desk { seatId: string; cell: Cell; /** radianti: rotazione della scrivania, il lato utente guarda il posto */ facing: number }
 
-export const MIN_SEATS = 8;
+export const MIN_SEATS = 16;
 const SEATS_PER_ISLAND = 4;
 /** un blocco = 2 isole affiancate (8 posti); tra blocchi affiancati: corridoio, divisorio, corridoio */
 const BLOCK_ISLANDS = 2;
@@ -53,7 +53,9 @@ const SIDE_AISLE = 2;
 const NORTH_AISLE = 1;
 const ENTRY_ZONE = 3;
 /** stanza del boss: colonne 1..BOSS_W, vetrata in colonna BOSS_W + 1 */
-export const BOSS_W = 3;
+export const BOSS_W = 5;
+/** postazioni del boss: due file da due, rivolte a sud (verso la vista), corridoi sulle colonne dispari */
+const BOSS_CELLS: readonly Cell[] = [{ x: 2, z: 2 }, { x: 4, z: 2 }, { x: 2, z: 5 }, { x: 4, z: 5 }];
 /** area relax: separè, corridoio, poltroncine, tavolini, divanetti (le ultime 5 colonne interne) */
 export const LOUNGE_W = 5;
 /** distanza tra le board dei task (celle) */
@@ -126,11 +128,11 @@ export function createLayout(minSeats: number): OfficeLayout {
   }));
   for (const d of dividers) for (let z = d.z0; z <= d.z1; z++) walkable[z]![d.x] = false;
 
-  // stanza del boss: vetrata con porta verso l'ingresso; scrivania davanti al posto, si gira dal lato est
+  // stanza del boss: vetrata con porta verso l'ingresso; ogni postazione ha la scrivania a sud del posto
   const bossDoor = { x: BOSS_W + 1, z: depth - 3 };
   for (let z = 1; z < depth - 1; z++) walkable[z]![BOSS_W + 1] = z === bossDoor.z;
-  for (let x = 1; x < BOSS_W; x++) walkable[3]![x] = false;
-  const bossSeat: Seat = { id: 'boss', cell: { x: 2, z: 2 }, facing: FACING_SOUTH };
+  const bossSeats = BOSS_CELLS.map((cell, i): Seat => ({ id: `boss-${i}`, cell, facing: FACING_SOUTH }));
+  for (const s of bossSeats) walkable[s.cell.z + 1]![s.cell.x] = false;
 
   // area relax dietro il separè (aperto a sud, verso l'ingresso): salottini di due poltroncine e un divanetto
   const plan = loungePlan({ width, depth });
@@ -162,7 +164,7 @@ export function createLayout(minSeats: number): OfficeLayout {
   const boards = { todo: board(-BOARD_STEP), progress: board(0), review: board(BOARD_STEP) };
 
   for (const p of [...plantCells({ width, depth }), ...plan.furniture]) walkable[p.z]![p.x] = false;
-  return { width, depth, door, seats, islands, bossSeat, bossDoor, lounge, dividers, boards, walkable };
+  return { width, depth, door, seats, islands, bossSeats, bossDoor, lounge, dividers, boards, walkable };
 }
 
 export interface LoungePlan {

@@ -34,6 +34,15 @@ export const BOSS_PRESET: CharacterPreset = {
   id: 'claudio', skin: '#f58f8c', hair: '#4a1a33', hairStyle: 'bald', beard: '#4a1a33', shirt: '#d97757', pants: '#2b2d42', accessory: 'tie',
 };
 
+/** camicie dei Claudio delle altre sessioni (la prima resta l'arancio di BOSS_PRESET) */
+const BOSS_SHIRTS = ['#d97757', '#6a9bd8', '#7bb38a', '#b58ad6'] as const;
+
+/** Claudio Code della postazione `index`: stessa faccia e cravatta, camicia diversa per distinguere le sessioni. */
+export function bossPreset(index: number): CharacterPreset {
+  const i = ((index % BOSS_SHIRTS.length) + BOSS_SHIRTS.length) % BOSS_SHIRTS.length;
+  return i === 0 ? BOSS_PRESET : { ...BOSS_PRESET, id: `claudio-${i}`, shirt: BOSS_SHIRTS[i]! };
+}
+
 /** FNV-1a 32 bit + finalizzatore murmur3 (miglior dispersione su id simili). */
 function hashString(s: string): number {
   let h = 0x811c9dc5;

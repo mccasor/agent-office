@@ -3,10 +3,10 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
 import { AgentActor, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
-import { BOSS_PRESET, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
+import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
 import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
-import { officeModel } from './officeModel';
+import { EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
 import './app.css';
 
@@ -21,7 +21,7 @@ export function App() {
   const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden), [fullSnapshot, hidden]);
   // posti ricalcolati solo quando arriva un nuovo snapshot, partendo dai precedenti (posti stabili)
   const [view, setView] = useState(() => {
-    const model = officeModel(snapshot, { seats: {}, lounge: {}, capacity: 0 });
+    const model = officeModel(snapshot, EMPTY_SEATING);
     return { snapshot, model, board: syncBoard({}, model.agents) };
   });
   if (view.snapshot !== snapshot) {
@@ -63,9 +63,17 @@ export function App() {
             queue={queue}
           />
         ))}
-        {model.boss && (
-          <Actor agent={model.boss} preset={BOSS_PRESET} target={model.targets[model.boss.id] ?? null} layout={layout} queue={queue} />
-        )}
+        {model.bosses.map((boss) => (
+          <Actor
+            key={boss.id}
+            agent={boss}
+            // camicia legata alla postazione: resta la stessa anche quando cambia l'ordine delle sessioni
+            preset={bossPreset(Number(model.bossDesks[boss.id]?.slice('boss-'.length) ?? 0))}
+            target={model.targets[boss.id] ?? null}
+            layout={layout}
+            queue={queue}
+          />
+        ))}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
       {viewMode === 'list' && (
@@ -100,7 +108,7 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
   return (
     <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move} queue={queue}>
       {(motion) => {
-        const atDesk = motion.seated && (motion.seatId === 'boss' || (motion.seatId?.startsWith('seat-') ?? false));
+        const atDesk = motion.seated && /^(seat|boss)-/.test(motion.seatId ?? '');
         return (
           <>
             <Character

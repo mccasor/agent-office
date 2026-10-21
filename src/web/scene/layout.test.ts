@@ -95,10 +95,11 @@ describe('createLayout', () => {
 });
 
 describe('stanza del boss e area relax', () => {
-  it('posto del boss e divani raggiungibili dalla porta, liberi da scrivanie e piante', () => {
+  it('4 postazioni del boss e divani raggiungibili dalla porta, liberi da scrivanie e piante', () => {
     for (const n of sizes) {
       const l = createLayout(n);
-      for (const s of [l.bossSeat, ...l.lounge]) {
+      expect(l.bossSeats.map((s) => s.id)).toEqual(['boss-0', 'boss-1', 'boss-2', 'boss-3']);
+      for (const s of [...l.bossSeats, ...l.lounge]) {
         expect(l.walkable[s.cell.z]![s.cell.x]).toBe(true);
         expect(findPath(l, l.door, s.cell).length).toBeGreaterThan(0);
       }
@@ -107,8 +108,11 @@ describe('stanza del boss e area relax', () => {
 
   it('il boss si raggiunge solo dalla porta della vetrata', () => {
     const l = createLayout(8);
-    const path = findPath(l, l.door, l.bossSeat.cell);
-    expect(path.some((c) => c.x === l.bossDoor.x && c.z === l.bossDoor.z)).toBe(true);
+    for (const s of l.bossSeats) {
+      const path = findPath(l, l.door, s.cell);
+      expect(path.some((c) => c.x === l.bossDoor.x && c.z === l.bossDoor.z)).toBe(true);
+      expect(l.walkable[s.cell.z + 1]![s.cell.x]).toBe(false); // la scrivania davanti
+    }
     for (let z = 1; z < l.depth - 1; z++) expect(l.walkable[z]![l.bossDoor.x]).toBe(z === l.bossDoor.z);
   });
 
@@ -152,17 +156,18 @@ describe('board dei task', () => {
 });
 
 describe('capienza', () => {
-  it('le scrivanie raddoppiano quando gli agenti superano i posti: 8, 16, 32, 64', () => {
-    expect([0, 8, 9, 16, 17, 33].map(deskCapacity)).toEqual([8, 8, 16, 16, 32, 64]);
+  it('almeno 16 scrivanie; raddoppiano quando gli agenti superano i posti: 16, 32, 64', () => {
+    expect([0, 8, 16, 17, 33, 65].map(deskCapacity)).toEqual([16, 16, 16, 32, 64, 128]);
     for (const n of [8, 9, 17, 33]) expect(createLayout(n).seats.length).toBeGreaterThanOrEqual(deskCapacity(n));
   });
 
   it('la stanza si allarga e tra blocchi affiancati c\'è un divisorio non attraversabile, aperto a nord e verso l\'ingresso', () => {
-    const small = createLayout(8);
-    const big = createLayout(16);
-    expect(small.dividers).toEqual([]);
-    expect(big.width).toBeGreaterThan(small.width);
-    expect(big.dividers.length).toBe(1);
+    const small = createLayout(0);
+    const big = createLayout(17);
+    expect(small.seats.length).toBe(16);
+    expect(small.dividers.length).toBe(1);
+    expect(big.width * big.depth).toBeGreaterThan(small.width * small.depth);
+    expect(big.dividers.length).toBeGreaterThanOrEqual(1);
     const d = big.dividers[0]!;
     for (let z = d.z0; z <= d.z1; z++) expect(big.walkable[z]![d.x]).toBe(false);
     expect(big.walkable[d.z0 - 1]![d.x]).toBe(true);

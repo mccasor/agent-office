@@ -138,7 +138,7 @@ export function Office({ layout }: { layout: OfficeLayout }): ReactNode {
       <mesh geometry={G.box} material={M.base} position={[0, -0.12, 0]} scale={[w + 0.2, 0.24, d + 0.2]} receiveShadow />
       <mesh geometry={G.box} material={M.carpet} position={[0, 0.002, 0]} scale={[w - 1, 0.004, d - 1]} receiveShadow />
       <mesh geometry={G.box} material={M.parquet} position={[bossCenter[0], 0.005, bossCenter[2]]} scale={[BOSS_W + 0.5, 0.006, d - 1]} receiveShadow />
-      <mesh geometry={G.box} material={M.bossRug} position={[at(2, 4)[0], 0.01, at(2, 4)[2]]} scale={[2.2, 0.006, 3]} receiveShadow />
+      <mesh geometry={G.box} material={M.bossRug} position={[bossCenter[0], 0.01, at(0, 4)[2]]} scale={[BOSS_W - 0.8, 0.006, 5]} receiveShadow />
       <mesh geometry={G.box} material={M.rug} position={[at(loungeX, (d - 1) / 2)[0], 0.008, at(loungeX, (d - 1) / 2)[2]]} scale={[LOUNGE_W - 1.2, 0.006, d - 2.4]} receiveShadow />
 
       {walls.map((s, i) => (
@@ -239,7 +239,7 @@ function BackWallDecor({ layout, x0, z0 }: { layout: OfficeLayout; x0: number; z
         <mesh geometry={G.box} material={M.black} scale={[0.04, 0.8, 1.1]} />
         <mesh geometry={G.box} material={M.door} position={[0.025, 0, 0]} scale={[0.01, 0.66, 0.96]} />
       </group>
-      <group position={[cellToWorld(layout, { x: 2, z: 0 })[0], 0, face + 0.15]}>
+      <group position={[cellToWorld(layout, { x: 3, z: 0 })[0], 0, face + 0.15]}>
         <mesh geometry={G.box} material={M.walnut} position={[0, 0.9, 0]} scale={[1.1, 1.8, 0.3]} castShadow />
         {[0.45, 0.9, 1.35].map((y, i) => (
           <group key={y}>
@@ -366,38 +366,46 @@ function ChairModel({ seat = M.black, tall = false }: { seat?: THREE.Material; t
   );
 }
 
-/** Stanza del boss: scrivania in noce con due monitor, poltrona in pelle, targhetta e statuetta dorate. */
+/**
+ * Stanza del boss: una postazione per sessione di Claude attiva (scrivania in noce con due monitor, poltrona in
+ * pelle, targhetta dorata); la statuetta dorata sta sulla prima.
+ */
 function BossOffice({ layout }: { layout: OfficeLayout }): ReactNode {
-  const seat = layout.bossSeat;
   const at = (x: number, z: number) => cellToWorld(layout, { x, z });
   return (
     <group>
-      <group position={at(seat.cell.x, seat.cell.z + 1)} rotation-y={seat.facing + Math.PI}>
-        <mesh geometry={G.box} material={M.walnut} position={[0, DESK_TOP_Y - 0.03, 0.1]} scale={[1.8, 0.06, 0.85]} castShadow receiveShadow />
-        <mesh geometry={G.box} material={M.walnut} position={[0, 0.36, -0.28]} scale={[1.76, 0.7, 0.04]} castShadow />
-        {[-0.86, 0.86].map((x) => (
-          <mesh key={x} geometry={G.box} material={M.black} position={[x, 0.36, 0.1]} scale={[0.06, 0.72, 0.8]} />
-        ))}
-        {[-0.3, 0.3].map((x) => (
-          <group key={x} position={[x, DESK_TOP_Y, -0.1]} rotation-y={-x * 0.6}>
-            <mesh geometry={G.box} material={M.black} position={[0, 0.12, 0]} scale={[0.05, 0.22, 0.03]} />
-            <mesh geometry={G.box} material={M.black} position={[0, 0.34, 0]} scale={[0.56, 0.34, 0.03]} castShadow />
-            <mesh geometry={G.box} material={M.screen} position={[0, 0.35, 0.017]} scale={[0.52, 0.28, 0.004]} />
+      {layout.bossSeats.map((seat, i) => (
+        <group key={seat.id}>
+          <group position={at(seat.cell.x, seat.cell.z + 1)} rotation-y={seat.facing + Math.PI}>
+            <mesh geometry={G.box} material={M.walnut} position={[0, DESK_TOP_Y - 0.03, 0.1]} scale={[1.4, 0.06, 0.85]} castShadow receiveShadow />
+            <mesh geometry={G.box} material={M.walnut} position={[0, 0.36, -0.28]} scale={[1.36, 0.7, 0.04]} castShadow />
+            {[-0.66, 0.66].map((x) => (
+              <mesh key={x} geometry={G.box} material={M.black} position={[x, 0.36, 0.1]} scale={[0.06, 0.72, 0.8]} />
+            ))}
+            {[-0.28, 0.28].map((x) => (
+              <group key={x} position={[x, DESK_TOP_Y, -0.1]} rotation-y={-x * 0.6}>
+                <mesh geometry={G.box} material={M.black} position={[0, 0.12, 0]} scale={[0.05, 0.22, 0.03]} />
+                <mesh geometry={G.box} material={M.black} position={[0, 0.34, 0]} scale={[0.52, 0.32, 0.03]} castShadow />
+                <mesh geometry={G.box} material={M.screen} position={[0, 0.35, 0.017]} scale={[0.48, 0.26, 0.004]} />
+              </group>
+            ))}
+            <mesh geometry={G.box} material={M.black} position={[0, DESK_TOP_Y + 0.008, 0.22]} scale={[0.4, 0.015, 0.12]} />
+            <DeskLamp position={[-0.58, DESK_TOP_Y, -0.1]} />
+            {i === 0 && (
+              <group position={[0.58, DESK_TOP_Y, -0.1]}>
+                <mesh geometry={G.box} material={M.black} position={[0, 0.03, 0]} scale={[0.1, 0.06, 0.1]} />
+                <mesh geometry={G.box} material={M.gold} position={[0, 0.14, 0]} rotation-z={0.2} scale={[0.05, 0.16, 0.04]} />
+                <mesh geometry={G.sphere} material={M.gold} position={[0.02, 0.25, 0]} scale={0.06} />
+              </group>
+            )}
+            {/* targhetta "Claudio Code" sul fronte verso la stanza */}
+            <mesh geometry={G.box} material={M.gold} position={[0, DESK_TOP_Y - 0.03, -0.31]} scale={[0.4, 0.06, 0.01]} />
           </group>
-        ))}
-        <mesh geometry={G.box} material={M.black} position={[0, DESK_TOP_Y + 0.008, 0.22]} scale={[0.4, 0.015, 0.12]} />
-        <DeskLamp position={[-0.75, DESK_TOP_Y, -0.1]} />
-        {/* statuetta dorata e targhetta "Claudio Code" sul bordo verso la stanza */}
-        <group position={[0.75, DESK_TOP_Y, -0.1]}>
-          <mesh geometry={G.box} material={M.black} position={[0, 0.03, 0]} scale={[0.1, 0.06, 0.1]} />
-          <mesh geometry={G.box} material={M.gold} position={[0, 0.14, 0]} rotation-z={0.2} scale={[0.05, 0.16, 0.04]} />
-          <mesh geometry={G.sphere} material={M.gold} position={[0.02, 0.25, 0]} scale={0.06} />
+          <group position={at(seat.cell.x, seat.cell.z)} rotation-y={seat.facing}>
+            <ChairModel seat={M.leather} tall />
+          </group>
         </group>
-        <mesh geometry={G.box} material={M.gold} position={[0, DESK_TOP_Y - 0.03, -0.31]} scale={[0.4, 0.06, 0.01]} />
-      </group>
-      <group position={at(seat.cell.x, seat.cell.z)} rotation-y={seat.facing}>
-        <ChairModel seat={M.leather} tall />
-      </group>
+      ))}
     </group>
   );
 }
