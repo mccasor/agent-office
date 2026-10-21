@@ -1,0 +1,4 @@
+html, body, #root { margin: 0; height: 100%; }
+body { background: #dfe3e8; overflow: hidden; }
+@media (prefers-color-scheme: dark) { body { background: #1b1f24; } }
+.app-offline { color: #b45309; font-weight: 600; }
