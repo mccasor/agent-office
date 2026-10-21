@@ -1,6 +1,6 @@
 # Agent Office
 
-Ufficio 3D, visto a 3/4 come uno spaccato, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta con una tazza di caffè fumante, la posano sulla scrivania e mostrano nome, issue, area di lavoro, avanzamento e token. Chi finisce riprende la tazza e aspetta in area relax; quando hanno finito tutti escono insieme. Claude stesso compare come **Claudio Code** nella stanza del boss, con gli stessi comportamenti.
+Ufficio 3D, visto a 3/4 come uno spaccato, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta con una tazza di caffè fumante, la posano sulla scrivania e mostrano nome, issue, area di lavoro, avanzamento e token. Sulla parete nord tre board (to do, in progress, in review) con un post-it per task (titolo e issue dell'agente): entrando l'agente sposta il proprio da "to do" a "in progress", andando via da "in progress" a "in review". Chi finisce riprende la tazza e aspetta in area relax, dietro il separè, tra poltroncine e divanetti davanti alla parete di muschio; quando hanno finito tutti escono insieme. Claude stesso compare come **Claudio Code** nella stanza del boss, con gli stessi comportamenti.
 
 ## Installazione (una volta sola)
 

@@ -1,7 +1,8 @@
 /**
  * Layout dell'ufficio su griglia. 1 cella = 1 unità three.js.
  * Coordinate di griglia: x verso est (0..width-1), z verso sud (0..depth-1); la porta è sulla parete sud (z = depth-1).
- * Da ovest a est: stanza del boss (chiusa da una vetrata con porta), openspace a isole, area relax con divani.
+ * Da ovest a est: stanza del boss (chiusa da una vetrata con porta), openspace a isole con le tre board dei task
+ * sulla parete nord, area relax dietro un separè con divanetti, poltroncine, tavolini, libreria e bancone del caffè.
  * Angoli (facing/direction): rotation.y di three.js con il modello rivolto a +z a rotazione 0,
  * quindi direzione (dx, dz) -> atan2(dx, dz).
  */
@@ -19,11 +20,16 @@ export interface OfficeLayout {
   bossSeat: Seat;
   /** apertura nella vetrata della stanza del boss (x = BOSS_W + 1) */
   bossDoor: Cell;
-  /** posti sui divani dell'area relax, colonne ovest ed est, da nord a sud */
+  /** posti nell'area relax (poltroncine e divanetti), da nord a sud */
   lounge: Seat[];
+  /** dove si ferma chi sposta un post-it, davanti a ciascuna board (parete nord, rivolto a nord) */
+  boards: Record<BoardColumn, Seat>;
   /** walkable[z][x] */
   walkable: boolean[][];
 }
+export type BoardColumn = 'todo' | 'progress' | 'review';
+export const BOARD_COLUMNS: readonly BoardColumn[] = ['todo', 'progress', 'review'];
+
 export interface Desk { seatId: string; cell: Cell; /** radianti: rotazione della scrivania, il lato utente guarda il posto */ facing: number }
 
 export const MIN_SEATS = 8;
@@ -39,8 +45,10 @@ const NORTH_AISLE = 1;
 const ENTRY_ZONE = 3;
 /** stanza del boss: colonne 1..BOSS_W, vetrata in colonna BOSS_W + 1 */
 export const BOSS_W = 3;
-/** area relax: divano, tavolino, divano (le ultime 3 colonne interne) */
-export const LOUNGE_W = 3;
+/** area relax: separè, corridoio, poltroncine, tavolini, divanetti (le ultime 5 colonne interne) */
+export const LOUNGE_W = 5;
+/** distanza tra le board dei task (celle) */
+const BOARD_STEP = 2;
 
 export const FACING_SOUTH = 0; // verso +z
 export const FACING_NORTH = Math.PI; // verso -z
@@ -93,30 +101,53 @@ export function createLayout(minSeats: number): OfficeLayout {
   for (let x = 1; x < BOSS_W; x++) walkable[3]![x] = false;
   const bossSeat: Seat = { id: 'boss', cell: { x: 2, z: 2 }, facing: FACING_SOUTH };
 
-  // area relax: divani rivolti al tavolino centrale; il passaggio a sud del tavolino collega i due divani
+  // area relax dietro il separè (aperto a sud, verso l'ingresso): salottini di due poltroncine e un divanetto
+  const plan = loungePlan({ width, depth });
+  for (let z = 1; z <= plan.screenZ1; z++) walkable[z]![plan.screenX] = false;
   const lounge: Seat[] = [];
-  const [west, table, east] = [width - 1 - LOUNGE_W, width - LOUNGE_W, width - 2];
-  for (let z = 2; z <= depth - 3; z++) {
-    if (z <= depth - 4) walkable[z]![table] = false;
-    lounge.push({ id: `lounge-${lounge.length}`, cell: { x: west, z }, facing: FACING_EAST });
+  for (const nook of plan.nooks) {
+    for (const z of [nook.z0, nook.z0 + 1]) {
+      walkable[z]![plan.tableX] = false;
+      lounge.push({ id: `lounge-${lounge.length}`, cell: { x: plan.tableX - 1, z }, facing: FACING_EAST });
+      lounge.push({ id: `lounge-${lounge.length}`, cell: { x: plan.tableX + 1, z }, facing: FACING_WEST });
+    }
   }
-  for (let z = 2; z <= depth - 3; z++) lounge.push({ id: `lounge-${lounge.length}`, cell: { x: east, z }, facing: FACING_WEST });
 
-  for (const p of [...plantCells({ width, depth }), ...coffeeBarCells({ width, depth })]) walkable[p.z]![p.x] = false;
-  return { width, depth, door, seats, islands, bossSeat, bossDoor, lounge, walkable };
+  // board dei task sulla parete nord, al centro dell'openspace; ci si ferma nel corridoio nord
+  const mid = Math.floor((BOSS_W + 2 + plan.screenX - 1) / 2);
+  const board = (dx: number): Seat => ({ id: 'board', cell: { x: mid + dx, z: 1 }, facing: FACING_NORTH });
+  const boards = { todo: board(-BOARD_STEP), progress: board(0), review: board(BOARD_STEP) };
+
+  for (const p of [...plantCells({ width, depth }), ...plan.furniture]) walkable[p.z]![p.x] = false;
+  return { width, depth, door, seats, islands, bossSeat, bossDoor, lounge, boards, walkable };
 }
 
-/** Bancone con la macchina del caffè, a nord dell'area relax (sopra il divano ovest e il tavolino). */
-export function coffeeBarCells(layout: Pick<OfficeLayout, 'width' | 'depth'>): Cell[] {
-  return [
-    { x: layout.width - 1 - LOUNGE_W, z: 1 },
-    { x: layout.width - LOUNGE_W, z: 1 },
-  ];
+export interface LoungePlan {
+  /** colonna del separè, bloccata da z = 1 a screenZ1 (le ultime righe restano aperte come ingresso) */
+  screenX: number;
+  screenZ1: number;
+  /** colonna dei tavolini: poltroncine a ovest, divanetti a est */
+  tableX: number;
+  /** salottini di due righe (z0, z0 + 1), separati da una riga di passaggio */
+  nooks: { z0: number }[];
+  /** libreria nell'angolo nord-ovest dell'area */
+  shelf: Cell;
+  /** bancone con la macchina del caffè contro la parete nord */
+  bar: Cell[];
+  /** celle non walkable occupate dai mobili */
+  furniture: Cell[];
 }
 
-/** Tavolino dell'area relax: colonna centrale, dalla seconda riga fino a quella prima del passaggio. */
-export function loungeTable(layout: Pick<OfficeLayout, 'width' | 'depth'>): { x: number; z0: number; z1: number } {
-  return { x: layout.width - LOUNGE_W, z0: 2, z1: layout.depth - 4 };
+/** Geometria dell'area relax, a partire dalla parete est. Deterministica. */
+export function loungePlan(layout: Pick<OfficeLayout, 'width' | 'depth'>): LoungePlan {
+  const { width: w, depth: d } = layout;
+  const screenX = w - 1 - LOUNGE_W;
+  const aisle = screenX + 1;
+  const nooks: { z0: number }[] = [];
+  for (let z0 = 2; z0 + 1 <= d - 3; z0 += 3) nooks.push({ z0 });
+  const shelf = { x: aisle, z: 1 };
+  const bar = [{ x: aisle + 1, z: 1 }, { x: aisle + 2, z: 1 }];
+  return { screenX, screenZ1: d - 4, tableX: aisle + 2, nooks, shelf, bar, furniture: [shelf, ...bar] };
 }
 
 /** Scrivania di ciascun posto: la cella verso cui il posto è rivolto. */
@@ -138,6 +169,7 @@ export function plantCells(layout: Pick<OfficeLayout, 'width' | 'depth'>): Cell[
     { x: BOSS_W + 2, z: 1 },
     { x: w - 2, z: 1 },
     { x: w - 2, z: d - 2 },
+    { x: w - 2 - LOUNGE_W, z: 1 },
   ];
 }
 

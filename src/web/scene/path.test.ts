@@ -12,6 +12,11 @@ function grid(rows: string[]): OfficeLayout {
     bossSeat: { id: 'boss', cell: { x: 0, z: 0 }, facing: 0 },
     bossDoor: { x: 0, z: 0 },
     lounge: [],
+    boards: {
+      todo: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
+      progress: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
+      review: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
+    },
     walkable: rows.map((r) => [...r].map((c) => c !== '#')),
   };
 }
