@@ -1,0 +1,206 @@
+import type { TodoProgress, TokenUsage } from '../../shared/types.js';
+
+/** Riassunto numerico di un file transcript. Non contiene mai testo dei messaggi. */
+export interface FileSummary {
+  title: string | null;
+  model: string | null;
+  effort: string | null;
+  tokens: TokenUsage;
+  /** input + cache dell'ultima richiesta */
+  contextUsed: number | null;
+  tokensLeft: { value: number; at: number } | null;
+  firstAt: number | null;
+  lastAt: number | null;
+  progress: TodoProgress | null;
+  /** percorsi toccati da Read/Edit/Write/... (solo per classifyArea, non esposti nello Snapshot) */
+  filePaths: string[];
+  hasAssistant: boolean;
+  /**
+   * risposta finale dell'agente: 'confirmed' (stop_reason end_turn o structured_output),
+   * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
+   */
+  finished: false | 'tentative' | 'confirmed';
+}
+
+export interface Accumulator {
+  ingest(line: string): void;
+  readonly state: FileSummary;
+}
+
+type Json = Record<string, unknown>;
+type Usage4 = [input: number, output: number, cacheRead: number, cacheCreation: number];
+
+const FILE_TOOLS = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
+const MAX_FILE_PATHS = 200;
+const TOKENS_LEFT_RE = /<total_tokens>\s*(\d+)\s*tokens left/;
+
+const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
+const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
+const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+function parseUsage(u: unknown): Usage4 | null {
+  if (!isObj(u)) return null;
+  return [num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens)];
+}
+
+export function createAccumulator(): Accumulator {
+  const state: FileSummary = {
+    title: null,
+    model: null,
+    effort: null,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+    contextUsed: null,
+    tokensLeft: null,
+    firstAt: null,
+    lastAt: null,
+    progress: null,
+    filePaths: [],
+    hasAssistant: false,
+    finished: false,
+  };
+  /**
+   * Usage già conteggiato per message.id. Claude Code scrive una riga per blocco di contenuto
+   * (thinking, text, tool_use) dello stesso messaggio ripetendo l'usage, a volte con output_tokens
+   * crescente: si sottrae il precedente e si somma l'ultimo.
+   */
+  const counted = new Map<string, Usage4>();
+  const filePaths = new Set<string>();
+  let todos: TodoProgress | null = null;
+  let tasks: Map<string, string> | null = null;
+  let nextTaskId = 1;
+  let structuredOutputPending = false;
+
+  const addUsage = (u: Usage4, sign: 1 | -1) => {
+    const t = state.tokens;
+    t.input += sign * u[0];
+    t.output += sign * u[1];
+    t.cacheRead += sign * u[2];
+    t.cacheCreation += sign * u[3];
+    t.total = t.input + t.output + t.cacheRead + t.cacheCreation;
+  };
+
+  const updateProgress = () => {
+    if (tasks) {
+      const statuses = [...tasks.values()];
+      state.progress = { completed: statuses.filter((s) => s === 'completed').length, total: statuses.length };
+    } else {
+      state.progress = todos;
+    }
+  };
+
+  const onToolUse = (block: Json) => {
+    const name = str(block.name);
+    const input = isObj(block.input) ? block.input : {};
+    if (FILE_TOOLS.has(name ?? '')) {
+      const path = str(input.file_path) ?? str(input.notebook_path);
+      if (path && filePaths.size < MAX_FILE_PATHS && !filePaths.has(path)) {
+        filePaths.add(path);
+        state.filePaths = [...filePaths];
+      }
+    } else if (name === 'TodoWrite' && Array.isArray(input.todos)) {
+      const list = input.todos.filter(isObj);
+      todos = { completed: list.filter((t) => t.status === 'completed').length, total: list.length };
+      tasks = null;
+      updateProgress();
+    } else if (name === 'TaskCreate') {
+      // Claude Code assegna id sequenziali "1", "2", ... nell'ordine di creazione
+      tasks ??= new Map();
+      tasks.set(String(nextTaskId++), 'pending');
+      updateProgress();
+    } else if (name === 'TaskUpdate') {
+      const id = input.taskId === undefined ? null : String(input.taskId);
+      const status = str(input.status);
+      if (tasks && id && tasks.has(id) && status) {
+        if (status === 'deleted') tasks.delete(id);
+        else tasks.set(id, status);
+        updateProgress();
+      }
+    }
+  };
+
+  const onAssistant = (row: Json) => {
+    const msg = row.message;
+    if (!isObj(msg)) return;
+    const model = str(msg.model);
+    if (model === '<synthetic>') return;
+    if (model) state.model = model;
+    const effort = str(row.effort);
+    if (effort) state.effort = effort;
+
+    const usage = parseUsage(msg.usage);
+    if (usage) {
+      const id = str(msg.id);
+      const previous = id ? counted.get(id) : undefined;
+      if (previous) addUsage(previous, -1);
+      addUsage(usage, 1);
+      if (id) counted.set(id, usage);
+      state.contextUsed = usage[0] + usage[2] + usage[3];
+    }
+
+    let hasToolUse = false;
+    let hasText = false;
+    for (const block of Array.isArray(msg.content) ? msg.content.filter(isObj) : []) {
+      if (block.type === 'tool_use') {
+        hasToolUse = true;
+        onToolUse(block);
+      } else if (block.type === 'text') {
+        hasText = true;
+      }
+    }
+    state.hasAssistant = true;
+    if (!hasText || hasToolUse || msg.stop_reason === 'tool_use') state.finished = false;
+    else state.finished = msg.stop_reason === 'end_turn' ? 'confirmed' : 'tentative';
+  };
+
+  const onAttachment = (row: Json, at: number) => {
+    const att = isObj(row.attachment) ? row.attachment : {};
+    if (att.type === 'total_tokens_reminder') {
+      const m = typeof att.text === 'string' ? TOKENS_LEFT_RE.exec(att.text) : null;
+      if (m?.[1]) state.tokensLeft = { value: Number(m[1]), at: Number.isFinite(at) ? at : (state.lastAt ?? 0) };
+    } else if (att.type === 'structured_output') {
+      state.finished = 'confirmed';
+      structuredOutputPending = true;
+    }
+  };
+
+  const ingest = (line: string) => {
+    let row: unknown;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      return;
+    }
+    if (!isObj(row)) return;
+
+    const at = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN;
+    if (Number.isFinite(at)) {
+      state.firstAt = state.firstAt === null ? at : Math.min(state.firstAt, at);
+      state.lastAt = state.lastAt === null ? at : Math.max(state.lastAt, at);
+    }
+
+    switch (row.type) {
+      case 'ai-title':
+        state.title = str(row.aiTitle) ?? state.title;
+        break;
+      case 'api-request': {
+        const params = isObj(row.params) ? row.params : {};
+        state.model = str(params.model) ?? state.model;
+        state.effort = (isObj(params.output_config) ? str(params.output_config.effort) : null) ?? state.effort;
+        break;
+      }
+      case 'assistant':
+        onAssistant(row);
+        break;
+      case 'user':
+        // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
+        if (!structuredOutputPending) state.finished = false;
+        structuredOutputPending = false;
+        break;
+      case 'attachment':
+        onAttachment(row, at);
+        break;
+    }
+  };
+
+  return { ingest, state };
+}
