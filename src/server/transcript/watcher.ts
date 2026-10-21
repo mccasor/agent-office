@@ -151,7 +151,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         title: s.title,
         model: s.model,
         effort: s.effort,
-        context: { used: s.contextUsed ?? 0, window: contextWindowFor(s.model) },
+        context: { used: s.contextUsed ?? 0, window: contextWindowFor(s.model, s.contextUsed ?? 0) },
         tokensUsed: g.tokens,
         tokensLeft: tokensLeft?.value ?? null,
         startedAt: s.firstAt ?? main.mtime,

@@ -27,4 +27,10 @@ describe('contextWindowFor', () => {
   ] as const)('%s -> %s', (model, expected) => {
     expect(contextWindowFor(model)).toBe(expected);
   });
+
+  it('contesto usato oltre 200k senza suffisso [1m] -> variante 1M', () => {
+    expect(contextWindowFor('claude-opus-5-5', 223_575)).toBe(1_000_000);
+    expect(contextWindowFor('claude-opus-5-5', 150_000)).toBe(200_000);
+    expect(contextWindowFor('gpt-4o', 300_000)).toBeNull();
+  });
 });
