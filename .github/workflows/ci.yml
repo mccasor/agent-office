@@ -11,3 +11,7 @@ jobs:
         with: { node-version: 22, cache: npm }
       - run: npm ci
       - run: npm run check
+      # smoke visivo (#23): dist/web è già stato generato da `npm run check`
+      - run: npx playwright install chromium
+      - run: npm run test:visual
+        env: { AGENT_OFFICE_VISUAL: '1' }
