@@ -58,6 +58,11 @@ interface Sim {
 }
 
 const TURN_SPEED = 10; // rad/s (smorzamento esponenziale)
+/**
+ * secondi di simulazione recuperati al massimo in un fotogramma: con pochi fotogrammi (finestra in secondo piano,
+ * GPU lenta) o dopo una pausa (finestra nascosta) i personaggi recuperano il tempo invece di restare indietro
+ */
+const MAX_CATCH_UP = 5;
 /** secondi davanti alla board per staccare o attaccare il post-it */
 export const BOARD_PAUSE = 0.9;
 
@@ -109,7 +114,7 @@ export function AgentActor({
     if (!g) return;
     const seat = target;
     const key = seat ? `in:${seat.id}` : 'out';
-    const dt = Math.min(delta, 0.1);
+    const dt = Math.min(delta, MAX_CATCH_UP);
 
     const startLeg = (from: Cell) => {
       const leg = s.legs[0]!;

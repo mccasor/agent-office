@@ -10,7 +10,7 @@ const path = [
 
 describe('advanceAlongPath', () => {
   it('velocità costante dichiarata', () => {
-    expect(WALK_SPEED).toBe(2.5);
+    expect(WALK_SPEED).toBe(3.2);
   });
 
   it('inizio del path', () => {

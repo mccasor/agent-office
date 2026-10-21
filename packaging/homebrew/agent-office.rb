@@ -8,16 +8,15 @@ cask "agent-office" do
   desc "Ufficio 3D con gli agenti di Claude Code al lavoro, nella menu bar"
   homepage "https://github.com/mccasor/homebrew-agent-office"
 
-  depends_on macos: ">= :big_sur"
   # il server dell'ufficio gira con Node
   depends_on formula: "node"
+  depends_on :macos
 
   app "Agent Office.app"
 
   # firma ad-hoc, non notarizzata: senza la quarantena macOS la apre senza chiedere conferma
-  postflight do
-    system_command "/usr/bin/xattr",
-                   args: ["-dr", "com.apple.quarantine", "#{appdir}/Agent Office.app"]
+  postflight_steps do
+    run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Agent Office.app"], must_succeed: false
   end
 
   uninstall quit: "app.agent-office.menubar"

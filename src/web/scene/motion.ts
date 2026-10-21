@@ -1,7 +1,7 @@
 import type { Cell } from './layout';
 
 /** unità (celle) al secondo */
-export const WALK_SPEED = 2.5;
+export const WALK_SPEED = 3.2;
 
 export interface PathPosition {
   x: number;
