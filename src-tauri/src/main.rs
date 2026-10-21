@@ -8,6 +8,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Sender};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
@@ -29,8 +30,22 @@ const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 /// voci al massimo in ciascun sottomenu delle istanze
 const MAX_ITEMS: usize = 20;
 
+mod updates;
+use updates::{Upgrade, UpdateState};
+
 /// Processo del server, terminato all'uscita.
 struct Server(Mutex<Option<Child>>);
+
+/// Stato della voce "Aggiornamenti" e segnale per ridisegnare subito il menu quando cambia.
+struct Updates {
+    state: Mutex<UpdateState>,
+    wake: Mutex<Sender<()>>,
+}
+
+/// versione dell'app (Cargo.toml, allineata a package.json e tauri.conf.json da scripts/release.mjs)
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// ricerca automatica degli aggiornamenti: poco dopo l'avvio e poi a questo intervallo
+const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Status {
@@ -383,8 +398,45 @@ fn show_office(app: &AppHandle, view: &str) {
     }
 }
 
-/// Menu a tendina: stato, apri ufficio, impostazioni, istanze di Claude Code, agenti attivi, esci.
-fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
+fn update_state(app: &AppHandle) -> UpdateState {
+    app.state::<Updates>().state.lock().unwrap().clone()
+}
+
+fn set_update_state(app: &AppHandle, state: UpdateState) {
+    let updates = app.state::<Updates>();
+    *updates.state.lock().unwrap() = state;
+    let _ = updates.wake.lock().unwrap().send(());
+}
+
+/// Cerca versioni più recenti (se non è già in corso una ricerca o un aggiornamento).
+fn check_updates(app: &AppHandle) {
+    if !update_state(app).enabled() {
+        return;
+    }
+    set_update_state(app, UpdateState::Checking);
+    let app = app.clone();
+    thread::spawn(move || set_update_state(&app, updates::check(VERSION)));
+}
+
+/// Clic su "Aggiornamenti": con una versione nuova la installa, altrimenti cerca.
+fn on_updates_click(app: &AppHandle) {
+    let state = update_state(app);
+    if !matches!(state, UpdateState::Available { .. }) {
+        check_updates(app);
+        return;
+    }
+    set_update_state(app, UpdateState::Upgrading);
+    let app = app.clone();
+    thread::spawn(move || match updates::upgrade() {
+        // brew chiude l'app: lo stato resta "in corso" fino ad allora
+        Upgrade::Brew => {}
+        Upgrade::Page => set_update_state(&app, state),
+        Upgrade::Failed => set_update_state(&app, UpdateState::Failed),
+    });
+}
+
+/// Menu a tendina: stato, apri ufficio, impostazioni, aggiornamenti, istanze di Claude Code, agenti attivi, esci.
+fn build_menu(app: &AppHandle, o: &Overview, update: &UpdateState) -> tauri::Result<Menu<Wry>> {
     let status = IconMenuItemBuilder::with_id("status", o.status.label())
         .icon(dot_image(o.status)?)
         .enabled(false)
@@ -397,6 +449,14 @@ fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
         .item(&MenuItemBuilder::with_id("hooks-install", "Installa gli hook di Claude Code").build(app)?)
         .item(&MenuItemBuilder::with_id("hooks-remove", "Rimuovi gli hook di Claude Code").build(app)?)
         .build()?;
+
+    let label = update.label(VERSION);
+    let updates: Box<dyn tauri::menu::IsMenuItem<Wry>> = match update.badge() {
+        Some(badge) => Box::new(
+            IconMenuItemBuilder::with_id("updates", label).icon(Image::from_bytes(badge.png())?).enabled(update.enabled()).build(app)?,
+        ),
+        None => Box::new(MenuItemBuilder::with_id("updates", label).enabled(update.enabled()).build(app)?),
+    };
 
     let list = |title: String, entries: &[Entry], empty: &str| -> tauri::Result<_> {
         let mut sub = SubmenuBuilder::new(app, title);
@@ -416,6 +476,7 @@ fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
         .separator()
         .item(&open)
         .item(&settings)
+        .item(updates.as_ref())
         .separator()
         .item(&sessions)
         .item(&agents)
@@ -439,35 +500,49 @@ fn main() {
 
             let handle = app.handle().clone();
             *app.state::<Server>().0.lock().unwrap() = start_server(&handle);
+            let (wake, woken) = mpsc::channel::<()>();
+            app.manage(Updates { state: Mutex::new(UpdateState::Unknown), wake: Mutex::new(wake) });
 
             let initial = Overview::offline();
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(initial.status.tray_icon(system_is_dark()))?)
                 .icon_as_template(false)
                 .tooltip("Agent Office")
-                .menu(&build_menu(&handle, &initial)?)
+                .menu(&build_menu(&handle, &initial, &UpdateState::Unknown)?)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "open" => show_office(app, "office"),
                     "autostart" => set_autostart(!autostart_enabled()),
                     "hooks-install" => run_hooks(app, "install-hooks"),
                     "hooks-remove" => run_hooks(app, "uninstall-hooks"),
+                    "updates" => on_updates_click(app),
                     "quit" => app.exit(0),
                     id if id.starts_with("session:") || id.starts_with("agent:") => show_office(app, "list"),
                     _ => {}
                 })
                 .build(app)?;
 
-            // icona e menu aggiornati ogni POLL, solo quando cambia qualcosa
+            // ricerca automatica degli aggiornamenti: il pallino compare anche senza aprire il menu
+            let checker = handle.clone();
             thread::spawn(move || {
-                let mut last: Option<(Overview, bool)> = None;
+                thread::sleep(Duration::from_secs(10));
+                loop {
+                    check_updates(&checker);
+                    thread::sleep(UPDATE_EVERY);
+                }
+            });
+
+            // icona e menu aggiornati ogni POLL (o subito, se cambia lo stato degli aggiornamenti), solo se cambia qualcosa
+            thread::spawn(move || {
+                let mut last: Option<(Overview, bool, UpdateState)> = None;
                 let mut etag: Option<String> = None;
                 loop {
                     let dark = dark_menu_bar(&handle);
-                    let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, _)| o.clone())) else {
-                        thread::sleep(POLL);
+                    let update = update_state(&handle);
+                    let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, ..)| o.clone())) else {
+                        let _ = woken.recv_timeout(POLL);
                         continue;
                     };
-                    let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
+                    let changed = last.as_ref().is_none_or(|(o, d, u)| *o != overview || *d != dark || *u != update);
                     if changed {
                         if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                             if let Ok(icon) = Image::from_bytes(overview.status.tray_icon(dark)) {
@@ -475,13 +550,13 @@ fn main() {
                                 let _ = tray.set_icon_as_template(false);
                             }
                             let _ = tray.set_tooltip(Some(format!("Agent Office: {}", overview.status.label())));
-                            if let Ok(menu) = build_menu(&handle, &overview) {
+                            if let Ok(menu) = build_menu(&handle, &overview, &update) {
                                 let _ = tray.set_menu(Some(menu));
                             }
                         }
-                        last = Some((overview, dark));
+                        last = Some((overview, dark, update));
                     }
-                    thread::sleep(POLL);
+                    let _ = woken.recv_timeout(POLL);
                 }
             });
             Ok(())

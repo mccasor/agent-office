@@ -1,5 +1,6 @@
 """Genera l'icona dell'app (src-tauri/icons/app-icon.png, 1024 px), l'icona della menu bar (scrivania a linee con il
-pallino di stato in basso a destra, nera per la barra chiara e bianca per quella scura) e i pallini dei menu.
+pallino di stato in basso a destra, nera per la barra chiara e bianca per quella scura), i pallini dei menu e i
+badge degli aggiornamenti.
 Uso: python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png"""
 from pathlib import Path
 from PIL import Image, ImageDraw
@@ -66,7 +67,29 @@ def dot(color, px):
     return img.resize((px, px), Image.LANCZOS)
 
 
+def badge(color, glyph, px=32):
+    """Pallino pieno con un simbolo bianco: 'down' (freccia verso il basso) o 'bang' (punto esclamativo)."""
+    s = 8
+    W = px * s
+    img = Image.new('RGBA', (W, W), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    u = W / 32  # griglia di disegno 32 x 32
+    box = lambda x0, y0, x1, y1: [x0 * u, y0 * u, x1 * u, y1 * u]
+    white = (255, 255, 255, 255)
+    d.ellipse(box(3, 3, 29, 29), fill=color)
+    if glyph == 'down':
+        d.rounded_rectangle(box(14.4, 8, 17.6, 19), radius=1.2 * u, fill=white)
+        d.polygon([(9.5 * u, 16 * u), (22.5 * u, 16 * u), (16 * u, 23.5 * u)], fill=white)
+    else:
+        d.rounded_rectangle(box(14.3, 8, 17.7, 19), radius=1.6 * u, fill=white)
+        d.ellipse(box(14.1, 20.6, 17.9, 24.4), fill=white)
+    return img.resize((px, px), Image.LANCZOS)
+
+
 if __name__ == '__main__':
+    # aggiornamenti: blu con freccia (versione nuova), rosso con "!" (indietro di 4 versioni o più)
+    badge((47, 111, 222, 255), 'down').save(ROOT / 'tray' / 'update-available.png')
+    badge((235, 64, 52, 255), 'bang').save(ROOT / 'tray' / 'update-outdated.png')
     app_icon().save(ROOT / 'app-icon.png')
     colors = {'working': (46, 197, 94, 255), 'waiting': (235, 64, 52, 255), 'idle': (150, 156, 164, 255)}
     for name, color in colors.items():
