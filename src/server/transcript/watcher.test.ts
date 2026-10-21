@@ -196,3 +196,78 @@ describe('createTranscriptWatcher – aggiornamenti incrementali', () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe('createTranscriptWatcher – finestra 1M dichiarata (#20)', () => {
+  it('attachment "model" con modelId [1m] -> window 1M anche sotto 200k', async () => {
+    await appendFile(
+      join(projectDir(), `${SESSION}.jsonl`),
+      JSON.stringify({ type: 'attachment', attachment: { type: 'model', identity: { modelId: 'claude-opus-4-5[1m]' } } }) + '\n',
+    );
+    await touchAll(home, T0);
+    const w = await startWatcher();
+    expect(w.current().sessions[0]?.context).toEqual({ used: 1320, window: 1_000_000 });
+  });
+});
+
+describe('createTranscriptWatcher – sessioni in altre cartelle di projects (#21)', () => {
+  const FOREIGN = '22222222-2222-4222-8222-222222222222';
+  const foreignDir = () => join(home, 'projects', '-tmp');
+  const row = (cwd: string) =>
+    JSON.stringify({ type: 'user', timestamp: '2026-01-01T10:05:00.000Z', cwd, sessionId: FOREIGN, message: { role: 'user', content: '[redacted]' } }) + '\n';
+  const transcript = (cwds: string[]) => ['{"type":"ai-title","aiTitle":"Foreign"}\n', ...cwds.map(row)].join('');
+
+  async function writeForeign(name: string, body: string, mtime = T0) {
+    await mkdir(foreignDir(), { recursive: true });
+    const file = join(foreignDir(), name);
+    await writeFile(file, body);
+    await utimes(file, mtime / 1000, mtime / 1000);
+    return file;
+  }
+
+  it('avviata in una cartella superiore e passata in una interna: inclusa con i subagenti', async () => {
+    await writeForeign(`${FOREIGN}.jsonl`, transcript(['/tmp', '/tmp', `${CWD}/src`]));
+    const sub = join(foreignDir(), FOREIGN, 'subagents');
+    await mkdir(sub, { recursive: true });
+    await writeFile(join(sub, 'agent-b0000000000000001.jsonl'), row(`${CWD}/src`));
+    await writeFile(join(sub, 'agent-b0000000000000001.meta.json'), '{"agentType":"Explore","description":"Foreign agent"}');
+    await touchAll(home, T0);
+    const w = await startWatcher();
+    const snap = w.current();
+    expect(snap.sessions.map((s) => s.title).sort()).toEqual(['Fixture session', 'Foreign']);
+    expect(snap.agents.map((a) => a.name)).toContain('Foreign agent');
+  });
+
+  it('cartella codificata assente: trova la sessione tramite cwd uguale', async () => {
+    await rm(projectDir(), { recursive: true });
+    await writeForeign(`${FOREIGN}.jsonl`, transcript([CWD]));
+    const w = await startWatcher();
+    expect(w.current().sessions.map((s) => s.id)).toEqual([FOREIGN]);
+  });
+
+  it('cwd non interno (prefisso simile o cartella superiore) non è incluso', async () => {
+    await writeForeign(`${FOREIGN}.jsonl`, transcript(['/tmp', `${CWD}-other`, `${CWD}x/y`]));
+    const w = await startWatcher();
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+  });
+
+  it('file vecchi non letti all’avvio; diventano pertinenti se riprendono con il cwd monitorato', async () => {
+    const file = await writeForeign(`${FOREIGN}.jsonl`, transcript([CWD]), T0 - 7 * 24 * 3_600_000);
+    const w = await startWatcher();
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+    await appendFile(file, row(`${CWD}/lib`));
+    await vi.waitFor(() => expect(w.current().sessions.map((s) => s.id)).toContain(FOREIGN), { timeout: 5000, interval: 20 });
+  });
+
+  it('nuovo file in un’altra cartella dopo l’avvio: valutato e seguito (anche i subagenti nuovi)', async () => {
+    const w = await startWatcher();
+    const file = await writeForeign(`${FOREIGN}.jsonl`, transcript(['/tmp']), clock);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+    await appendFile(file, row(CWD));
+    await vi.waitFor(() => expect(w.current().sessions.map((s) => s.id)).toContain(FOREIGN), { timeout: 5000, interval: 20 });
+    const sub = join(foreignDir(), FOREIGN, 'subagents');
+    await mkdir(sub, { recursive: true });
+    await writeFile(join(sub, 'agent-b0000000000000002.jsonl'), row(CWD));
+    await vi.waitFor(() => expect(w.current().agents.map((a) => a.id)).toContain('b0000000000000002'), { timeout: 5000, interval: 20 });
+  });
+});

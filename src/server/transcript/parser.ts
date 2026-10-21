@@ -4,6 +4,8 @@ import type { TodoProgress, TokenUsage } from '../../shared/types.js';
 export interface FileSummary {
   title: string | null;
   model: string | null;
+  /** modelId dichiarato dall'attachment "model" (può avere il suffisso "[1m]"); solo per la finestra di contesto */
+  declaredModel: string | null;
   effort: string | null;
   tokens: TokenUsage;
   /** input + cache dell'ultima richiesta */
@@ -47,6 +49,7 @@ export function createAccumulator(): Accumulator {
   const state: FileSummary = {
     title: null,
     model: null,
+    declaredModel: null,
     effort: null,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
     contextUsed: null,
@@ -163,6 +166,9 @@ export function createAccumulator(): Accumulator {
     if (att.type === 'total_tokens_reminder') {
       const m = typeof att.text === 'string' ? TOKENS_LEFT_RE.exec(att.text) : null;
       if (m?.[1]) state.tokensLeft = { value: Number(m[1]), at: Number.isFinite(at) ? at : (state.lastAt ?? 0) };
+    } else if (att.type === 'model') {
+      const identity = isObj(att.identity) ? att.identity : {};
+      state.declaredModel = str(identity.modelId) ?? state.declaredModel;
     } else if (att.type === 'structured_output') {
       state.finished = 'confirmed';
       structuredOutputPending = true;

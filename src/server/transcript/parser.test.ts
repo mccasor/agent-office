@@ -156,4 +156,15 @@ describe('createAccumulator', () => {
     acc.ingest('{"type":"ai-title","aiTitle":"t"}');
     expect(acc.state.finished).toBe('tentative');
   });
+
+  it('declaredModel: modelId dell\'attachment "model", senza testo', () => {
+    const acc = createAccumulator();
+    expect(acc.state.declaredModel).toBeNull();
+    acc.ingest(JSON.stringify({ type: 'attachment', attachment: { type: 'model', identity: { modelId: 'claude-opus-5[1m]', marketingName: 'Opus 5' }, text: 'secret' } }));
+    expect(acc.state.declaredModel).toBe('claude-opus-5[1m]');
+    acc.ingest(JSON.stringify({ type: 'attachment', attachment: { type: 'model', identity: {} } }));
+    expect(acc.state.declaredModel).toBe('claude-opus-5[1m]');
+    expect(JSON.stringify(acc.state)).not.toContain('secret');
+  });
 });
+
