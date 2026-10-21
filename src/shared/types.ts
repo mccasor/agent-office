@@ -41,6 +41,8 @@ export interface AgentState {
   tokens: TokenUsage;
   /** null = indeterminato (l'agente non usa una todo list) */
   progress: TodoProgress | null;
+  /** issue citate (es. #14) nella descrizione o nell'ultimo prompt con riferimenti; max 3 */
+  issues: number[];
   /** epoch ms */
   startedAt: number;
   updatedAt: number;
@@ -67,6 +69,10 @@ export interface SessionState {
   startedAt: number;
   updatedAt: number;
   active: boolean;
+  /** stato della sessione principale (Claude stesso, non i subagenti), stessa semantica di AgentStatus */
+  status: AgentStatus;
+  /** issue dell'ultimo prompt con riferimenti, altrimenti dedotte dal branch; max 3 */
+  issues: number[];
 }
 
 export interface RepoState {

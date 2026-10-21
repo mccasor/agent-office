@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLayout, deskCells, plantCells, cellKey } from './layout';
+import { createLayout, deskCells, plantCells, cellKey, loungeTable } from './layout';
 import { findPath } from './path';
 
 const sizes = [0, 1, 4, 8, 9, 13, 24, 40];
@@ -91,5 +91,38 @@ describe('createLayout', () => {
     const b = createLayout(30);
     expect(b.width * b.depth).toBeGreaterThan(a.width * a.depth);
     expect(b.seats.length).toBeGreaterThan(a.seats.length);
+  });
+});
+
+describe('stanza del boss e area relax', () => {
+  it('posto del boss e divani raggiungibili dalla porta, liberi da scrivanie e piante', () => {
+    for (const n of sizes) {
+      const l = createLayout(n);
+      for (const s of [l.bossSeat, ...l.lounge]) {
+        expect(l.walkable[s.cell.z]![s.cell.x]).toBe(true);
+        expect(findPath(l, l.door, s.cell).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('il boss si raggiunge solo dalla porta della vetrata', () => {
+    const l = createLayout(8);
+    const path = findPath(l, l.door, l.bossSeat.cell);
+    expect(path.some((c) => c.x === l.bossDoor.x && c.z === l.bossDoor.z)).toBe(true);
+    for (let z = 1; z < l.depth - 1; z++) expect(l.walkable[z]![l.bossDoor.x]).toBe(z === l.bossDoor.z);
+  });
+
+  it('divani rivolti al tavolino (cella davanti non walkable) e posti sufficienti per tutti', () => {
+    for (const n of sizes) {
+      const l = createLayout(n);
+      expect(new Set(l.lounge.map((s) => cellKey(s.cell))).size).toBe(l.lounge.length);
+      expect(l.lounge.length).toBeGreaterThanOrEqual(Math.min(l.seats.length, 12));
+      const table = loungeTable(l);
+      for (const s of l.lounge.filter((x) => x.cell.z <= table.z1)) {
+        const dx = Math.round(Math.sin(s.facing));
+        expect(s.cell.x + dx).toBe(table.x);
+        expect(l.walkable[s.cell.z]![table.x]).toBe(false);
+      }
+    }
   });
 });

@@ -7,7 +7,7 @@ import { classifyArea } from './classify.js';
 import { scanCwd } from './cwdscan.js';
 import { encodeProjectPath } from './encode.js';
 import { contextWindowFor } from './models.js';
-import { createAccumulator, type Accumulator } from './parser.js';
+import { createAccumulator, extractIssues, type Accumulator } from './parser.js';
 import { createLineReader, type LineReader } from './reader.js';
 
 export interface TranscriptWatcherOptions {
@@ -76,6 +76,8 @@ function addTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
   const cacheCreation = a.cacheCreation + b.cacheCreation;
   return { input, output, cacheRead, cacheCreation, total: input + output + cacheRead + cacheCreation };
 }
+
+const mergeIssues = (a: number[], b: number[]): number[] => [...new Set([...a, ...b])].slice(0, 3);
 
 export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher<TranscriptSnapshot> {
   const claudeHome = opts.claudeHome ?? join(homedir(), '.claude');
@@ -158,6 +160,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         model: s.model,
         tokens: { ...s.tokens },
         progress: s.progress ? { ...s.progress } : null,
+        issues: mergeIssues(extractIssues(description), s.issues),
         startedAt: s.firstAt ?? f.mtime,
         updatedAt,
       });
@@ -186,6 +189,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         startedAt: s.firstAt ?? main.mtime,
         updatedAt,
         active: t - updatedAt <= activeWindowMs,
+        status: agentStatus(main, Math.max(s.lastAt ?? 0, main.mtime), t),
+        issues: [...s.issues],
       });
     }
 

@@ -43,6 +43,9 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange }: Ag
     >
       <div className="hud-label__name" title={agent.name}>
         {truncate(agent.name, NAME_MAX_CHARS)}
+        {agent.issues.length > 0 && (
+          <span className="hud-label__issue" data-testid="agent-issues">{agent.issues.map((n) => `#${n}`).join(' ')}</span>
+        )}
       </div>
       <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} className="hud-bar--small" />
       {open && (

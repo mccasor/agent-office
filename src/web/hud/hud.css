@@ -165,6 +165,14 @@
 .hud-label--expanded.hud-label--done { opacity: 1; }
 .hud-label .hud-bar { margin-top: 2px; }
 .hud-label__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-label__issue {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #d97757;
+  color: #fff;
+  font-size: 0.85em;
+}
 .hud-label__meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; white-space: nowrap; }
 .hud-label__tokens { font-variant-numeric: tabular-nums; }
 .hud-label__status { color: var(--hud-muted); margin-left: auto; }

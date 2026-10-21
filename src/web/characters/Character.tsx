@@ -14,6 +14,7 @@ import {
 } from 'three';
 import type { CharacterPreset } from './presets';
 import { HIP_Y, SEATED_HIP_Y, SEATED_SHIN_SCALE } from './dimensions';
+import { CoffeeCup } from './CoffeeCup';
 
 /*
  * Proporzioni (unità mondo, origine ai piedi, faccia verso +z):
@@ -21,6 +22,12 @@ import { HIP_Y, SEATED_HIP_Y, SEATED_SHIN_SCALE } from './dimensions';
  * Seduto: cosce in avanti appoggiate sulla seduta, stinchi verticali allungati fino al pavimento (vedi ./dimensions).
  */
 const HALF_PI = Math.PI / 2;
+/** braccio destro piegato in avanti per reggere la tazza */
+const HOLD_ARM = -0.9;
+/** mano destra con il braccio a HOLD_ARM (spalla 0.27/0.74, mano a -0.28 lungo il braccio): qui il fondo della tazza */
+const CUP_IN_HAND: [number, number, number] = [0.29, 0.515, 0.25];
+/** braccia appoggiate sulle gambe da seduto, senza digitare */
+const REST_ARM = -0.45;
 
 const SHOE_COLOR = '#2b2b2b';
 const EYE_COLOR = '#1c1c1c';
@@ -91,8 +98,23 @@ interface Rig {
   kneeR: Group | null;
 }
 
-/** Personaggio low-poly procedurale (solo primitive three.js), animato via useFrame. */
-export function Character({ preset, walking, seated }: { preset: CharacterPreset; walking: boolean; seated: boolean }): ReactNode {
+/**
+ * Personaggio low-poly procedurale (solo primitive three.js), animato via useFrame.
+ * `holding`: regge la tazza di caffè con la destra; `typing` (default true): da seduto digita, altrimenti si rilassa.
+ */
+export function Character({
+  preset,
+  walking,
+  seated,
+  holding = false,
+  typing = true,
+}: {
+  preset: CharacterPreset;
+  walking: boolean;
+  seated: boolean;
+  holding?: boolean;
+  typing?: boolean;
+}): ReactNode {
   const g = useMemo(() => sharedGeometries(), []);
   const m = useMemo(
     () => ({
@@ -128,9 +150,14 @@ export function Character({ preset, walking, seated }: { preset: CharacterPreset
       bodyY = SEATED_HIP_Y - HIP_Y;
       bodyZ = -0.1;
       lean = 0.08;
-      // digitazione: braccia avanti, micro-oscillazioni sfasate
-      armL = -1.25 + Math.sin(t * 17) * 0.06;
-      armR = -1.25 + Math.sin(t * 19 + 1.3) * 0.06;
+      if (typing) {
+        // digitazione: braccia avanti, micro-oscillazioni sfasate
+        armL = -1.25 + Math.sin(t * 17) * 0.06;
+        armR = -1.25 + Math.sin(t * 19 + 1.3) * 0.06;
+      } else {
+        armL = REST_ARM + Math.sin(t * 2) * 0.03;
+        armR = REST_ARM;
+      }
       breath = Math.sin(t * 2) * 0.01;
     } else if (walking) {
       const s = Math.sin(t * 9);
@@ -147,6 +174,7 @@ export function Character({ preset, walking, seated }: { preset: CharacterPreset
       armL = Math.sin(t * 2) * 0.03;
       armR = -armL;
     }
+    if (holding) armR = HOLD_ARM + Math.sin(t * 2) * 0.02;
 
     r.hipL.rotation.x = damp(r.hipL.rotation.x, hipL);
     r.hipR.rotation.x = damp(r.hipR.rotation.x, hipR);
@@ -201,6 +229,7 @@ export function Character({ preset, walking, seated }: { preset: CharacterPreset
         )}
         {arm(-1)}
         {arm(1)}
+        {holding && <CoffeeCup position={CUP_IN_HAND} />}
         <group ref={(o) => { rig.current.head = o; }} position={[0, 0.9, 0]}>
           <mesh geometry={g.head} material={m.skin} castShadow />
           <mesh geometry={g.eye} material={m.eye} position={[-0.07, -0.01, 0.19]} />

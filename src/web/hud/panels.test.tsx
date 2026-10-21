@@ -17,6 +17,8 @@ const session = (over: Partial<SessionState> = {}): SessionState => ({
   context: { used: 50_000, window: 200_000 },
   tokensUsed: { input: 1000, output: 234, cacheRead: 0, cacheCreation: 0, total: 1234 },
   tokensLeft: 2_500_000,
+  status: 'working',
+  issues: [],
   startedAt: 0,
   updatedAt: 0,
   active: true,

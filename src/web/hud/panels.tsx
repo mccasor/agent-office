@@ -49,6 +49,7 @@ export function SessionPanel({ session }: { session: SessionState | null }) {
       <dl>
         <Row label="Modello">{session.model ?? DASH}</Row>
         <Row label="Effort">{session.effort ?? DASH}</Row>
+        <Row label="Issue">{session.issues.length > 0 ? session.issues.map((n) => `#${n}`).join(' ') : DASH}</Row>
       </dl>
       <div className="hud-context">
         <div className="hud-context__head">

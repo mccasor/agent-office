@@ -1,6 +1,6 @@
 # Agent Office
 
-Ufficio 3D, visto dall'alto, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta, si siedono a un posto libero e mostrano nome, area di lavoro, avanzamento e token.
+Ufficio 3D, visto a 3/4 come uno spaccato, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta con una tazza di caffè fumante, la posano sulla scrivania e mostrano nome, issue, area di lavoro, avanzamento e token. Chi finisce riprende la tazza e aspetta in area relax; quando hanno finito tutti escono insieme. Claude stesso compare come **Claudio Code** nella stanza del boss, con gli stessi comportamenti.
 
 ## Installazione (una volta sola)
 
@@ -53,7 +53,7 @@ Più progetti contemporaneamente: un'istanza per progetto, ciascuna con una `--p
 ### Ufficio vuoto?
 
 - Claude Code non è ancora stato usato in quella cartella, oppure nessuna sessione è attiva negli ultimi 10 minuti.
-- Gli agenti terminati escono dall'ufficio dopo 30 secondi: è normale.
+- Gli agenti terminati aspettano in area relax finché lavora un altro agente (attivo negli ultimi 10 minuti); quando hanno finito tutti escono dopo 30 secondi: è normale.
 
 Le sessioni di Claude Code avviate in una **cartella superiore** (es. `/Library/WebServer/Documents`) che lavorano nel progetto vengono trovate automaticamente. Di conseguenza, monitorando una cartella padre compaiono anche le sessioni attive nelle sue sottocartelle.
 
@@ -73,6 +73,8 @@ L'installazione è idempotente e preserva le altre impostazioni. L'hook non scri
 | Dato | Fonte |
 |---|---|
 | Agenti: nome, tipo, area, stato, token | `~/.claude/projects/<cwd>/<sessione>/subagents/agent-*.jsonl` + `.meta.json` |
+| Issue (es. #14) | numeri citati nella descrizione o nell'ultimo prompt (`#14`, `issue 14`); per Claudio Code, in mancanza, dal branch (`fix/14-...`). Si espone solo il numero |
+| Claudio Code (sessione principale) | transcript della sessione principale + hook `UserPromptSubmit`/`Stop` |
 | Avanzamento % | todo list dell'agente (`TodoWrite`/`TaskCreate`/`TaskUpdate`); barra indeterminata se assente |
 | Modello, effort, contesto, token usati/rimanenti | transcript della sessione principale |
 | Progetto, branch, righe +/- | `git` nella cartella monitorata |

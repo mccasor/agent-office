@@ -17,6 +17,7 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
   model: null,
   tokens: { input: 10_000, output: 2_345, cacheRead: 0, cacheCreation: 0, total: 12_345 },
   progress: { completed: 1, total: 4 },
+  issues: [],
   startedAt: 0,
   updatedAt: 0,
   ...over,

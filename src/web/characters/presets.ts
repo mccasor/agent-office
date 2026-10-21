@@ -26,6 +26,11 @@ export const CHARACTER_PRESETS: readonly CharacterPreset[] = [
   { id: 'otto', skin: '#f0cfae', hair: '#e3c16f', hairStyle: 'short', shirt: '#5e6472', pants: '#283044', accessory: 'headphones' },
 ];
 
+/** Claudio Code, il boss: camicia arancio Claude e cravatta. Fuori dalla rotazione di pickPreset. */
+export const BOSS_PRESET: CharacterPreset = {
+  id: 'claudio', skin: '#f1c9a5', hair: '#5a3d2b', hairStyle: 'short', shirt: '#d97757', pants: '#2b2d42', accessory: 'tie',
+};
+
 /** FNV-1a 32 bit + finalizzatore murmur3 (miglior dispersione su id simili). */
 function hashString(s: string): number {
   let h = 0x811c9dc5;

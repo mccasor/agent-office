@@ -17,6 +17,8 @@ export interface FileSummary {
   /** percorsi toccati da Read/Edit/Write/... (solo per classifyArea, non esposti nello Snapshot) */
   filePaths: string[];
   hasAssistant: boolean;
+  /** numeri di issue dell'ultimo prompt che ne cita (solo i numeri, mai il testo) */
+  issues: number[];
   /**
    * risposta finale dell'agente: 'confirmed' (stop_reason end_turn o structured_output),
    * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
@@ -45,6 +47,31 @@ function parseUsage(u: unknown): Usage4 | null {
   return [num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens)];
 }
 
+const MAX_ISSUES = 3;
+const ISSUE_RE = /(?<![\w&/])(?:#|\bissues?\s+#?)(\d{1,6})\b/gi;
+const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+
+/** Numeri di issue in un testo ("#14", "issue 14"), senza duplicati, nell'ordine di comparsa. */
+export function extractIssues(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.replace(REMINDER_RE, '').matchAll(ISSUE_RE)) {
+    const n = Number(m[1]);
+    if (n > 0 && !out.includes(n)) out.push(n);
+    if (out.length === MAX_ISSUES) break;
+  }
+  return out;
+}
+
+/** Issue citate in un prompt utente (testo scritto, non tool_result né messaggi meta). */
+function promptIssues(row: Json): number[] {
+  if (row.isMeta === true || !isObj(row.message)) return [];
+  const content = row.message.content;
+  if (typeof content === 'string') return extractIssues(content);
+  if (!Array.isArray(content)) return [];
+  const text = content.filter((b): b is Json => isObj(b) && b.type === 'text').map((b) => str(b.text) ?? '').join('\n');
+  return extractIssues(text);
+}
+
 export function createAccumulator(): Accumulator {
   const state: FileSummary = {
     title: null,
@@ -59,6 +86,7 @@ export function createAccumulator(): Accumulator {
     progress: null,
     filePaths: [],
     hasAssistant: false,
+    issues: [],
     finished: false,
   };
   /**
@@ -203,11 +231,14 @@ export function createAccumulator(): Accumulator {
       case 'assistant':
         onAssistant(row);
         break;
-      case 'user':
+      case 'user': {
+        const issues = promptIssues(row);
+        if (issues.length > 0) state.issues = issues;
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) state.finished = false;
         structuredOutputPending = false;
         break;
+      }
       case 'attachment':
         onAttachment(row, at);
         break;

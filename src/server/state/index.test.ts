@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentState, AgentStatus, HookEvent, RepoState, SessionState } from '../../shared/types.js';
-import { buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS } from './index.js';
+import { branchIssue, buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS, LOUNGE_WAIT_MS } from './index.js';
 
 const NOW = 1_000_000;
 const zeroTokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 };
@@ -17,6 +17,7 @@ function agent(over: Partial<AgentState> = {}): AgentState {
     model: null,
     tokens: zeroTokens,
     progress: null,
+    issues: [],
     startedAt: NOW - 20_000,
     updatedAt: NOW - 1_000,
     ...over,
@@ -35,8 +36,14 @@ function session(over: Partial<SessionState> = {}): SessionState {
     startedAt: NOW - 100_000,
     updatedAt: NOW - 1_000,
     active: true,
+    status: 'working',
+    issues: [],
     ...over,
   };
+}
+
+function repo(branch: string): RepoState {
+  return { project: 'p', branch, linesAdded: 0, linesRemoved: 0, filesChanged: 0 };
 }
 
 function hook(event: string, timestamp: number, over: Partial<HookEvent> = {}): HookEvent {
@@ -227,5 +234,61 @@ describe('buildSnapshot: snapshot', () => {
       agents: [],
       generatedAt: NOW,
     });
+  });
+});
+
+describe('buildSnapshot: area relax', () => {
+  const build = (agents: AgentState[]) =>
+    buildSnapshot({ transcript: { sessions: [], agents }, hookEvents: [], repo: null, now: NOW }).agents.map((a) => a.id);
+
+  it('chi ha finito resta (in area relax) finché un altro agente lavora', () => {
+    const old = agent({ id: 'old', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
+    expect(build([old, agent({ id: 'busy' })])).toEqual(['old', 'busy']);
+  });
+
+  it('quando hanno finito tutti escono insieme: restano DONE_LINGER_MS dopo l\'ultimo', () => {
+    const first = agent({ id: 'first', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
+    expect(build([first, agent({ id: 'last', status: 'done', updatedAt: NOW - 1_000 })])).toEqual(['first', 'last']);
+    expect(build([first, agent({ id: 'last', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 })])).toEqual([]);
+  });
+
+  it('un agente fermo da più di LOUNGE_WAIT_MS non trattiene gli altri', () => {
+    const stale = agent({ id: 'stale', status: 'idle', updatedAt: NOW - LOUNGE_WAIT_MS - 1 });
+    const done = agent({ id: 'done', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 });
+    expect(build([stale, done])).toEqual(['stale']);
+  });
+});
+
+describe('buildSnapshot: sessione principale (Claudio Code)', () => {
+  const build = (over: Partial<SessionState>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
+    buildSnapshot({
+      transcript: { sessions: [session(over)], agents: [] },
+      hookEvents,
+      repo: branch === null ? null : repo(branch),
+      now: NOW,
+    }).sessions[0]!;
+
+  it('stato dagli hook senza agentId più recenti del transcript', () => {
+    expect(build({ status: 'done' }, [hook('UserPromptSubmit', NOW - 100, { agentId: null })]).status).toBe('working');
+    expect(build({ status: 'working' }, [hook('Stop', NOW - 100, { agentId: null })]).status).toBe('done');
+    expect(build({ status: 'working' }, [hook('Stop', NOW - 100)]).status).toBe('working');
+    expect(build({ status: 'working', updatedAt: NOW - 50 }, [hook('Stop', NOW - 100, { agentId: null })]).status).toBe('working');
+    expect(build({ status: 'working' }, [hook('SessionEnd', NOW - 100, { agentId: null })]).status).toBe('done');
+  });
+
+  it('issue dal prompt, altrimenti dal branch', () => {
+    expect(build({ issues: [14] }, [], 'fix/21-foo').issues).toEqual([14]);
+    expect(build({ issues: [] }, [], 'fix/21-foo').issues).toEqual([21]);
+    expect(build({ issues: [] }, [], 'main').issues).toEqual([]);
+  });
+
+  it.each([
+    ['fix/21-foo', 21],
+    ['feat/issue-7', 7],
+    ['42-bar', 42],
+    ['feat/arredamento-relax', null],
+    [null, null],
+  ])('branchIssue(%s) = %s', (branch, expected) => {
+    expect(branchIssue(branch)).toBe(expected);
   });
 });

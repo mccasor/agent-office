@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createAccumulator } from './parser.js';
+import { createAccumulator, extractIssues } from './parser.js';
 
 const assistant = (id: string, usage: [number, number, number, number], content: unknown[] = [{ type: 'text', text: 'x' }], extra: Record<string, unknown> = {}) =>
   JSON.stringify({
@@ -168,3 +168,24 @@ describe('createAccumulator', () => {
   });
 });
 
+
+describe('issue citate', () => {
+  it('extractIssues: "#14" e "issue 7", senza duplicati, max 3, ignora colori e system-reminder', () => {
+    expect(extractIssues('lavora su #14 e issue 7, poi #14')).toEqual([14, 7]);
+    expect(extractIssues('#1 #2 #3 #4')).toEqual([1, 2, 3]);
+    expect(extractIssues('colore #2b2b2b, url a/#5, &#39;')).toEqual([]);
+    expect(extractIssues('<system-reminder>#99</system-reminder> fix #3')).toEqual([3]);
+  });
+
+  it("l'ultimo prompt con riferimenti vince; tool_result e messaggi meta non contano", () => {
+    const acc = createAccumulator();
+    acc.ingest(JSON.stringify({ type: 'user', message: { role: 'user', content: 'Risolvi #14' } }));
+    expect(acc.state.issues).toEqual([14]);
+    acc.ingest(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: '#99' }] } }));
+    acc.ingest(JSON.stringify({ type: 'user', isMeta: true, message: { content: '#98' } }));
+    acc.ingest(JSON.stringify({ type: 'user', message: { content: 'continua' } }));
+    expect(acc.state.issues).toEqual([14]);
+    acc.ingest(JSON.stringify({ type: 'user', message: { content: [{ type: 'text', text: 'ora #21 e #20' }] } }));
+    expect(acc.state.issues).toEqual([21, 20]);
+  });
+});
