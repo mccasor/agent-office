@@ -37,6 +37,8 @@ interface TrackedFile {
   reader: LineReader;
   acc: Accumulator;
   mtime: number;
+  /** dimensione all'ultima lettura: il tick la confronta per recuperare eventi persi */
+  size: number;
   /** false finché la prima lettura non è completata: il file non compare nello snapshot */
   loaded: boolean;
   /** serializza le letture dello stesso file */
@@ -222,7 +224,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
 
     let f = files.get(abs);
     if (!f) {
-      f = { parsed: p, reader: createLineReader(abs), acc: createAccumulator(), mtime: 0, loaded: false, queue: Promise.resolve() };
+      f = { parsed: p, reader: createLineReader(abs), acc: createAccumulator(), mtime: 0, size: 0, loaded: false, queue: Promise.resolve() };
       files.set(abs, f);
     }
     const tracked = f;
@@ -231,7 +233,9 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       if (reset) tracked.acc = createAccumulator();
       for (const line of lines) tracked.acc.ingest(line);
       try {
-        tracked.mtime = (await stat(abs)).mtimeMs;
+        const st = await stat(abs);
+        tracked.mtime = st.mtimeMs;
+        tracked.size = st.size;
       } catch {
         // file rimosso nel frattempo
       }
@@ -239,6 +243,21 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       emitIfChanged();
     });
     return tracked.queue;
+  };
+
+  /**
+   * Rete di sicurezza: gli eventi del filesystem possono andare persi (FSEvents/chokidar sotto carico,
+   * file aggiunti al watcher durante la scansione iniziale). Rilegge i file cresciuti dall'ultima lettura.
+   */
+  const resync = async () => {
+    const checks: Promise<unknown>[] = [];
+    for (const [abs, f] of files) {
+      checks.push(stat(abs).then((st) => (st.size !== f.size ? processFile(abs) : undefined), () => {}));
+    }
+    for (const [abs, c] of candidates) {
+      checks.push(stat(abs).then((st) => (st.size > c.offset ? evaluate(abs, false) : undefined), () => {}));
+    }
+    await Promise.all(checks);
   };
 
   const removeFile = (abs: string) => {
@@ -286,7 +305,11 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       if (!running || foreignSessions.has(basename(abs, '.jsonl'))) return;
       try {
         const st = await stat(abs);
-        if (initial && st.mtimeMs < now() - discoveryWindowMs) return;
+        if (initial && st.mtimeMs < now() - discoveryWindowMs) {
+          // sessione vecchia: conta solo se riprende, quindi si valutano soltanto i byte nuovi
+          cand.offset = st.size;
+          return;
+        }
         if (st.size < cand.offset) cand.offset = 0;
       } catch {
         return;
@@ -338,7 +361,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       fsWatcher.on('add', (abs) => void processFile(abs));
       pendingFollow = [];
       lastEmitted = JSON.stringify(compute());
-      timer = setInterval(emitIfChanged, tickMs);
+      timer = setInterval(() => void resync().then(emitIfChanged), tickMs);
       timer.unref();
     },
     async stop() {

@@ -53,8 +53,9 @@ Più progetti contemporaneamente: un'istanza per progetto, ciascuna con una `--p
 ### Ufficio vuoto?
 
 - Claude Code non è ancora stato usato in quella cartella, oppure nessuna sessione è attiva negli ultimi 10 minuti.
-- Claude Code è stato avviato in una **cartella superiore** (es. `/Library/WebServer/Documents`) e poi ha lavorato nel progetto: i transcript stanno sotto la cartella di avvio. Avvia Claude Code direttamente nella cartella del progetto, oppure usa `--cwd` con la cartella di avvio di Claude.
 - Gli agenti terminati escono dall'ufficio dopo 30 secondi: è normale.
+
+Le sessioni di Claude Code avviate in una **cartella superiore** (es. `/Library/WebServer/Documents`) che lavorano nel progetto vengono trovate automaticamente. Di conseguenza, monitorando una cartella padre compaiono anche le sessioni attive nelle sue sottocartelle.
 
 ### Hook (opzionale, consigliato)
 
@@ -90,7 +91,7 @@ L'installazione è idempotente e preserva le altre impostazioni. L'hook non scri
 ## Limiti noti
 
 - Il formato dei transcript di Claude Code non è documentato: verificato su Claude Code 2.1.306; la lettura è isolata in `src/server/transcript`.
-- La finestra di contesto da 1M è riconosciuta dal suffisso `[1m]` o quando l'uso supera 200k.
+- La finestra di contesto da 1M è riconosciuta dal suffisso `[1m]` (model id o attachment "model") o quando l'uso supera 200k: su Claude Code 2.1.306 non esiste un dato affidabile per riconoscerla prima.
 
 ## Architettura
 
