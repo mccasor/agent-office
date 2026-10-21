@@ -63,6 +63,8 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         startedAt: ts('2026-01-01T10:00:00.000Z'),
         updatedAt: T0,
         active: true,
+        status: 'done',
+        issues: [],
       },
     ]);
 
@@ -78,6 +80,7 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         model: 'claude-haiku-4-5',
         tokens: { input: 10, output: 60, cacheRead: 1100, cacheCreation: 160, total: 1330 },
         progress: null,
+        issues: [],
         startedAt: ts('2026-01-01T10:00:03.500Z'),
         updatedAt: T0,
       },
@@ -92,6 +95,7 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         model: 'claude-sonnet-4-5',
         tokens: { input: 9, output: 95, cacheRead: 3050, cacheCreation: 390, total: 3544 },
         progress: { completed: 1, total: 3 },
+        issues: [],
         startedAt: ts('2026-01-01T10:01:00.000Z'),
         updatedAt: T0,
       },

@@ -8,6 +8,10 @@ function grid(rows: string[]): OfficeLayout {
     depth: rows.length,
     door: { x: 0, z: 0 },
     seats: [],
+    islands: [],
+    bossSeat: { id: 'boss', cell: { x: 0, z: 0 }, facing: 0 },
+    bossDoor: { x: 0, z: 0 },
+    lounge: [],
     walkable: rows.map((r) => [...r].map((c) => c !== '#')),
   };
 }

@@ -45,3 +45,29 @@ export function assignSeats(prev: Record<string, string>, agentIds: string[], la
   }
   return out;
 }
+
+/**
+ * agentId -> id del posto tra `spotIds` (es. divani dell'area relax). Stabile come assignSeats; i nuovi prendono
+ * il primo libero nell'ordine dato. Se i posti finiscono si riusano dall'inizio (meglio stretti che in piedi).
+ */
+export function assignSpots(prev: Record<string, string>, agentIds: string[], spotIds: string[]): Record<string, string> {
+  const valid = new Set(spotIds);
+  const out: Record<string, string> = {};
+  const taken = new Set<string>();
+  const ids = [...new Set(agentIds)];
+  for (const id of ids) {
+    const spot = Object.hasOwn(prev, id) ? prev[id] : undefined;
+    if (spot !== undefined && valid.has(spot) && !taken.has(spot)) {
+      out[id] = spot;
+      taken.add(spot);
+    }
+  }
+  const free = spotIds.filter((s) => !taken.has(s));
+  let k = 0;
+  for (const id of ids) {
+    if (id in out || spotIds.length === 0) continue;
+    out[id] = free[k] ?? spotIds[(k - free.length) % spotIds.length]!;
+    k++;
+  }
+  return out;
+}

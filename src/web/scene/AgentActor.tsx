@@ -1,12 +1,16 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
-import type { AgentState } from '../../shared/types';
-import { cellToWorld, type Cell, type OfficeLayout } from './layout';
+import { cellToWorld, type Cell, type OfficeLayout, type Seat } from './layout';
 import { findPath } from './path';
 import { advanceAlongPath, WALK_SPEED } from './motion';
 
-export interface Motion { walking: boolean; seated: boolean }
+export interface Motion {
+  walking: boolean;
+  seated: boolean;
+  /** id del posto raggiunto (scrivania, 'boss' o divano 'lounge-N'); null mentre cammina */
+  seatId: string | null;
+}
 
 type Phase = 'init' | 'walkingIn' | 'seated' | 'walkingOut' | 'gone';
 
@@ -36,34 +40,37 @@ function planFrom(layout: OfficeLayout, pos: Cell, to: Cell): Cell[] {
   return pos.x !== start.x || pos.z !== start.z ? [pos, ...path] : path;
 }
 
-const motionOf = (phase: Phase): Motion => ({ walking: phase === 'walkingIn' || phase === 'walkingOut', seated: phase === 'seated' });
+const motionOf = (phase: Phase, seatId: string | null): Motion => ({
+  walking: phase === 'walkingIn' || phase === 'walkingOut',
+  seated: phase === 'seated',
+  seatId: phase === 'seated' ? seatId : null,
+});
 
 /**
- * Muove i children dalla porta al posto (status entering/working/idle) e verso la porta (done), poi li nasconde.
- * Posizione/rotazione aggiornate in useFrame via ref; stato React solo alle transizioni di fase.
+ * Muove i children dalla porta (o da dove si trovano) al posto `target` e, con target null, verso la porta;
+ * poi li nasconde. Posizione/rotazione aggiornate in useFrame via ref; stato React solo alle transizioni di fase.
  */
 export function AgentActor({
-  agent,
   layout,
-  seatId,
+  target,
   children,
 }: {
-  agent: AgentState;
   layout: OfficeLayout;
-  seatId: string;
+  target: Seat | null;
   children: (motion: Motion) => ReactNode;
 }): ReactNode {
   const group = useRef<Group>(null);
   const sim = useRef<Sim>({ key: null, layout: null, path: [], dist: 0, phase: 'init', pos: layout.door, heading: Math.PI });
   const [phase, setPhase] = useState<Phase>('init');
+  const [seatedAt, setSeatedAt] = useState<string | null>(null);
 
   useFrame((_, delta) => {
     const s = sim.current;
     const g = group.current;
     if (!g) return;
-    const seat = layout.seats.find((x) => x.id === seatId);
-    const leaving = agent.status === 'done' || !seat;
-    const key = leaving ? 'out' : `in:${seatId}`;
+    const seat = target;
+    const leaving = !seat;
+    const key = seat ? `in:${seat.id}` : 'out';
 
     if (s.key !== key || s.layout !== layout) {
       const fresh = s.key === null || s.phase === 'gone';
@@ -83,22 +90,23 @@ export function AgentActor({
     const next: Phase = leaving ? (r.done ? 'gone' : 'walkingOut') : r.done ? 'seated' : 'walkingIn';
     s.pos = { x: r.x, z: r.z };
 
-    const target = next === 'seated' && seat ? seat.facing : r.direction;
-    s.heading = s.phase === 'init' || s.phase === 'gone' ? target : lerpAngle(s.heading, target, 1 - Math.exp(-TURN_SPEED * delta));
+    const aim = next === 'seated' && seat ? seat.facing : r.direction;
+    s.heading = s.phase === 'init' || s.phase === 'gone' ? aim : lerpAngle(s.heading, aim, 1 - Math.exp(-TURN_SPEED * delta));
     const [wx, , wz] = cellToWorld(layout, s.pos);
     g.position.set(wx, 0, wz);
     g.rotation.y = s.heading;
     g.visible = next !== 'gone';
 
-    if (next !== s.phase) {
+    if (next !== s.phase || (next === 'seated' && seat && seat.id !== seatedAt)) {
       s.phase = next;
       setPhase(next);
+      setSeatedAt(seat?.id ?? null);
     }
   });
 
   return (
     <group ref={group} visible={false}>
-      {phase === 'init' || phase === 'gone' ? null : children(motionOf(phase))}
+      {phase === 'init' || phase === 'gone' ? null : children(motionOf(phase, seatedAt))}
     </group>
   );
 }

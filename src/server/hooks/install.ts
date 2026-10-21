@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 /** Eventi registrati (verificati su https://code.claude.com/docs/en/hooks). */
-export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop'] as const;
+export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit'] as const;
 
 /** Eventi con matcher sul nome del tool: "*" = tutti. Per gli altri il matcher omesso significa "tutti". */
 const TOOL_EVENTS = new Set<string>(['PreToolUse', 'PostToolUse']);

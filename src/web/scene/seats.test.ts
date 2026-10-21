@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignSeats, seatsByDoorDistance } from './seats';
+import { assignSeats, assignSpots, seatsByDoorDistance } from './seats';
 import { createLayout } from './layout';
 import { findPath } from './path';
 
@@ -48,5 +48,15 @@ describe('assignSeats', () => {
     const r1 = assignSeats(prev, ['b', 'a'], layout);
     expect(prev).toEqual({ a: 'seat-0' });
     expect(assignSeats(prev, ['b', 'a'], layout)).toEqual(r1);
+  });
+});
+
+describe('assignSpots', () => {
+  it('stabile, primo libero in ordine, riuso dall\'inizio quando finiscono', () => {
+    const a = assignSpots({}, ['x', 'y'], ['s0', 's1']);
+    expect(a).toEqual({ x: 's0', y: 's1' });
+    expect(assignSpots(a, ['y', 'z'], ['s0', 's1'])).toEqual({ y: 's1', z: 's0' });
+    expect(assignSpots({}, ['a', 'b', 'c'], ['s0', 's1'])).toEqual({ a: 's0', b: 's1', c: 's0' });
+    expect(assignSpots({}, ['a'], [])).toEqual({});
   });
 });
