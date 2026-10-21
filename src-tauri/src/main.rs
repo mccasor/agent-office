@@ -314,9 +314,10 @@ fn set_autostart(enabled: bool) {
 /// (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str) {
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
-        if let Ok(url) = format!("http://127.0.0.1:{PORT}/?view={view}").parse() {
-            let _ = window.navigate(url);
-        }
+        // cambio di vista senza ricaricare: la scena resta com'è (posizioni, post-it); ricarica solo se serve
+        let _ = window.eval(format!(
+            "window.agentOfficeSetView ? window.agentOfficeSetView('{view}') : location.assign('http://127.0.0.1:{PORT}/?view={view}')"
+        ));
         let _ = window.show();
         let _ = window.set_focus();
         return;

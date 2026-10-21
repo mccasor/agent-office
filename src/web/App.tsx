@@ -34,6 +34,13 @@ export function App() {
   const onCard = useCallback((id: string, place: CardPlace) => setView((v) => ({ ...v, board: moveCard(v.board, id, place) })), []);
 
   useEffect(() => connectSnapshotStream(), []);
+  // finestra nascosta (app della menu bar) o scheda in background: niente frame da disegnare
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState !== 'hidden');
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
 
   const { layout } = model;
   const span = Math.max(layout.width, layout.depth);
@@ -43,9 +50,11 @@ export function App() {
       {/* vista a 3/4 dall'angolo sud-est, come uno spaccato isometrico: pareti di fondo nord e ovest */}
       <Canvas
         shadows
+        // su schermi retina il pieno dpr quadruplica i pixel da disegnare senza un guadagno visibile
+        dpr={[1, 1.5]}
         camera={{ position: [span * 0.56, span * 0.66, span * 0.72], fov: 38 }}
         // in vista lista la scena resta montata (posizioni e post-it intatti) ma non viene disegnata
-        frameloop={viewMode === 'office' ? 'always' : 'never'}
+        frameloop={viewMode === 'office' && pageVisible ? 'always' : 'never'}
         style={{ display: viewMode === 'office' ? 'block' : 'none' }}
       >
         <color attach="background" args={['#eceef1']} />

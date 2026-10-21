@@ -55,3 +55,24 @@ export function findPath(layout: OfficeLayout, from: Cell, to: Cell): Cell[] {
   }
   return out.reverse();
 }
+
+/**
+ * Path da una posizione anche frazionaria (a metà di un segmento tra due celle) a `to`: parte dalla più
+ * conveniente delle due celle vicine, così chi cambia meta a metà strada non fa un passo indietro. [] se irraggiungibile.
+ */
+export function planFrom(layout: OfficeLayout, pos: Cell, to: Cell): Cell[] {
+  const lo = { x: Math.floor(pos.x), z: Math.floor(pos.z) };
+  const hi = { x: Math.ceil(pos.x), z: Math.ceil(pos.z) };
+  let best: Cell[] = [];
+  let bestLen = Infinity;
+  for (const start of lo.x === hi.x && lo.z === hi.z ? [lo] : [lo, hi]) {
+    const path = findPath(layout, start, to);
+    if (path.length === 0) continue;
+    const offset = Math.hypot(pos.x - start.x, pos.z - start.z);
+    if (offset + path.length - 1 < bestLen) {
+      bestLen = offset + path.length - 1;
+      best = offset > 0 ? [pos, ...path] : path;
+    }
+  }
+  return best;
+}

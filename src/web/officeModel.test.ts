@@ -32,6 +32,13 @@ describe('officeModel', () => {
     expect(new Set(Object.values(b.seats)).size).toBe(3);
   });
 
+  it('riusa lo stesso layout finché la capienza non cambia (niente ricostruzioni della scena)', () => {
+    const a = officeModel(snap([agent('a')]), EMPTY);
+    expect(officeModel(snap([agent('a'), agent('b')]), a).layout).toBe(a.layout);
+    const many = officeModel(snap(Array.from({ length: 20 }, (_, i) => agent(`a${i}`))), a);
+    expect(many.layout).not.toBe(a.layout);
+  });
+
   it('l\'ufficio non si restringe quando gli agenti escono (niente rimescolamento dei posti)', () => {
     const many = officeModel(snap(Array.from({ length: 20 }, (_, i) => agent(`a${i}`))), EMPTY);
     const few = officeModel(snap([agent('a19')]), many);
