@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
@@ -256,6 +256,18 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
     for (const [abs, c] of candidates) {
       checks.push(stat(abs).then((st) => (st.size > c.offset ? evaluate(abs, false) : undefined), () => {}));
+    }
+    // transcript di altre cartelle mai segnalati dal watcher di discovery
+    const dirs = await readdir(projectsRoot).catch(() => [] as string[]);
+    for (const dir of dirs) {
+      if (dir === basename(projectDir)) continue;
+      const names = await readdir(join(projectsRoot, dir)).catch(() => [] as string[]);
+      for (const name of names) {
+        const abs = join(projectsRoot, dir, name);
+        if (isCandidate(abs) && !candidates.has(abs) && !foreignSessions.has(basename(name, '.jsonl'))) {
+          checks.push(evaluate(abs, true));
+        }
+      }
     }
     await Promise.all(checks);
   };
