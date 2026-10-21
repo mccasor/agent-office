@@ -2,25 +2,59 @@
 
 Ufficio 3D, visto dall'alto, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta, si siedono a un posto libero e mostrano nome, area di lavoro, avanzamento e token.
 
-## Installazione
+## Installazione (una volta sola)
+
+Requisiti: Node ≥ 22, git.
 
 ```bash
 git clone git@github.com:mccasor/agent-office.git
 cd agent-office
-npm install && npm run build
-npm link            # rende disponibili i comandi agent-office e agent-office-hook
+npm install
+npm run build       # obbligatorio: crea dist/ (server, hook e pagina web)
+npm link            # opzionale: comandi globali agent-office e agent-office-hook
 ```
 
-## Uso
+Dopo ogni `git pull` rilancia `npm install && npm run build`.
 
-Avvialo dalla stessa cartella in cui lavora Claude Code:
+## Avvio
+
+Agent Office mostra gli agenti di Claude Code della **cartella da cui viene avviato** (o di quella indicata con `--cwd`). Avvialo in un secondo terminale, accanto a Claude Code, nella stessa cartella del progetto.
+
+### In generale (con `npm link`)
 
 ```bash
-cd /Library/WebServer/Documents/olimpo-ui
-agent-office                 # apre http://127.0.0.1:4317
-agent-office --port 5000 --no-open
-agent-office --cwd /altro/progetto
+cd /percorso/del/progetto         # es. /Library/WebServer/Documents/olimpo-ui
+agent-office                      # avvia il server e apre il browser su http://127.0.0.1:4317
 ```
+
+### Senza `npm link`
+
+```bash
+node /Library/WebServer/Documents/agent-office/bin/agent-office.mjs --cwd /percorso/del/progetto
+```
+
+### Sulla cartella agent-office stessa
+
+```bash
+cd /Library/WebServer/Documents/agent-office
+node bin/agent-office.mjs         # oppure: agent-office (se hai fatto npm link)
+```
+
+### Opzioni
+
+| Opzione | Effetto | Default |
+|---|---|---|
+| `--cwd DIR` | cartella da monitorare | cartella corrente |
+| `--port N` | porta del server (`0` = porta libera casuale) | `4317` |
+| `--no-open` | non apre il browser | apre il browser |
+
+Più progetti contemporaneamente: un'istanza per progetto, ciascuna con una `--port` diversa. Si arresta con `Ctrl+C`.
+
+### Ufficio vuoto?
+
+- Claude Code non è ancora stato usato in quella cartella, oppure nessuna sessione è attiva negli ultimi 10 minuti.
+- Claude Code è stato avviato in una **cartella superiore** (es. `/Library/WebServer/Documents`) e poi ha lavorato nel progetto: i transcript stanno sotto la cartella di avvio. Avvia Claude Code direttamente nella cartella del progetto, oppure usa `--cwd` con la cartella di avvio di Claude.
+- Gli agenti terminati escono dall'ufficio dopo 30 secondi: è normale.
 
 ### Hook (opzionale, consigliato)
 
