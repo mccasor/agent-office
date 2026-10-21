@@ -2,6 +2,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import * as THREE from 'three';
 import type { WorkArea } from '../../shared/types';
 import { BOARD_COLUMNS, cellToWorld, type BoardColumn, type OfficeLayout } from './layout';
+import { clay, rbox } from './clay';
 
 /** Dove sta il post-it di un task: su una board, oppure in mano all'agente che lo sta spostando. */
 export type CardPlace = BoardColumn | 'carry';
@@ -41,10 +42,34 @@ const NOTE_ROWS = 3;
 export const NOTES_PER_BOARD = NOTE_COLS * NOTE_ROWS;
 
 const WALL_FACE = 0.17;
-const box = new THREE.BoxGeometry(1, 1, 1);
+/** cornice e pannello con spigoli arrotondati (stile clay, come il resto della scena) */
+const frameGeometry = rbox(BOARD_W + 0.08, BOARD_H + 0.08, 0.03, 0.014, 3);
+const corkGeometry = rbox(BOARD_W, BOARD_H, 0.01, 0.0045, 2);
 const plane = new THREE.PlaneGeometry(1, 1);
-const frame = new THREE.MeshStandardMaterial({ color: '#232325', roughness: 0.6 });
-const cork = new THREE.MeshStandardMaterial({ color: '#f7f7f4', roughness: 0.9 });
+const frame = clay('#2e2c31');
+const cork = clay('#f7f4ee', { roughness: 1 });
+/** gonfiore al centro del post-it (unità mondo): i bordi restano a filo della board */
+const NOTE_PUFF = 0.012;
+
+/** Post-it "imbottito": piano suddiviso con il centro gonfio, normali lisce. Lato unitario, da scalare in x/y. */
+const pillow = (() => {
+  const g = new THREE.PlaneGeometry(1, 1, 10, 10);
+  const pos = g.attributes.position!;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i) * 2;
+    const y = pos.getY(i) * 2;
+    pos.setZ(i, NOTE_PUFF * (1 - x ** 4) * (1 - y ** 4));
+  }
+  g.computeVertexNormals();
+  return g;
+})();
+
+/** Rettangolo dagli angoli tondi su tutto il canvas, usato come ritaglio (alphaTest) per post-it e intestazioni. */
+function roundedClip(ctx: CanvasRenderingContext2D, w: number, h: number, r: number): void {
+  ctx.beginPath();
+  ctx.roundRect(0, 0, w, h, r);
+  ctx.clip();
+}
 
 function canvasTexture(w: number, h: number, draw: (ctx: CanvasRenderingContext2D) => void): THREE.CanvasTexture | null {
   if (typeof document === 'undefined') return null;
@@ -85,6 +110,7 @@ export function PostIt({ card, size = NOTE_SIZE }: { card: Pick<TaskCard, 'title
   const issues = card.issues.join(' ');
   const material = useMemo(() => {
     const map = canvasTexture(128, 128, (ctx) => {
+      roundedClip(ctx, 128, 128, 12);
       ctx.fillStyle = NOTE_COLOR[area];
       ctx.fillRect(0, 0, 128, 128);
       ctx.fillStyle = 'rgba(0,0,0,0.08)';
@@ -102,18 +128,19 @@ export function PostIt({ card, size = NOTE_SIZE }: { card: Pick<TaskCard, 'title
         y += 20;
       }
     });
-    return new THREE.MeshStandardMaterial({ color: map ? '#ffffff' : NOTE_COLOR[area], map, roughness: 0.9 });
+    return clay(map ? '#ffffff' : NOTE_COLOR[area], { map, alphaTest: 0.5 });
   }, [title, issues, area]);
   useEffect(() => () => {
     material.map?.dispose();
     material.dispose();
   }, [material]);
-  return <mesh geometry={plane} material={material} scale={[size, size, 1]} castShadow />;
+  return <mesh geometry={pillow} material={material} scale={[size, size, 1]} castShadow />;
 }
 
 function BoardHeader({ column }: { column: BoardColumn }): ReactNode {
   const material = useMemo(() => {
     const map = canvasTexture(256, 32, (ctx) => {
+      roundedClip(ctx, 256, 32, 6);
       ctx.fillStyle = BOARD_ACCENT[column];
       ctx.fillRect(0, 0, 256, 32);
       ctx.fillStyle = '#ffffff';
@@ -121,7 +148,7 @@ function BoardHeader({ column }: { column: BoardColumn }): ReactNode {
       ctx.textAlign = 'center';
       ctx.fillText(BOARD_TITLE[column], 128, 23);
     });
-    return new THREE.MeshStandardMaterial({ color: map ? '#ffffff' : BOARD_ACCENT[column], map, roughness: 0.8 });
+    return clay(map ? '#ffffff' : BOARD_ACCENT[column], { map, alphaTest: 0.5 });
   }, [column]);
   return <mesh geometry={plane} material={material} scale={[BOARD_W, HEADER_H, 1]} />;
 }
@@ -136,8 +163,8 @@ export function TaskBoards({ layout, cards }: { layout: OfficeLayout; cards: Tas
         const notes = cards.filter((c) => c.place === column).slice(-NOTES_PER_BOARD);
         return (
           <group key={column} position={[x, BOARD_Y, zWall + WALL_FACE]}>
-            <mesh geometry={box} material={frame} position={[0, BOARD_H / 2, 0.01]} scale={[BOARD_W + 0.08, BOARD_H + 0.08, 0.03]} castShadow />
-            <mesh geometry={box} material={cork} position={[0, BOARD_H / 2, 0.025]} scale={[BOARD_W, BOARD_H, 0.01]} />
+            <mesh geometry={frameGeometry} material={frame} position={[0, BOARD_H / 2, 0.01]} castShadow />
+            <mesh geometry={corkGeometry} material={cork} position={[0, BOARD_H / 2, 0.025]} receiveShadow />
             <group position={[0, BOARD_H - HEADER_H / 2, 0.032]}>
               <BoardHeader column={column} />
             </group>

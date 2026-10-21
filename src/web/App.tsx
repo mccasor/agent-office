@@ -43,7 +43,7 @@ export function App() {
       {/* vista a 3/4 dall'angolo sud-est, come uno spaccato isometrico: pareti di fondo nord e ovest */}
       <Canvas
         shadows
-        camera={{ position: [span * 0.5, span * 0.58, span * 0.64], fov: 38 }}
+        camera={{ position: [span * 0.56, span * 0.66, span * 0.72], fov: 38 }}
         // in vista lista la scena resta montata (posizioni e post-it intatti) ma non viene disegnata
         frameloop={viewMode === 'office' ? 'always' : 'never'}
         style={{ display: viewMode === 'office' ? 'block' : 'none' }}
