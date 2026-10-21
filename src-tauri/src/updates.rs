@@ -4,7 +4,7 @@
 
 use std::fs::OpenOptions;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 
 use serde_json::Value;
 
@@ -49,6 +49,8 @@ pub enum UpdateState {
     Available { latest: String, behind: usize },
     Upgrading,
     Failed,
+    /// brew non è riuscito ad aggiornare (dettagli nel log)
+    UpgradeFailed,
 }
 
 /// Badge accanto alla voce: blu con freccia, rosso con "!" oltre OUTDATED_AFTER versioni.
@@ -86,6 +88,7 @@ impl UpdateState {
             UpdateState::Available { latest, .. } => format!("Aggiorna alla versione {latest}"),
             UpdateState::Upgrading => "Aggiornamento in corso…".into(),
             UpdateState::Failed => "Aggiornamenti: ricerca non riuscita, riprova".into(),
+            UpdateState::UpgradeFailed => "Aggiornamento non riuscito (~/.agent-office/upgrade.log), riprova".into(),
         }
     }
 
@@ -125,10 +128,10 @@ fn brew() -> Option<PathBuf> {
 }
 
 /// Come è partito l'aggiornamento.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Debug)]
 pub enum Upgrade {
     /// brew in corso: chiuderà l'app, la sostituirà e la riaprirà
-    Brew,
+    Brew(Child),
     /// app non installata da Homebrew: aperta la pagina della release
     Page,
     Failed,
@@ -171,7 +174,7 @@ pub fn upgrade() -> Upgrade {
         .stdout(out)
         .stderr(err)
         .spawn()
-        .map_or(Upgrade::Failed, |_| Upgrade::Brew)
+        .map_or(Upgrade::Failed, Upgrade::Brew)
 }
 
 #[cfg(test)]

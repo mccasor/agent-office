@@ -39,7 +39,9 @@ console.log(`\n${dmg}\nsha256 ${sha256}\ncask: ${join(outDir, 'agent-office.rb')
 
 if (publish) {
   const tag = `v${version}`;
-  run('gh', ['release', 'create', tag, dmg, '--repo', TAP, '--title', `Agent Office ${version}`, '--notes', `App per la menu bar, versione ${version}.`]);
+  // release in bozza (invisibile all'app) finché il cask non è pubblicato: l'app non propone mai una versione
+  // che brew non trova ancora
+  run('gh', ['release', 'create', tag, dmg, '--repo', TAP, '--draft', '--title', `Agent Office ${version}`, '--notes', `App per la menu bar, versione ${version}.`]);
   const tap = mkdtempSync(join(tmpdir(), 'agent-office-tap-'));
   try {
     run('gh', ['repo', 'clone', TAP, tap]);
@@ -51,5 +53,6 @@ if (publish) {
   } finally {
     rmSync(tap, { recursive: true, force: true });
   }
+  run('gh', ['release', 'edit', tag, '--repo', TAP, '--draft=false', '--latest']);
   console.log(`\nPubblicata ${tag}: brew install --cask mccasor/agent-office/agent-office`);
 }
