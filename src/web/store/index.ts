@@ -24,7 +24,10 @@ function loadPrefs(): Pick<OfficeStoreState, 'view' | 'hiddenSessions'> {
     const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
     const p = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const hidden = Array.isArray(p.hiddenSessions) ? p.hiddenSessions.filter((x): x is string => typeof x === 'string') : [];
-    return { view: p.view === 'list' ? 'list' : 'office', hiddenSessions: hidden };
+    // ?view=list|office (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
+    const asked = new URLSearchParams(globalThis.location?.search ?? '').get('view');
+    const view = asked === 'list' || asked === 'office' ? asked : p.view === 'list' ? 'list' : 'office';
+    return { view, hiddenSessions: hidden };
   } catch {
     return { view: 'office', hiddenSessions: [] };
   }

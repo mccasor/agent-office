@@ -19,12 +19,14 @@
   </main>
   <script>
     // Il server locale parte insieme all'app: appena risponde si apre l'ufficio.
-    const url = 'http://127.0.0.1:' + (new URLSearchParams(location.search).get('port') || '4318');
+    const params = new URLSearchParams(location.search);
+    const url = 'http://127.0.0.1:' + (params.get('port') || '4318');
+    const view = params.get('view') === 'list' ? 'list' : 'office';
     let tries = 0;
     async function check() {
       try {
         await fetch(url + '/api/status', { mode: 'no-cors', cache: 'no-store' });
-        location.replace(url);
+        location.replace(url + '/?view=' + view);
       } catch {
         if (++tries === 20) document.getElementById('msg').textContent = 'Il server non risponde: serve Node ≥ 22 installato.';
         setTimeout(check, 500);
