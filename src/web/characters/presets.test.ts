@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTER_PRESETS, pickPreset } from './presets';
+import { BOSS_PRESET, CHARACTER_PRESETS, pickPreset } from './presets';
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -16,7 +16,14 @@ describe('CHARACTER_PRESETS', () => {
   it('usa colori hex validi', () => {
     for (const p of CHARACTER_PRESETS) {
       for (const c of [p.skin, p.hair, p.shirt, p.pants]) expect(c).toMatch(HEX);
+      if (p.beard !== null) expect(p.beard).toMatch(HEX);
     }
+  });
+
+  it('alterna personaggi con e senza barba', () => {
+    const bearded = CHARACTER_PRESETS.filter((p) => p.beard !== null).length;
+    expect(bearded).toBeGreaterThan(0);
+    expect(bearded).toBeLessThan(CHARACTER_PRESETS.length);
   });
 
   it('copre tutti gli stili di capelli e accessori', () => {
@@ -59,5 +66,13 @@ describe('pickPreset', () => {
   it('id simili producono preset diversi', () => {
     const ids = ['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e'];
     expect(new Set(ids.map((id) => pickPreset(id).id)).size).toBeGreaterThan(1);
+  });
+});
+
+describe('BOSS_PRESET', () => {
+  it('è Claudio Code con camicia arancio Claude e cravatta, fuori dalla rotazione', () => {
+    expect(BOSS_PRESET.shirt).toBe('#d97757');
+    expect(BOSS_PRESET.accessory).toBe('tie');
+    expect(CHARACTER_PRESETS).not.toContain(BOSS_PRESET);
   });
 });
