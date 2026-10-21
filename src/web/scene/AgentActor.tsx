@@ -11,7 +11,7 @@ export interface Motion {
   seated: boolean;
   /** davanti a una board mentre stacca o attacca il post-it */
   reaching: boolean;
-  /** id del posto raggiunto (scrivania 'seat-N', 'boss' o 'lounge-N'); null altrimenti */
+  /** id del posto raggiunto (scrivania 'seat-x-z', 'boss', 'lounge-N' a sedere, 'stand-N' in piedi); null altrimenti */
   seatId: string | null;
 }
 
@@ -32,7 +32,10 @@ export function cardSteps(place: CardPlace | null, toDesk: boolean): CardStep[] 
 
 const isDesk = (seat: Seat | null): boolean => seat?.id.startsWith('seat-') ?? false;
 
-type Phase = 'init' | 'walking' | 'board' | 'seated' | 'gone';
+type Phase = 'init' | 'walking' | 'board' | 'seated' | 'standing' | 'gone';
+
+/** posti in piedi dell'area relax: si arriva e si resta lì col caffè, senza sedersi */
+const isStanding = (seat: Seat): boolean => seat.id.startsWith('stand-');
 
 interface Leg { to: Cell; step: CardStep | null }
 
@@ -73,7 +76,7 @@ const motionOf = (phase: Phase, seatId: string | null): Motion => ({
   walking: phase === 'walking',
   seated: phase === 'seated',
   reaching: phase === 'board',
-  seatId: phase === 'seated' ? seatId : null,
+  seatId: phase === 'seated' || phase === 'standing' ? seatId : null,
 });
 
 /**
@@ -163,7 +166,7 @@ export function AgentActor({
         s.wait = BOARD_PAUSE;
         next = 'board';
       } else if (seat) {
-        next = 'seated';
+        next = isStanding(seat) ? 'standing' : 'seated';
         aim = seat.facing;
       } else {
         next = 'gone';
@@ -176,7 +179,7 @@ export function AgentActor({
     g.rotation.y = s.heading;
     g.visible = next !== 'gone';
 
-    if (next !== s.phase || (next === 'seated' && seat && seat.id !== seatedAt)) {
+    if (next !== s.phase || ((next === 'seated' || next === 'standing') && seat && seat.id !== seatedAt)) {
       s.phase = next;
       setPhase(next);
       setSeatedAt(seat?.id ?? null);

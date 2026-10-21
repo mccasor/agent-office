@@ -62,4 +62,14 @@ describe('officeModel', () => {
     expect(officeModel(snap([], [s('done')]), EMPTY).targets.boss).toBeNull();
     expect(officeModel(snap([], [{ ...s('working'), active: false }]), EMPTY).boss).toBeNull();
   });
+
+  it('area relax piena: nessuno si siede sopra un altro; chi non trova posto in piedi esce', () => {
+    const working = agent('w');
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...agent(`d${i}`), status: 'done' as const }));
+    const m = officeModel(snap([working, ...many]), EMPTY);
+    const spots = many.map((a) => m.targets[a.id]?.id).filter((id): id is string => id !== undefined);
+    expect(new Set(spots).size).toBe(spots.length);
+    expect(spots.some((id) => id.startsWith('stand-'))).toBe(true);
+    expect(many.some((a) => m.targets[a.id] === null)).toBe(true);
+  });
 });

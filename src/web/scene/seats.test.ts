@@ -31,8 +31,9 @@ describe('assignSeats', () => {
   });
 
   it('ignora posti precedenti non più esistenti o duplicati', () => {
-    const r = assignSeats({ a: 'nope', b: 'seat-0', c: 'seat-0' }, ['a', 'b', 'c'], layout);
-    expect(r.b).toBe('seat-0');
+    const first = layout.seats[0]!.id;
+    const r = assignSeats({ a: 'nope', b: first, c: first }, ['a', 'b', 'c'], layout);
+    expect(r.b).toBe(first);
     expect(new Set(Object.values(r)).size).toBe(3);
     expect(layout.seats.some((s) => s.id === r.a)).toBe(true);
   });
@@ -52,11 +53,11 @@ describe('assignSeats', () => {
 });
 
 describe('assignSpots', () => {
-  it('stabile, primo libero in ordine, riuso dall\'inizio quando finiscono', () => {
+  it('stabile, primo libero in ordine; finiti i posti gli ultimi restano senza (mai due sullo stesso)', () => {
     const a = assignSpots({}, ['x', 'y'], ['s0', 's1']);
     expect(a).toEqual({ x: 's0', y: 's1' });
     expect(assignSpots(a, ['y', 'z'], ['s0', 's1'])).toEqual({ y: 's1', z: 's0' });
-    expect(assignSpots({}, ['a', 'b', 'c'], ['s0', 's1'])).toEqual({ a: 's0', b: 's1', c: 's0' });
+    expect(assignSpots({}, ['a', 'b', 'c'], ['s0', 's1'])).toEqual({ a: 's0', b: 's1' });
     expect(assignSpots({}, ['a'], [])).toEqual({});
   });
 });

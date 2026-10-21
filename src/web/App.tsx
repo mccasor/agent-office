@@ -94,7 +94,7 @@ function Actor({ agent, preset, target, layout, card = null, onCard }: {
   return (
     <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move}>
       {(motion) => {
-        const atDesk = motion.seated && motion.seatId !== null && !motion.seatId.startsWith('lounge-');
+        const atDesk = motion.seated && (motion.seatId === 'boss' || (motion.seatId?.startsWith('seat-') ?? false));
         return (
           <>
             <Character

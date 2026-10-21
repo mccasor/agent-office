@@ -164,6 +164,17 @@ export function Office({ layout }: { layout: OfficeLayout }): ReactNode {
         </group>
       ))}
 
+      {/* divisori bassi tra blocchi di scrivanie (compaiono quando l'ufficio raddoppia) */}
+      {layout.dividers.map((dv) => {
+        const [, , za] = at(dv.x, dv.z0 - 0.5);
+        const [xd, , zb] = at(dv.x, dv.z1 + 0.5);
+        return (
+          <group key={dv.x} position={[xd, 0, (za + zb) / 2]}>
+            <SlatScreen length={zb - za} height={0.8} />
+          </group>
+        );
+      })}
+
       <BossOffice layout={layout} />
       <Lounge layout={layout} />
 
@@ -414,21 +425,12 @@ function Lounge({ layout }: { layout: OfficeLayout }): ReactNode {
   const at = (x: number, z: number) => cellToWorld(layout, { x, z });
   const [sx, , sz0] = at(plan.screenX, 0.5);
   const [, , sz1] = at(plan.screenX, plan.screenZ1 + 0.5);
-  const screenLen = sz1 - sz0;
-  const slats = Math.round(screenLen / 0.14);
   const barMid = at((plan.bar[0]!.x + plan.bar[1]!.x) / 2, 1);
   return (
     <group>
       {/* separè: fioriera bassa e doghe verticali */}
       <group position={[sx, 0, (sz0 + sz1) / 2]}>
-        <mesh geometry={G.box} material={M.black} position={[0, 0.2, 0]} scale={[0.4, 0.4, screenLen]} castShadow receiveShadow />
-        {Array.from({ length: Math.round(screenLen * 2) }, (_, i) => (
-          <mesh key={`b${i}`} geometry={G.leaf} material={i % 2 ? M.leaf : M.leafLight} position={[0, 0.45, -screenLen / 2 + (i + 0.5) / 2]} scale={[0.5, 0.35, 0.5]} castShadow />
-        ))}
-        {Array.from({ length: slats }, (_, i) => (
-          <mesh key={i} geometry={G.box} material={M.oak} position={[0, 1.05, -screenLen / 2 + (i + 0.5) * (screenLen / slats)]} scale={[0.06, 1.3, 0.06]} castShadow />
-        ))}
-        <mesh geometry={G.box} material={M.oak} position={[0, 1.72, 0]} scale={[0.1, 0.04, screenLen]} />
+        <SlatScreen length={sz1 - sz0} />
       </group>
 
       {plan.nooks.map(({ z0 }) => {
@@ -488,6 +490,23 @@ function Lounge({ layout }: { layout: OfficeLayout }): ReactNode {
         <mesh geometry={G.cyl} material={M.black} position={[0.3, 0.75, 0.3]} scale={[0.03, 1.5, 0.03]} />
         <mesh geometry={G.cyl} material={M.lampLight} position={[0.3, 1.55, 0.3]} scale={[0.3, 0.22, 0.3]} />
       </group>
+    </group>
+  );
+}
+
+/** Paravento lungo l'asse z locale: fioriera nera con verde alla base e doghe verticali in rovere. */
+function SlatScreen({ length, height = 1.3 }: { length: number; height?: number }): ReactNode {
+  const slats = Math.round(length / 0.14);
+  return (
+    <group>
+      <mesh geometry={G.box} material={M.black} position={[0, 0.2, 0]} scale={[0.4, 0.4, length]} castShadow receiveShadow />
+      {Array.from({ length: Math.round(length * 2) }, (_, i) => (
+        <mesh key={`b${i}`} geometry={G.leaf} material={i % 2 ? M.leaf : M.leafLight} position={[0, 0.45, -length / 2 + (i + 0.5) / 2]} scale={[0.5, 0.35, 0.5]} castShadow />
+      ))}
+      {Array.from({ length: slats }, (_, i) => (
+        <mesh key={i} geometry={G.box} material={M.oak} position={[0, 0.4 + height / 2, -length / 2 + (i + 0.5) * (length / slats)]} scale={[0.06, height, 0.06]} castShadow />
+      ))}
+      <mesh geometry={G.box} material={M.oak} position={[0, 0.42 + height, 0]} scale={[0.1, 0.04, length]} />
     </group>
   );
 }

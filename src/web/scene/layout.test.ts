@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BOARD_COLUMNS, createLayout, deskCells, plantCells, cellKey, loungePlan } from './layout';
+import { BOARD_COLUMNS, createLayout, deskCapacity, deskCells, plantCells, cellKey, loungePlan } from './layout';
 import { findPath } from './path';
 
 const sizes = [0, 1, 4, 8, 9, 13, 24, 40];
@@ -117,9 +117,10 @@ describe('stanza del boss e area relax', () => {
       const l = createLayout(n);
       const plan = loungePlan(l);
       expect(plan.nooks.length).toBeGreaterThanOrEqual(2);
-      expect(l.lounge.length).toBe(plan.nooks.length * 4);
+      const sitting = l.lounge.filter((s) => s.id.startsWith('lounge-'));
+      expect(sitting.length).toBe(plan.nooks.length * 4);
       expect(new Set(l.lounge.map((s) => cellKey(s.cell))).size).toBe(l.lounge.length);
-      for (const s of l.lounge) {
+      for (const s of sitting) {
         expect(s.cell.x + Math.round(Math.sin(s.facing))).toBe(plan.tableX);
         expect(l.walkable[s.cell.z]![plan.tableX]).toBe(false);
       }
@@ -145,6 +146,47 @@ describe('board dei task', () => {
         expect(b.facing).toBe(Math.PI);
         expect(findPath(l, l.door, b.cell).length).toBeGreaterThan(0);
         for (const s of l.seats) expect(findPath(l, b.cell, s.cell).length).toBeGreaterThan(0);
+      }
+    }
+  });
+});
+
+describe('capienza', () => {
+  it('le scrivanie raddoppiano quando gli agenti superano i posti: 8, 16, 32, 64', () => {
+    expect([0, 8, 9, 16, 17, 33].map(deskCapacity)).toEqual([8, 8, 16, 16, 32, 64]);
+    for (const n of [8, 9, 17, 33]) expect(createLayout(n).seats.length).toBeGreaterThanOrEqual(deskCapacity(n));
+  });
+
+  it('la stanza si allarga e tra blocchi affiancati c\'è un divisorio non attraversabile, aperto a nord e verso l\'ingresso', () => {
+    const small = createLayout(8);
+    const big = createLayout(16);
+    expect(small.dividers).toEqual([]);
+    expect(big.width).toBeGreaterThan(small.width);
+    expect(big.dividers.length).toBe(1);
+    const d = big.dividers[0]!;
+    for (let z = d.z0; z <= d.z1; z++) expect(big.walkable[z]![d.x]).toBe(false);
+    expect(big.walkable[d.z0 - 1]![d.x]).toBe(true);
+    expect(big.walkable[d.z1 + 1]![d.x]).toBe(true);
+    for (const s of big.seats) expect(findPath(big, big.door, s.cell).length).toBeGreaterThan(0);
+  });
+
+  it('crescendo, i posti esistenti mantengono id e posizione (chi è seduto non si sposta)', () => {
+    for (const [a, b] of [[8, 16], [16, 32], [32, 64]] as const) {
+      const before = new Map(createLayout(a).seats.map((s) => [s.id, s.cell]));
+      const after = new Map(createLayout(b).seats.map((s) => [s.id, s.cell]));
+      for (const [id, cell] of before) expect(after.get(id)).toEqual(cell);
+    }
+  });
+
+  it('area relax: dopo i posti a sedere ci sono posti in piedi, raggiungibili e distinti', () => {
+    for (const n of sizes) {
+      const l = createLayout(n);
+      const standing = l.lounge.filter((s) => s.id.startsWith('stand-'));
+      expect(standing.length).toBeGreaterThan(0);
+      expect(l.lounge.findIndex((s) => s.id.startsWith('stand-'))).toBe(l.lounge.length - standing.length);
+      for (const s of standing) {
+        expect(l.walkable[s.cell.z]![s.cell.x]).toBe(true);
+        expect(findPath(l, l.door, s.cell).length).toBeGreaterThan(0);
       }
     }
   });

@@ -1,6 +1,6 @@
 export type { Cell, Seat, OfficeLayout, Desk } from './layout';
 export type { BoardColumn, LoungePlan } from './layout';
-export { createLayout, deskCells, plantCells, loungePlan, BOARD_COLUMNS, BOSS_W, LOUNGE_W, cellToWorld, cellKey, MIN_SEATS } from './layout';
+export { createLayout, deskCapacity, deskCells, plantCells, loungePlan, BOARD_COLUMNS, BOSS_W, LOUNGE_W, cellToWorld, cellKey, MIN_SEATS } from './layout';
 export { findPath, isWalkable } from './path';
 export { assignSeats, assignSpots, seatsByDoorDistance } from './seats';
 export type { PathPosition } from './motion';
