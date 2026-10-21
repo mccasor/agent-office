@@ -64,8 +64,6 @@ export interface SessionState {
   context: ContextState;
   /** token usati dalla sessione principale + tutti i suoi subagenti */
   tokensUsed: TokenUsage;
-  /** ultimo valore "<total_tokens>N tokens left" visto; null se assente */
-  tokensLeft: number | null;
   startedAt: number;
   updatedAt: number;
   active: boolean;
@@ -79,17 +77,22 @@ export interface SessionState {
   branch: string | null;
   /** bloccata in attesa dell'utente: permesso di un tool, domanda, richiesta di input (non il prossimo prompt) */
   waiting: boolean;
+  /** modifiche non committate nel repository del cwd (solo sessioni attive); null o assente se non disponibili */
+  diff?: RepoDiff | null;
 }
 
 /** Stato complessivo per l'icona nella menu bar: rosso, verde, grigio. */
 export type OfficeStatus = 'waiting' | 'working' | 'idle';
 
-export interface RepoState {
-  project: string;
-  branch: string | null;
+export interface RepoDiff {
   linesAdded: number;
   linesRemoved: number;
   filesChanged: number;
+}
+
+export interface RepoState extends RepoDiff {
+  project: string;
+  branch: string | null;
 }
 
 export interface Snapshot {

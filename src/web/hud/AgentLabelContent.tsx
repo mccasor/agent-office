@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { AgentState, AgentStatus } from '../../shared/types';
-import { formatTokens, percent, truncate } from './format';
+import { elapsed, formatDuration, percent, truncate } from './format';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
+import { useNow } from './useNow';
 import './hud.css';
 
 export const NAME_MAX_CHARS = 24;
@@ -20,13 +21,17 @@ interface AgentLabelContentProps {
   expanded?: boolean;
   /** notifica l'hover sull'etichetta stessa */
   onHoverChange?: (hovered: boolean) => void;
+  /** la sessione è bloccata in attesa dell'utente (solo per Claudio Code) */
+  waiting?: boolean;
 }
 
 /**
  * Contenuto DOM puro dell'etichetta agente (testabile senza Canvas).
- * Compatta di default (nome + barra); dettaglio (area, token, stato) con `expanded` o hover.
+ * Compatta di default (nome, da quanto lavora, barra solo con una todo list); dettaglio (area, token, stato)
+ * con `expanded` o hover. In rosso quando la sessione aspetta un input dell'utente.
  */
-export function AgentLabelContent({ agent, expanded = false, onHoverChange }: AgentLabelContentProps) {
+export function AgentLabelContent({ agent, expanded = false, onHoverChange, waiting = false }: AgentLabelContentProps) {
+  const now = useNow();
   const [hovered, setHovered] = useState(false);
   const hover = (h: boolean) => {
     setHovered(h);
@@ -37,7 +42,7 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange }: Ag
   const pct = progress ? percent(progress.completed, progress.total) : null;
   return (
     <div
-      className={`hud-label hud-label--${agent.status}${open ? ' hud-label--expanded' : ''}`}
+      className={`hud-label hud-label--${agent.status}${waiting ? ' hud-label--waiting' : ''}${open ? ' hud-label--expanded' : ''}`}
       onMouseEnter={() => hover(true)}
       onMouseLeave={() => hover(false)}
     >
@@ -47,14 +52,16 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange }: Ag
           <span className="hud-label__issue" data-testid="agent-issues">{agent.issues.map((n) => `#${n}`).join(' ')}</span>
         )}
       </div>
-      <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} className="hud-bar--small" />
+      <div className="hud-label__time" data-testid="agent-time">
+        {waiting ? 'aspetta un tuo input' : `${agent.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`}
+      </div>
+      {pct !== null && <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} className="hud-bar--small" />}
       {open && (
         <>
           <div className="hud-label__meta">
             <span className={`hud-chip hud-chip--${agent.area}`} data-area={agent.area}>
               {agent.area}
             </span>
-            <span className="hud-label__tokens">{formatTokens(agent.tokens.total)}</span>
             <span className="hud-label__status">{STATUS_LABEL[agent.status]}</span>
           </div>
           {progress && pct !== null && (

@@ -17,10 +17,10 @@ describe('createLineReader', () => {
     const file = join(dir, 'a.jsonl');
     await writeFile(file, 'one\ntwo\n');
     const reader = createLineReader(file);
-    expect(await reader.read()).toEqual({ lines: ['one', 'two'], reset: false });
-    expect(await reader.read()).toEqual({ lines: [], reset: false });
+    expect(await reader.read()).toEqual({ lines: ['one', 'two'], reset: false, more: false });
+    expect(await reader.read()).toEqual({ lines: [], reset: false, more: false });
     await appendFile(file, 'three\n');
-    expect(await reader.read()).toEqual({ lines: ['three'], reset: false });
+    expect(await reader.read()).toEqual({ lines: ['three'], reset: false, more: false });
     expect(reader.offset).toBe(Buffer.byteLength('one\ntwo\nthree\n'));
   });
 
@@ -47,11 +47,20 @@ describe('createLineReader', () => {
     const reader = createLineReader(file);
     await reader.read();
     await writeFile(file, 'c\n');
-    expect(await reader.read()).toEqual({ lines: ['c'], reset: true });
+    expect(await reader.read()).toEqual({ lines: ['c'], reset: true, more: false });
+  });
+
+  it('legge a blocchi di maxBytes; una riga più lunga del blocco viene letta intera', async () => {
+    const file = join(dir, 'e.jsonl');
+    await writeFile(file, 'aaa\nbbb\n' + 'x'.repeat(20) + '\nccc\n');
+    const reader = createLineReader(file, 8);
+    expect(await reader.read()).toEqual({ lines: ['aaa', 'bbb'], reset: false, more: true });
+    // nessun a capo negli 8 byte: il blocco raddoppia finché ne trova uno
+    expect(await reader.read()).toEqual({ lines: ['x'.repeat(20), 'ccc'], reset: false, more: false });
   });
 
   it('file mancante: nessuna riga, nessun errore', async () => {
     const reader = createLineReader(join(dir, 'missing.jsonl'));
-    expect(await reader.read()).toEqual({ lines: [], reset: false });
+    expect(await reader.read()).toEqual({ lines: [], reset: false, more: false });
   });
 });

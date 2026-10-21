@@ -76,16 +76,25 @@ describe('AgentLabelContent', () => {
     expect(screen.getByText('1/4 · 25%')).toBeTruthy();
   });
 
-  it('barra indeterminata se progress null (senza aria-valuenow)', () => {
+  it('niente barra senza todo list (progress null o total 0)', () => {
     render(<AgentLabelContent agent={agent({ progress: null })} />);
-    const bar = screen.getByRole('progressbar');
-    expect(bar.hasAttribute('aria-valuenow')).toBe(false);
-    expect(bar.className).toContain('hud-bar--indeterminate');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    cleanup();
+    render(<AgentLabelContent agent={agent({ progress: { completed: 0, total: 0 } })} />);
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
-  it('total 0 → indeterminata', () => {
-    render(<AgentLabelContent agent={agent({ progress: { completed: 0, total: 0 } })} />);
-    expect(screen.getByRole('progressbar').hasAttribute('aria-valuenow')).toBe(false);
+  it('da quanto lavora, quanto ha lavorato o, se bloccato, che aspetta un input', () => {
+    const t = Date.now();
+    render(<AgentLabelContent agent={agent({ startedAt: t - 3 * 60_000, updatedAt: t })} />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('da 3 min');
+    cleanup();
+    render(<AgentLabelContent agent={agent({ status: 'done', startedAt: t - 5 * 60_000, updatedAt: t - 60_000 })} />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('in 4 min');
+    cleanup();
+    const { container } = render(<AgentLabelContent agent={agent()} waiting />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('aspetta un tuo input');
+    expect(container.firstElementChild?.className).toContain('hud-label--waiting');
   });
 
   it('nome lungo troncato con titolo completo', () => {

@@ -40,3 +40,18 @@ export function truncate(text: string, max: number): string {
   const chars = [...text];
   return chars.length <= max ? text : `${chars.slice(0, max - 1).join('').trimEnd()}…`;
 }
+
+/** Durata compatta: "<1 min", "12 min", "2 h", "2 h 05"; valori negativi o non finiti → "<1 min". */
+export function formatDuration(ms: number): string {
+  const min = Number.isFinite(ms) ? Math.floor(ms / 60_000) : 0;
+  if (min < 1) return '<1 min';
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h} h` : `${h} h ${String(m).padStart(2, '0')}`;
+}
+
+/** Tempo di lavoro di un agente: fino a ora se è ancora al lavoro, fino all'ultimo aggiornamento se ha finito. */
+export function elapsed(agent: { status: string; startedAt: number; updatedAt: number }, now: number): number {
+  return (agent.status === 'done' ? agent.updatedAt : now) - agent.startedAt;
+}

@@ -1,6 +1,8 @@
 import type { AgentState, AgentStatus, OfficeStatus, SessionState } from '../../shared/types';
-import { formatTokens, percent } from './format';
+import { elapsed, formatDuration, formatTokens, percent } from './format';
+import { DiffStat, projectName, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
+import { useNow } from './useNow';
 import './hud.css';
 
 const STATUS_LABEL: Record<AgentStatus, string> = {
@@ -8,12 +10,6 @@ const STATUS_LABEL: Record<AgentStatus, string> = {
   working: 'al lavoro',
   idle: 'inattivo',
   done: 'terminato',
-};
-
-const DOT_LABEL: Record<OfficeStatus, string> = {
-  waiting: 'in attesa di un tuo input',
-  working: 'al lavoro',
-  idle: 'non attivo',
 };
 
 /** Colore del pallino di una sessione, con la stessa regola dell'icona nella menu bar. */
@@ -24,7 +20,6 @@ export function sessionDot(session: SessionState, agents: AgentState[]): OfficeS
   return busy(session.status) || agents.some((a) => busy(a.status)) ? 'working' : 'idle';
 }
 
-const projectName = (s: SessionState): string => s.cwd?.split('/').filter(Boolean).at(-1) ?? s.id.slice(0, 8);
 const issueText = (issues: number[]): string => issues.map((n) => `#${n}`).join(' ');
 
 /** Pulsante a due stati in alto a destra: ufficio 3D o lista delle sessioni. */
@@ -51,6 +46,7 @@ export function ListView({ sessions, agents, hidden, onToggle }: {
   hidden: readonly string[];
   onToggle: (sessionId: string) => void;
 }) {
+  const now = useNow();
   const active = sessions.filter((s) => s.active);
   return (
     <main className="list-view" aria-label="Sessioni">
@@ -62,7 +58,7 @@ export function ListView({ sessions, agents, hidden, onToggle }: {
         return (
           <section key={s.id} className="list-session" aria-label={projectName(s)}>
             <header className="list-session__head">
-              <span className={`list-dot list-dot--${dot}`} role="img" aria-label={DOT_LABEL[dot]} title={DOT_LABEL[dot]} />
+              <StatusDot status={dot} />
               <div className="list-session__name">
                 <strong>{projectName(s)}</strong>
                 {s.branch && <span className="hud-muted">{s.branch}</span>}
@@ -74,8 +70,15 @@ export function ListView({ sessions, agents, hidden, onToggle }: {
               </label>
             </header>
             {s.title && <p className="list-session__title">{s.title}</p>}
+            {s.diff && <DiffStat diff={s.diff} />}
             <p className="list-session__meta hud-muted">
-              {[s.model, s.effort, `${formatTokens(s.tokensUsed.total)} token`, s.waiting ? 'aspetta un tuo input' : STATUS_LABEL[s.status]]
+              {[
+                s.model,
+                s.effort,
+                `${formatTokens(s.tokensUsed.output)} token generati`,
+                `attiva da ${formatDuration(now - s.startedAt)}`,
+                s.waiting ? 'aspetta un tuo input' : STATUS_LABEL[s.status],
+              ]
                 .filter(Boolean)
                 .join(' · ')}
             </p>
@@ -90,8 +93,10 @@ export function ListView({ sessions, agents, hidden, onToggle }: {
                         {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
                       </span>
                       <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
-                      <span className="list-agent__status hud-muted">{STATUS_LABEL[a.status]}</span>
-                      <ProgressBar value={pct} label={`Avanzamento ${a.name}`} className="hud-bar--small" />
+                      <span className="list-agent__status hud-muted">
+                        {`${STATUS_LABEL[a.status]} · ${a.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`}
+                      </span>
+                      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${a.name}`} className="hud-bar--small" />}
                     </li>
                   );
                 })}

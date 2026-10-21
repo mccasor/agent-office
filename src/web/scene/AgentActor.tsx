@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
 import { cellToWorld, type BoardColumn, type Cell, type OfficeLayout, type Seat } from './layout';
-import { findPath } from './path';
+import { planFrom } from './path';
 import { advanceAlongPath, WALK_SPEED, type StartQueue } from './motion';
 import type { CardPlace } from './TaskBoard';
 
@@ -64,14 +64,6 @@ export const BOARD_PAUSE = 0.9;
 function lerpAngle(a: number, b: number, t: number): number {
   const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
   return a + d * t;
-}
-
-/** Path dalla posizione corrente (anche frazionaria, su un segmento) alla destinazione. */
-function planFrom(layout: OfficeLayout, pos: Cell, to: Cell): Cell[] {
-  const start = { x: Math.round(pos.x), z: Math.round(pos.z) };
-  const path = findPath(layout, start, to);
-  if (path.length === 0) return [];
-  return pos.x !== start.x || pos.z !== start.z ? [pos, ...path] : path;
 }
 
 const motionOf = (phase: Phase, seatId: string | null): Motion => ({

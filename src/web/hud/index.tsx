@@ -3,7 +3,7 @@ import { Html } from '@react-three/drei';
 import type { AgentState } from '../../shared/types';
 import { AgentLabelContent } from './AgentLabelContent';
 
-export { formatTokens, percent, contextLevel } from './format';
+export { formatTokens, formatDuration, percent, contextLevel } from './format';
 export type { ContextLevel } from './format';
 export { SessionPanel, RepoPanel, HudOverlay } from './panels';
 export { AgentLabelContent } from './AgentLabelContent';
@@ -19,6 +19,8 @@ export interface AgentLabelProps {
   distanceFactor?: number;
   /** hover deciso dalla scena (in aggiunta all'hitbox interna attorno al personaggio) */
   hovered?: boolean;
+  /** sessione bloccata in attesa dell'utente */
+  waiting?: boolean;
 }
 
 /** Hitbox invisibile attorno al personaggio (coordinate locali dell'attore). */
@@ -28,7 +30,7 @@ const HIT_SIZE: [number, number, number] = [0.8, 1.5, 0.8];
  * Etichetta 3D sopra il personaggio (drei <Html>): compatta (nome + barra), dettaglio
  * (area, token con ripartizione, stato) al passaggio del mouse su personaggio o etichetta.
  */
-export function AgentLabel({ agent, position = [0, 2.2, 0], distanceFactor = 10, hovered = false }: AgentLabelProps) {
+export function AgentLabel({ agent, position = [0, 2.2, 0], distanceFactor = 10, hovered = false, waiting = false }: AgentLabelProps) {
   const [overActor, setOverActor] = useState(false);
   const [overLabel, setOverLabel] = useState(false);
   const expanded = hovered || overActor || overLabel;
@@ -50,9 +52,9 @@ export function AgentLabel({ agent, position = [0, 2.2, 0], distanceFactor = 10,
         distanceFactor={distanceFactor}
         position={position}
         pointerEvents="auto"
-        zIndexRange={expanded ? [100, 50] : [10, 0]}
+        zIndexRange={expanded || waiting ? [100, 50] : [10, 0]}
       >
-        <AgentLabelContent agent={agent} expanded={expanded} onHoverChange={setOverLabel} />
+        <AgentLabelContent agent={agent} expanded={expanded} onHoverChange={setOverLabel} waiting={waiting} />
       </Html>
     </>
   );

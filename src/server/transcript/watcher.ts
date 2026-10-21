@@ -63,6 +63,12 @@ type Parsed =
 const SESSION_RE = /^([^/]+)\.jsonl$/;
 const AGENT_RE = /^([^/]+)\/subagents\/(?:workflows\/[^/]+\/)?agent-([^/]+)\.(jsonl|meta\.json)$/;
 const UNKNOWN_AGENT_TYPE = 'unknown';
+/** ritardo con cui si accorpano le notifiche di una raffica di righe */
+const EMIT_DELAY_MS = 100;
+/** intervallo minimo tra due scansioni complete delle cartelle di projects (modalità progetto) */
+const RESCAN_MS = 60_000;
+/** cartelle di una sessione senza transcript: non serve osservarle */
+const SKIP_DIR_RE = /(?:^|\/)(?:tool-results|memory)(?:\/|$)/;
 
 function parsePath(rel: string): Parsed | null {
   const session = SESSION_RE.exec(rel);
@@ -108,6 +114,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   let timer: NodeJS.Timeout | null = null;
   let lastEmitted = '';
   let running = false;
+  let emitTimer: NodeJS.Timeout | null = null;
+  let lastRescan = -Infinity;
 
   const posixRel = (from: string, to: string) => relative(from, to).split(sep).join('/');
   const outside = (rel: string) => rel === '..' || rel.startsWith('../') || isAbsolute(rel);
@@ -185,11 +193,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       const main = g.files.find((f) => f.parsed.kind === 'session');
       if (!main) continue;
       const s = main.acc.state;
-      let tokensLeft: { value: number; at: number } | null = null;
       let updatedAt = 0;
       for (const f of g.files) {
-        const left = f.acc.state.tokensLeft;
-        if (left && (!tokensLeft || left.at >= tokensLeft.at)) tokensLeft = left;
         updatedAt = Math.max(updatedAt, f.acc.state.lastAt ?? 0, f.mtime);
       }
       sessions.push({
@@ -199,7 +204,6 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         effort: s.effort,
         context: { used: s.contextUsed ?? 0, window: contextWindowFor(s.model, s.contextUsed ?? 0, s.declaredModel) },
         tokensUsed: g.tokens,
-        tokensLeft: tokensLeft?.value ?? null,
         startedAt: s.firstAt ?? main.mtime,
         updatedAt,
         active: t - updatedAt <= activeWindowMs,
@@ -223,7 +227,17 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     return { sessions, agents };
   };
 
+  /**
+   * Notifica i listener se lo snapshot è cambiato. Le righe arrivano a raffiche (più file, più righe al secondo):
+   * un solo ricalcolo ogni EMIT_DELAY_MS; nessuno durante la scansione iniziale (start() calcola alla fine).
+   */
   const emitIfChanged = () => {
+    if (!running || !started || emitTimer) return;
+    emitTimer = setTimeout(emitNow, EMIT_DELAY_MS);
+    emitTimer.unref();
+  };
+  const emitNow = () => {
+    emitTimer = null;
     if (!running) return;
     const snapshot = compute();
     const serialized = JSON.stringify(snapshot);
@@ -270,9 +284,13 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
     const tracked = f;
     tracked.queue = tracked.queue.then(async () => {
-      const { lines, reset } = await tracked.reader.read();
-      if (reset) tracked.acc = createAccumulator();
-      for (const line of lines) tracked.acc.ingest(line);
+      // a blocchi: la prima lettura di un transcript grande non lo carica tutto in memoria
+      for (let more = true; more; ) {
+        const r = await tracked.reader.read();
+        if (r.reset) tracked.acc = createAccumulator();
+        for (const line of r.lines) tracked.acc.ingest(line);
+        more = r.more;
+      }
       try {
         const st = await stat(abs);
         tracked.mtime = st.mtimeMs;
@@ -299,10 +317,20 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       checks.push(stat(abs).then((st) => (st.size > c.offset ? evaluate(abs, false) : undefined), () => {}));
     }
     if (all) {
+      // transcript fermi da più della finestra di scoperta: si dimenticano (se ripartono, si rileggono da capo)
+      const t = now();
+      for (const [abs, f] of files) {
+        if (f.parsed.kind !== 'meta' && f.loaded && t - f.mtime > discoveryWindowMs) files.delete(abs);
+      }
       await Promise.all(checks);
       return;
     }
-    // transcript di altre cartelle mai segnalati dal watcher di discovery
+    // transcript di altre cartelle mai segnalati dal watcher di discovery (scansione completa al più ogni minuto)
+    if (now() - lastRescan < RESCAN_MS) {
+      await Promise.all(checks);
+      return;
+    }
+    lastRescan = now();
     const dirs = await readdir(projectsRoot).catch(() => [] as string[]);
     for (const dir of dirs) {
       if (dir === basename(projectDir)) continue;
@@ -401,9 +429,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       if (!all) await startDiscovery();
       const pending: Promise<void>[] = [];
       fsWatcher = watch(all ? [projectsRoot] : [projectDir, ...pendingFollow], {
-        // profondità massima: [<cartella>/]<session>/subagents/workflows/<wf>/agent-x.jsonl
-        depth: all ? 5 : 4,
-        ignored: (abs, stats) => Boolean(stats?.isFile()) && !isRelevant(abs),
+        // senza `depth` chokidar usa un solo watcher ricorsivo (FSEvents) invece di uno per cartella
+        ignored: (abs, stats) => SKIP_DIR_RE.test(posixRel(projectsRoot, abs)) || (Boolean(stats?.isFile()) && !isRelevant(abs)),
       });
       fsWatcher.on('add', (abs) => void pending.push(processFile(abs)));
       fsWatcher.on('change', (abs) => void processFile(abs));
@@ -426,6 +453,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       running = false;
       if (timer) clearInterval(timer);
       timer = null;
+      if (emitTimer) clearTimeout(emitTimer);
+      emitTimer = null;
       await Promise.all([fsWatcher?.close(), discovery?.close()]);
       fsWatcher = null;
       discovery = null;

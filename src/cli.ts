@@ -1,6 +1,5 @@
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import type { RepoState } from './shared/types.js';
 import { createTranscriptWatcher } from './server/transcript/index.js';
 import {
   createAllHookEventsWatcher,
@@ -11,7 +10,7 @@ import {
   uninstallHooks,
   uninstallHooksIn,
 } from './server/hooks/index.js';
-import { readRepoState } from './server/git/index.js';
+import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
 
@@ -32,9 +31,12 @@ export interface RunningOffice {
 }
 
 const DEFAULT_PORT = 4317;
+/** giro del poller git: legge solo i repository con attività recente o letture vecchie */
 const GIT_POLL_MS = 3000;
 /** ricalcolo periodico: gli stati entering/idle/done dipendono dal tempo */
 const TICK_MS = 5000;
+/** le modifiche arrivano a raffiche (transcript, hook, git): una sola pubblicazione ogni PUBLISH_DELAY_MS */
+const PUBLISH_DELAY_MS = 150;
 
 // risolti rispetto a src/cli.ts (tsx) e a dist/cli.js (build): entrambi puntano alla root del pacchetto
 const WEB_DIR = fileURLToPath(new URL('../dist/web', import.meta.url));
@@ -67,36 +69,61 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   const dataDir = process.env.AGENT_OFFICE_DATA_DIR || undefined;
   const transcript = createTranscriptWatcher({ cwd: opts.cwd, all: opts.all, claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined });
   const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
-  // con --all il branch di ciascuna sessione arriva dal transcript
-  const readRepo = () => (opts.all ? Promise.resolve(null) : readRepoState(opts.cwd));
-  let repo: RepoState | null = await readRepo();
+  // stato git: della cartella monitorata, oppure (con --all) della cartella di ciascuna sessione attiva
+  const repos = createRepoPoller();
+  if (!opts.all) {
+    repos.follow([opts.cwd]);
+    await repos.poll(Date.now());
+  }
 
   await Promise.all([transcript.start(), hooks.start()]);
   const snapshot = () =>
-    buildSnapshot({ transcript: transcript.current(), hookEvents: hooks.current(), repo, now: Date.now() });
+    buildSnapshot({
+      transcript: transcript.current(),
+      hookEvents: hooks.current(),
+      repo: opts.all ? null : repos.get(opts.cwd),
+      repoAt: (cwd) => repos.get(cwd),
+      now: Date.now(),
+    });
 
   const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: snapshot() });
 
   let last = '';
-  const publish = () => {
+  /** ultimo updatedAt visto per sessione: se cambia, il suo repository va riletto */
+  const seenAt = new Map<string, number>();
+  const publishNow = () => {
+    pending = null;
     const next = snapshot();
+    const active = next.sessions.filter((s) => s.active && s.cwd);
+    if (opts.all) repos.follow(active.map((s) => s.cwd!));
+    for (const s of next.sessions) {
+      if (seenAt.get(s.id) === s.updatedAt) continue;
+      seenAt.set(s.id, s.updatedAt);
+      repos.touch(opts.all ? (s.cwd ?? '') : opts.cwd);
+    }
+    for (const id of seenAt.keys()) if (!next.sessions.some((s) => s.id === id)) seenAt.delete(id);
     const key = JSON.stringify({ ...next, generatedAt: 0 });
     if (key === last) return;
     last = key;
     server.publish(next);
   };
+  let pending: NodeJS.Timeout | null = null;
+  const publish = () => {
+    pending ??= setTimeout(publishNow, PUBLISH_DELAY_MS);
+  };
   const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish)];
   const tick = setInterval(publish, TICK_MS);
-  const gitPoll = setInterval(async () => {
-    repo = await readRepo();
-    publish();
+  const gitPoll = setInterval(() => {
+    void repos.poll(Date.now()).then((changed) => changed && publish());
   }, GIT_POLL_MS);
+  publishNow();
 
   return {
     url: server.url,
     async close() {
       clearInterval(tick);
       clearInterval(gitPoll);
+      if (pending) clearTimeout(pending);
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
       await server.close();
@@ -112,7 +139,8 @@ export async function main(argv: string[]): Promise<RunningOffice | void> {
   const opts = parseArgs(argv, process.cwd());
 
   if (opts.command === 'install-hooks') {
-    const command = `node "${HOOK_BIN}"`;
+    // se l'app viene disinstallata senza togliere gli hook, il comando non fallisce (nessun errore in Claude Code)
+    const command = `[ -f "${HOOK_BIN}" ] && node "${HOOK_BIN}" || true`;
     const { changed, file } = opts.all ? await installHooksIn(globalSettingsFile(), command) : await installHooks(opts.cwd, command);
     console.log(changed ? `Hook installati in ${file}` : `Hook già presenti in ${file}`);
     return;

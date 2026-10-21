@@ -11,3 +11,4 @@ export { AgentActor, cardSteps, BOARD_PAUSE } from './AgentActor';
 export type { CardStep } from './AgentActor';
 export { TaskBoards, PostIt, NOTES_PER_BOARD } from './TaskBoard';
 export type { CardPlace, TaskCard } from './TaskBoard';
+export { AlertBubble } from './AlertBubble';

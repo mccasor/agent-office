@@ -68,7 +68,13 @@ export function branchIssue(branch: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
-function resolveSessions(sessions: SessionState[], events: HookEvent[], repo: RepoState | null, now: number): SessionState[] {
+function resolveSessions(
+  sessions: SessionState[],
+  events: HookEvent[],
+  repo: RepoState | null,
+  repoAt: ((cwd: string) => RepoState | null) | undefined,
+  now: number,
+): SessionState[] {
   const endedAt = new Map<string, number>();
   const mainHook = new Map<string, HookEvent>();
   /** ultima notifica "bloccato su input" e ultima attività successiva, per sessione */
@@ -96,7 +102,10 @@ function resolveSessions(sessions: SessionState[], events: HookEvent[], repo: Re
       const asked = askedAt.get(s.id) ?? -Infinity;
       const blocked = asked > (activeAt.get(s.id) ?? -Infinity) && asked >= s.updatedAt - ASK_GRACE_MS;
       const waiting = !ended && (s.waiting || blocked);
-      return { ...s, status, issues, waiting, active: ended ? false : s.active };
+      const active = ended ? false : s.active;
+      const r = active && s.cwd && repoAt ? repoAt(s.cwd) : null;
+      const diff = r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
+      return { ...s, status, issues, waiting, active, diff };
     })
     .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
 }
@@ -109,16 +118,33 @@ function hookMainStatus(hook: HookEvent, now: number): AgentStatus {
 /**
  * Chi ha finito aspetta in area relax finché c'è un agente della stessa sessione non terminato e attivo di recente;
  * quando hanno finito tutti, restano per DONE_LINGER_MS dall'ultimo che ha finito (uscita) e poi spariscono.
+ * Aspettano solo i terminati dello stesso "turno": quelli ancora in ufficio quando è entrato uno degli agenti al
+ * lavoro (a catena), non quelli usciti in precedenza, che altrimenti tornerebbero a ogni nuovo agente.
  */
 function keepFinished(agents: AgentState[], now: number): AgentState[] {
-  const drop = new Set<string>();
+  const keep = new Set<string>();
   for (const sessionId of new Set(agents.map((a) => a.sessionId))) {
     const group = agents.filter((a) => a.sessionId === sessionId);
-    if (group.some((a) => a.status !== 'done' && now - a.updatedAt <= LOUNGE_WAIT_MS)) continue;
-    const lastDone = Math.max(-Infinity, ...group.filter((a) => a.status === 'done').map((a) => a.updatedAt));
-    if (now - lastDone > DONE_LINGER_MS) drop.add(sessionId);
+    const done = group.filter((a) => a.status === 'done');
+    let seeds = group.filter((a) => a.status !== 'done' && now - a.updatedAt <= LOUNGE_WAIT_MS);
+    if (seeds.length === 0) {
+      const last = done.reduce<AgentState | null>((m, a) => (!m || a.updatedAt > m.updatedAt ? a : m), null);
+      if (!last || now - last.updatedAt > DONE_LINGER_MS) continue;
+      seeds = [last];
+    }
+    // inizio del turno: si allarga a ritroso con chi era ancora in ufficio (finito da meno di DONE_LINGER_MS)
+    let from = Math.min(...seeds.map((a) => a.startedAt));
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const a of done) {
+        if (keep.has(a.id) || a.updatedAt < from - DONE_LINGER_MS) continue;
+        keep.add(a.id);
+        from = Math.min(from, a.startedAt);
+        grew = true;
+      }
+    }
   }
-  return drop.size === 0 ? agents : agents.filter((a) => a.status !== 'done' || !drop.has(a.sessionId));
+  return agents.filter((a) => a.status !== 'done' || keep.has(a.id));
 }
 
 /** Stato per l'icona: una sessione attiva bloccata sull'utente > qualcuno lavora > nessuna attività. */
@@ -136,11 +162,13 @@ export function buildSnapshot(input: {
   transcript: TranscriptSnapshot;
   hookEvents: HookEvent[];
   repo: RepoState | null;
+  /** stato del repository di un cwd (diff per sessione); assente = nessun diff */
+  repoAt?: (cwd: string) => RepoState | null;
   now: number;
 }): Snapshot {
   const { transcript, hookEvents, repo, now } = input;
   const hooks = latestAgentHooks(hookEvents);
   const agents = keepFinished(transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now)), now);
-  const sessions = resolveSessions(transcript.sessions, hookEvents, repo, now);
+  const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now);
   return { status: officeStatus(sessions, agents), repo, sessions, agents, generatedAt: now };
 }

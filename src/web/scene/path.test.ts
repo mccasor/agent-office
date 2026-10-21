@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findPath } from './path';
+import { findPath, planFrom } from './path';
 import type { Cell, OfficeLayout } from './layout';
 
 function grid(rows: string[]): OfficeLayout {
@@ -63,5 +63,24 @@ describe('findPath', () => {
   it('deterministico', () => {
     const l = grid(['.....', '.....', '.....']);
     expect(findPath(l, { x: 0, z: 0 }, { x: 4, z: 2 })).toEqual(findPath(l, { x: 0, z: 0 }, { x: 4, z: 2 }));
+  });
+});
+
+describe('planFrom', () => {
+  const open = grid(['.....']);
+
+  it('a metà segmento prosegue verso la meta senza tornare indietro', () => {
+    const path = planFrom(open, { x: 1.4, z: 0 }, { x: 4, z: 0 });
+    expect(path[0]).toEqual({ x: 1.4, z: 0 });
+    expect(path[1]).toEqual({ x: 2, z: 0 });
+    expect(path.at(-1)).toEqual({ x: 4, z: 0 });
+  });
+
+  it('se la meta è alle spalle parte dalla cella dietro', () => {
+    expect(planFrom(open, { x: 1.6, z: 0 }, { x: 0, z: 0 })[1]).toEqual({ x: 1, z: 0 });
+  });
+
+  it('da una cella intera coincide con findPath', () => {
+    expect(planFrom(open, { x: 1, z: 0 }, { x: 3, z: 0 })).toEqual(findPath(open, { x: 1, z: 0 }, { x: 3, z: 0 }));
   });
 });

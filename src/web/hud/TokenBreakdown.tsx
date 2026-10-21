@@ -6,9 +6,10 @@ const PARTS = [
   ['output', 'Output'],
   ['cacheRead', 'Cache read'],
   ['cacheCreation', 'Cache creation'],
+  ['total', 'Totale'],
 ] as const;
 
-/** Ripartizione dei token: input, output, cache read, cache creation. */
+/** Ripartizione dei token: input, output, cache read, cache creation e totale. */
 export function TokenBreakdown({ tokens }: { tokens: TokenUsage }) {
   return (
     <dl className="hud-breakdown">

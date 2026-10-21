@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextLevel, formatTokens, percent } from './format';
+import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
 
 describe('formatTokens', () => {
   it.each([
@@ -45,5 +45,20 @@ describe('contextLevel', () => {
     expect(contextLevel(71)).toBe('warn');
     expect(contextLevel(90)).toBe('warn');
     expect(contextLevel(91)).toBe('danger');
+  });
+});
+
+describe('formatDuration / elapsed', () => {
+  it('minuti, ore e ore con minuti', () => {
+    expect(formatDuration(30_000)).toBe('<1 min');
+    expect(formatDuration(-5)).toBe('<1 min');
+    expect(formatDuration(12 * 60_000 + 59_000)).toBe('12 min');
+    expect(formatDuration(120 * 60_000)).toBe('2 h');
+    expect(formatDuration(125 * 60_000)).toBe('2 h 05');
+  });
+
+  it('chi lavora conta fino a ora, chi ha finito fino all\'ultimo aggiornamento', () => {
+    expect(elapsed({ status: 'working', startedAt: 1000, updatedAt: 2000 }, 9000)).toBe(8000);
+    expect(elapsed({ status: 'done', startedAt: 1000, updatedAt: 2000 }, 9000)).toBe(1000);
   });
 });

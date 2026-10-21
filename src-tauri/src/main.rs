@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -103,17 +103,56 @@ impl Overview {
     }
 }
 
-/// GET dal server locale in HTTP/1.0 (risposta senza chunking), senza dipendenze.
-fn http_get(path: &str) -> Option<String> {
-    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
-    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
-    let request = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{PORT}\r\n\r\n");
-    stream.write_all(request.as_bytes()).ok()?;
-    let mut response = String::new();
-    stream.read_to_string(&mut response).ok()?;
-    let (head, body) = response.split_once("\r\n\r\n")?;
-    (head.split(' ').nth(1) == Some("200")).then(|| body.to_string())
+/// Risposta del server a una GET condizionale.
+enum Fetched {
+    /// 200: corpo ed ETag
+    Body(String, Option<String>),
+    /// 304: niente di nuovo dall'ultima volta
+    NotModified,
+    Failed,
+}
+
+/// GET dal server locale in HTTP/1.0 (risposta senza chunking), senza dipendenze. Con `etag` la richiesta è
+/// condizionale: se lo snapshot non è cambiato il server risponde 304 senza corpo.
+fn http_get(path: &str, etag: Option<&str>) -> Fetched {
+    let fetch = || -> Option<Fetched> {
+        let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+        let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+        stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+        let condition = etag.map(|e| format!("If-None-Match: {e}\r\n")).unwrap_or_default();
+        let request = format!("GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{PORT}\r\n{condition}\r\n");
+        stream.write_all(request.as_bytes()).ok()?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response).ok()?;
+        let (head, body) = response.split_once("\r\n\r\n").unwrap_or((response.as_str(), ""));
+        match head.split(' ').nth(1)? {
+            "304" => Some(Fetched::NotModified),
+            "200" => {
+                let tag = head
+                    .lines()
+                    .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("etag")).map(|(_, v)| v.trim().to_string()));
+                Some(Fetched::Body(body.to_string(), tag))
+            }
+            _ => None,
+        }
+    };
+    fetch().unwrap_or(Fetched::Failed)
+}
+
+/// Pallini del menu decodificati una volta sola (il menu si ricostruisce a ogni cambio di stato).
+fn dot_image(status: Status) -> tauri::Result<Image<'static>> {
+    static DOTS: OnceLock<Vec<(Status, Image<'static>)>> = OnceLock::new();
+    let dots = DOTS.get_or_init(|| {
+        [Status::Working, Status::Waiting, Status::Idle]
+            .into_iter()
+            .filter_map(|s| Image::from_bytes(s.dot()).ok().map(|img| (s, img)))
+            .collect()
+    });
+    let key = if status == Status::Offline { Status::Idle } else { status };
+    match dots.iter().find(|(s, _)| *s == key) {
+        Some((_, img)) => Ok(img.clone()),
+        None => Image::from_bytes(status.dot()),
+    }
 }
 
 fn issues_text(v: &Value) -> String {
@@ -184,8 +223,19 @@ fn overview_from(snapshot: &str) -> Overview {
     Overview { status: Status::from_str(&str_of(&v, "status")), sessions: session_entries, agents: agent_entries }
 }
 
-fn fetch_overview() -> Overview {
-    http_get("/api/snapshot").map(|body| overview_from(&body)).unwrap_or_else(Overview::offline)
+/// Stato del menu dal server; None se lo snapshot non è cambiato dall'ETag indicato (aggiornato in place).
+fn fetch_overview(etag: &mut Option<String>) -> Option<Overview> {
+    match http_get("/api/snapshot", etag.as_deref()) {
+        Fetched::NotModified => None,
+        Fetched::Body(body, tag) => {
+            *etag = tag;
+            Some(overview_from(&body))
+        }
+        Fetched::Failed => {
+            *etag = None;
+            Some(Overview::offline())
+        }
+    }
 }
 
 /// Barra dei menu scura: icona bianca invece che nera. Si legge l'aspetto effettivo del pulsante dell'icona
@@ -250,7 +300,7 @@ fn app_dir(app: &AppHandle) -> PathBuf {
 }
 
 fn start_server(app: &AppHandle) -> Option<Child> {
-    if http_get("/api/status").is_some() {
+    if !matches!(http_get("/api/status", None), Fetched::Failed) {
         return None; // già in esecuzione (es. un'altra istanza): lo si usa così com'è
     }
     let node = find_node()?;
@@ -314,9 +364,10 @@ fn set_autostart(enabled: bool) {
 /// (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str) {
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
-        if let Ok(url) = format!("http://127.0.0.1:{PORT}/?view={view}").parse() {
-            let _ = window.navigate(url);
-        }
+        // cambio di vista senza ricaricare: la scena resta com'è (posizioni, post-it); ricarica solo se serve
+        let _ = window.eval(format!(
+            "window.agentOfficeSetView ? window.agentOfficeSetView('{view}') : location.assign('http://127.0.0.1:{PORT}/?view={view}')"
+        ));
         let _ = window.show();
         let _ = window.set_focus();
         return;
@@ -335,7 +386,7 @@ fn show_office(app: &AppHandle, view: &str) {
 /// Menu a tendina: stato, apri ufficio, impostazioni, istanze di Claude Code, agenti attivi, esci.
 fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
     let status = IconMenuItemBuilder::with_id("status", o.status.label())
-        .icon(Image::from_bytes(o.status.dot())?)
+        .icon(dot_image(o.status)?)
         .enabled(false)
         .build(app)?;
     let open = MenuItemBuilder::with_id("open", "Apri ufficio").build(app)?;
@@ -353,7 +404,7 @@ fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
             sub = sub.item(&MenuItemBuilder::new(empty).enabled(false).build(app)?);
         }
         for e in entries {
-            sub = sub.item(&IconMenuItemBuilder::with_id(e.id.as_str(), e.label.as_str()).icon(Image::from_bytes(e.status.dot())?).build(app)?);
+            sub = sub.item(&IconMenuItemBuilder::with_id(e.id.as_str(), e.label.as_str()).icon(dot_image(e.status)?).build(app)?);
         }
         sub.build()
     };
@@ -380,6 +431,11 @@ fn main() {
             // solo menu bar: niente icona nel Dock
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // avvio al login già attivo: il LaunchAgent punta all'eseguibile corrente (l'app può essere stata
+            // spostata o reinstallata, es. da Homebrew in /Applications)
+            if autostart_enabled() {
+                set_autostart(true);
+            }
 
             let handle = app.handle().clone();
             *app.state::<Server>().0.lock().unwrap() = start_server(&handle);
@@ -404,9 +460,13 @@ fn main() {
             // icona e menu aggiornati ogni POLL, solo quando cambia qualcosa
             thread::spawn(move || {
                 let mut last: Option<(Overview, bool)> = None;
+                let mut etag: Option<String> = None;
                 loop {
                     let dark = dark_menu_bar(&handle);
-                    let overview = fetch_overview();
+                    let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, _)| o.clone())) else {
+                        thread::sleep(POLL);
+                        continue;
+                    };
                     let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
                     if changed {
                         if let Some(tray) = handle.tray_by_id(TRAY_ID) {

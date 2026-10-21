@@ -1,8 +1,9 @@
-/* HUD agent-office: pannelli overlay ed etichette 3D. */
+/* HUD agent-office: pannelli overlay ed etichette 3D.
+   Niente backdrop-filter: sopra il canvas WebGL la sfocatura andrebbe ricalcolata a ogni frame. */
 :root {
   --hud-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --hud-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --hud-bg: rgb(255 255 255 / 0.78);
+  --hud-bg: rgb(255 255 255 / 0.92);
   --hud-fg: #1b1f24;
   --hud-muted: #5b6470;
   --hud-border: rgb(0 0 0 / 0.1);
@@ -27,7 +28,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --hud-bg: rgb(22 25 30 / 0.74);
+    --hud-bg: rgb(22 25 30 / 0.9);
     --hud-fg: #e8ebef;
     --hud-muted: #9aa4b0;
     --hud-border: rgb(255 255 255 / 0.1);
@@ -84,8 +85,6 @@
   box-shadow: var(--hud-shadow);
   padding: 10px 12px;
   min-width: 220px;
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 .hud-panel--empty { color: var(--hud-muted); font-style: italic; }
 .hud-panel dl { margin: 0; }
@@ -94,6 +93,10 @@
 .hud-row dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .hud-muted { color: var(--hud-muted); }
 .hud-title { font-weight: 600; font-size: 14px; }
+.hud-session { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-width: 0; }
+.hud-session .hud-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-session__branch { font-family: var(--hud-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-session__alert { margin: 0 0 6px; color: var(--hud-danger); font-weight: 600; }
 .hud-branch { font-family: var(--hud-mono); font-size: 12px; color: var(--hud-muted); }
 .hud-diff { display: flex; gap: 10px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .hud-added { color: var(--hud-added); font-weight: 600; }
@@ -153,8 +156,6 @@
   width: max-content;
   min-width: 72px;
   max-width: 140px;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   user-select: none;
   transition: opacity 300ms ease;
 }
@@ -164,6 +165,13 @@
 .hud-label--expanded.hud-label--idle,
 .hud-label--expanded.hud-label--done { opacity: 1; }
 .hud-label .hud-bar { margin-top: 2px; }
+.hud-label--waiting {
+  opacity: 1;
+  border-color: var(--hud-danger);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hud-danger) 35%, transparent), var(--hud-shadow);
+}
+.hud-label--waiting .hud-label__time { color: var(--hud-danger); font-weight: 600; }
+.hud-label__time { color: var(--hud-muted); font-size: 10px; white-space: nowrap; }
 .hud-label__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-label__issue {
   margin-left: 6px;
@@ -174,7 +182,6 @@
   font-size: 0.85em;
 }
 .hud-label__meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; white-space: nowrap; }
-.hud-label__tokens { font-variant-numeric: tabular-nums; }
 .hud-label__status { color: var(--hud-muted); margin-left: auto; }
 .hud-label__progress { color: var(--hud-muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
 
@@ -215,7 +222,6 @@
   background: var(--hud-bg);
   border: 1px solid var(--hud-border);
   box-shadow: var(--hud-shadow);
-  backdrop-filter: blur(8px);
 }
 .hud-toggle button {
   font: 600 12px/1 var(--hud-font);

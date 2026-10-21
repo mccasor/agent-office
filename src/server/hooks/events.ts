@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from 'node:fs/promises';
+import { appendFile, mkdir, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { HookEvent } from '../../shared/types.js';
@@ -74,6 +74,9 @@ export function parseEventLine(line: string): HookEvent | null {
   return e as unknown as HookEvent;
 }
 
+/** oltre questa dimensione il file eventi viene ruotato in `<file>.old` (sostituendo la rotazione precedente) */
+export const MAX_EVENTS_FILE_BYTES = 2 * 1024 * 1024;
+
 /**
  * Eseguito dal binario hook. Il file è scelto in base a CLAUDE_PROJECT_DIR (cartella del progetto,
  * stabile anche se il cwd della sessione cambia o il subagente lavora in un worktree), altrimenti cwd.
@@ -87,6 +90,9 @@ export async function runHook(stdin: string, opts?: HookPathsOptions & { now?: n
     if (!dir) return;
     const file = eventsFilePath(dir, opts);
     await mkdir(dirname(file), { recursive: true });
+    // rotazione: il file non cresce senza limiti (rename atomico; il watcher riparte dal file nuovo)
+    const size = await stat(file).then((s) => s.size, () => 0);
+    if (size > MAX_EVENTS_FILE_BYTES) await rename(file, `${file}.old`).catch(() => {});
     // una sola write in O_APPEND: righe piccole, atomiche rispetto ad hook concorrenti
     await appendFile(file, JSON.stringify(event) + '\n');
   } catch {
