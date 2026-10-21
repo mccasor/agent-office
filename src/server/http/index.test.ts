@@ -96,6 +96,18 @@ describe('startServer', () => {
     expect(await res.json()).toEqual(snap(2));
   });
 
+  it('GET /api/snapshot con If-None-Match: 304 finché non arriva uno snapshot nuovo', async () => {
+    const first = await fetch(`${server.url}/api/snapshot`);
+    const tag = first.headers.get('etag')!;
+    expect(tag).toBeTruthy();
+    const same = await fetch(`${server.url}/api/snapshot`, { headers: { 'If-None-Match': tag } });
+    expect(same.status).toBe(304);
+    server.publish(snap(3));
+    const fresh = await fetch(`${server.url}/api/snapshot`, { headers: { 'If-None-Match': tag } });
+    expect(fresh.status).toBe(200);
+    expect(fresh.headers.get('etag')).not.toBe(tag);
+  });
+
   it('GET /api/status: stato per l\'icona e numero di sessioni attive', async () => {
     const res = await fetch(`${server.url}/api/status`);
     expect(res.status).toBe(200);

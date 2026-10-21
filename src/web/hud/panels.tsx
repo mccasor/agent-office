@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { RepoState, SessionState } from '../../shared/types';
+import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
 import { contextLevel, formatTokens, percent } from './format';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
@@ -33,8 +33,36 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** Pannello overlay: modello, effort, contesto (barra), token usati/rimanenti. */
-export function SessionPanel({ session }: { session: SessionState | null }) {
+const DOT_LABEL: Record<OfficeStatus, string> = {
+  waiting: 'in attesa di un tuo input',
+  working: 'al lavoro',
+  idle: 'non attivo',
+};
+
+/** Nome del progetto: ultima cartella del cwd, altrimenti l'inizio dell'id. */
+export const projectName = (s: SessionState): string => s.cwd?.split('/').filter(Boolean).at(-1) ?? s.id.slice(0, 8);
+
+/** Righe aggiunte e tolte, file modificati (modifiche non committate). */
+export function DiffStat({ diff }: { diff: RepoDiff }) {
+  return (
+    <div className="hud-diff">
+      <span className="hud-added">{`+${diff.linesAdded}`}</span>
+      <span className="hud-removed">{`-${diff.linesRemoved}`}</span>
+      <span className="hud-muted">{`${diff.filesChanged} file`}</span>
+    </div>
+  );
+}
+
+/** Pallino di stato con la stessa regola dell'icona nella menu bar. */
+export function StatusDot({ status }: { status: OfficeStatus }) {
+  return <span className={`list-dot list-dot--${status}`} role="img" aria-label={DOT_LABEL[status]} title={DOT_LABEL[status]} />;
+}
+
+/**
+ * Pannello overlay della sessione mostrata: progetto con pallino di stato e branch, modello, effort, issue,
+ * contesto (barra), token generati e ripartizione completa.
+ */
+export function SessionPanel({ session, status = 'idle' }: { session: SessionState | null; status?: OfficeStatus }) {
   if (!session) {
     return (
       <section className="hud-panel hud-panel--empty" aria-label="Sessione">
@@ -46,6 +74,13 @@ export function SessionPanel({ session }: { session: SessionState | null }) {
   const pct = percent(used, window);
   return (
     <section className="hud-panel" aria-label="Sessione">
+      <header className="hud-session">
+        <StatusDot status={status} />
+        <span className="hud-title">{projectName(session)}</span>
+        {session.branch && <span className="hud-muted hud-session__branch">{session.branch}</span>}
+      </header>
+      {session.waiting && <p className="hud-session__alert">Aspetta un tuo input</p>}
+      {session.diff && <DiffStat diff={session.diff} />}
       <dl>
         <Row label="Modello">{session.model ?? DASH}</Row>
         <Row label="Effort">{session.effort ?? DASH}</Row>
@@ -60,11 +95,9 @@ export function SessionPanel({ session }: { session: SessionState | null }) {
         {pct !== null && <ProgressBar value={pct} label="Contesto usato" level={contextLevel(pct)} />}
       </div>
       <dl>
-        <Row label="Token usati">
-          <span data-testid="tokens-used">{formatTokens(session.tokensUsed.total)}</span>
-        </Row>
-        <Row label="Rimanenti">
-          <span data-testid="tokens-left">{session.tokensLeft === null ? DASH : formatTokens(session.tokensLeft)}</span>
+        {/* il totale comprende le letture dalla cache e cresce a ogni richiesta: sta nella ripartizione */}
+        <Row label="Token generati">
+          <span data-testid="tokens-generated">{formatTokens(session.tokensUsed.output)}</span>
         </Row>
       </dl>
       <details className="hud-details">
@@ -88,11 +121,7 @@ export function RepoPanel({ repo }: { repo: RepoState | null }) {
     <section className="hud-panel" aria-label="Repository">
       <div className="hud-title">{repo.project}</div>
       <div className="hud-branch">{repo.branch ?? '(detached)'}</div>
-      <div className="hud-diff">
-        <span className="hud-added">{`+${repo.linesAdded}`}</span>
-        <span className="hud-removed">{`-${repo.linesRemoved}`}</span>
-        <span className="hud-muted">{`${repo.filesChanged} file`}</span>
-      </div>
+      <DiffStat diff={repo} />
     </section>
   );
 }

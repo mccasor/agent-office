@@ -1,14 +1,37 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
-import { AgentActor, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
+import { AgentActor, AlertBubble, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
 import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
-import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, ViewToggle } from './hud';
+import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, sessionDot, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
 import { EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
 import './app.css';
+
+/** animazioni semplici e lente: 30 fotogrammi al secondo bastano e dimezzano il lavoro di CPU e GPU */
+const MAX_FPS = 30;
+
+/** Con frameloop "demand": chiede un frame al massimo `fps` volte al secondo (le interazioni ne chiedono altri). */
+function FrameLimiter({ fps }: { fps: number }) {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    let raf = 0;
+    let last = -Infinity;
+    const loop = (t: number) => {
+      raf = requestAnimationFrame(loop);
+      // tolleranza di 2 ms: a 60 Hz un frame sì e uno no anche con piccole irregolarità del vsync
+      if (t - last >= 1000 / fps - 2) {
+        last = t;
+        invalidate();
+      }
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [fps, invalidate]);
+  return null;
+}
 
 export function App() {
   const fullSnapshot = useOfficeStore((s) => s.snapshot);
@@ -43,6 +66,10 @@ export function App() {
   }, []);
 
   const { layout } = model;
+  const drawing = viewMode === 'office' && pageVisible;
+  const waiting = new Set(snapshot?.sessions.filter((s) => s.active && s.waiting).map((s) => s.id));
+  const shown = model.session;
+  const shownStatus = shown ? sessionDot(shown, model.agents.filter((a) => a.sessionId === shown.id)) : 'idle';
   const span = Math.max(layout.width, layout.depth);
 
   return (
@@ -54,10 +81,11 @@ export function App() {
         dpr={[1, 1.5]}
         camera={{ position: [span * 0.56, span * 0.66, span * 0.72], fov: 38 }}
         // in vista lista la scena resta montata (posizioni e post-it intatti) ma non viene disegnata
-        frameloop={viewMode === 'office' && pageVisible ? 'always' : 'never'}
+        frameloop={drawing ? 'demand' : 'never'}
         style={{ display: viewMode === 'office' ? 'block' : 'none' }}
       >
         <color attach="background" args={['#eceef1']} />
+        {drawing && <FrameLimiter fps={MAX_FPS} />}
         <Office layout={layout} />
         <TaskBoards layout={layout} cards={Object.values(board)} />
         {model.agents.map((agent) => (
@@ -81,6 +109,7 @@ export function App() {
             target={model.targets[boss.id] ?? null}
             layout={layout}
             queue={queue}
+            waiting={waiting.has(boss.sessionId)}
           />
         ))}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
@@ -88,7 +117,7 @@ export function App() {
       {viewMode === 'list' && (
         <ListView sessions={fullSnapshot?.sessions ?? []} agents={fullSnapshot?.agents ?? []} hidden={hidden} onToggle={toggleSession} />
       )}
-      <HudOverlay side="left">{viewMode === 'office' && <SessionPanel session={model.session} />}</HudOverlay>
+      <HudOverlay side="left">{viewMode === 'office' && <SessionPanel session={shown} status={shownStatus} />}</HudOverlay>
       <HudOverlay side="right">
         <ViewToggle view={viewMode} onChange={setViewMode} />
         {/* con --all non c'è un repository unico: il branch di ogni sessione è nella vista lista */}
@@ -104,7 +133,7 @@ export function App() {
  * e la riprende quando si alza; sui divani dell'area relax la tiene in mano. Gli agenti con un post-it passano dalle
  * board: entrando lo spostano da "to do" a "in progress", andando via da "in progress" a "in review".
  */
-function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
+function Actor({ agent, preset, target, layout, card = null, onCard, queue, waiting = false }: {
   agent: AgentState;
   preset: CharacterPreset;
   target: Seat | null;
@@ -112,6 +141,8 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
   card?: TaskCard | null;
   onCard?: (id: string, place: CardPlace) => void;
   queue?: StartQueue;
+  /** sessione bloccata in attesa dell'utente: fumetto "!" ed etichetta in rosso */
+  waiting?: boolean;
 }) {
   const move = useCallback((place: CardPlace) => onCard?.(agent.id, place), [onCard, agent.id]);
   return (
@@ -130,7 +161,8 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
               leftHand={card?.place === 'carry' ? <PostIt card={card} size={0.2} /> : undefined}
             />
             {atDesk && <CoffeeCup position={DESK_CUP} />}
-            <AgentLabel agent={agent} position={[0, 1.6, 0]} />
+            <AgentLabel agent={agent} position={[0, 1.6, 0]} waiting={waiting} />
+            {waiting && <AlertBubble />}
           </>
         );
       }}

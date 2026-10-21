@@ -32,7 +32,6 @@ function session(over: Partial<SessionState> = {}): SessionState {
     effort: null,
     context: { used: 0, window: null },
     tokensUsed: zeroTokens,
-    tokensLeft: null,
     startedAt: NOW - 100_000,
     updatedAt: NOW - 1_000,
     active: true,
@@ -247,12 +246,24 @@ describe('buildSnapshot: area relax', () => {
 
   it('chi ha finito resta (in area relax) finché un altro agente lavora', () => {
     const old = agent({ id: 'old', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
-    expect(build([old, agent({ id: 'busy' })])).toEqual(['old', 'busy']);
+    expect(build([old, agent({ id: 'busy', startedAt: NOW - 120_000 })])).toEqual(['old', 'busy']);
+  });
+
+  it('i terminati di un turno precedente, già usciti, non tornano quando entra un nuovo agente', () => {
+    const gone = agent({ id: 'gone', status: 'done', startedAt: NOW - 3_600_000, updatedAt: NOW - 3_000_000 });
+    const lingering = agent({ id: 'lingering', status: 'done', startedAt: NOW - 60_000, updatedAt: NOW - 25_000 });
+    expect(build([gone, lingering, agent({ id: 'new', startedAt: NOW - 5_000 })])).toEqual(['lingering', 'new']);
+  });
+
+  it('a catena: resta chi ha lavorato insieme a uno rimasto in ufficio', () => {
+    const a = agent({ id: 'a', status: 'done', startedAt: NOW - 300_000, updatedAt: NOW - 200_000 });
+    const b = agent({ id: 'b', status: 'done', startedAt: NOW - 250_000, updatedAt: NOW - 100_000 });
+    expect(build([a, b, agent({ id: 'busy', startedAt: NOW - 120_000 })])).toEqual(['a', 'b', 'busy']);
   });
 
   it('quando hanno finito tutti escono insieme: restano DONE_LINGER_MS dopo l\'ultimo', () => {
     const first = agent({ id: 'first', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
-    expect(build([first, agent({ id: 'last', status: 'done', updatedAt: NOW - 1_000 })])).toEqual(['first', 'last']);
+    expect(build([first, agent({ id: 'last', status: 'done', startedAt: NOW - 120_000, updatedAt: NOW - 1_000 })])).toEqual(['first', 'last']);
     expect(build([first, agent({ id: 'last', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 })])).toEqual([]);
   });
 

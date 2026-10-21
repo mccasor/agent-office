@@ -16,7 +16,6 @@ const session = (over: Partial<SessionState> = {}): SessionState => ({
   effort: 'high',
   context: { used: 50_000, window: 200_000 },
   tokensUsed: { input: 1000, output: 234, cacheRead: 0, cacheCreation: 0, total: 1234 },
-  tokensLeft: 2_500_000,
   status: 'working',
   issues: [],
   cwd: '/p',
@@ -37,12 +36,21 @@ describe('SessionPanel', () => {
     expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
-  it('mostra modello, effort, token usati e rimanenti', () => {
-    render(<SessionPanel session={session()} />);
+  it('mostra progetto, branch, pallino di stato, modello, effort e token generati', () => {
+    render(<SessionPanel session={session({ cwd: '/home/u/olimpo-ui', branch: 'feat/x' })} status="working" />);
+    expect(screen.getByText('olimpo-ui')).toBeTruthy();
+    expect(screen.getByText('feat/x')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'al lavoro' })).toBeTruthy();
     expect(screen.getByText('claude-opus-5-5')).toBeTruthy();
     expect(screen.getByText('high')).toBeTruthy();
-    expect(screen.getByTestId('tokens-used').textContent).toBe('1.2k');
-    expect(screen.getByTestId('tokens-left').textContent).toBe('2.5M');
+    expect(screen.getByTestId('tokens-generated').textContent).toBe('234');
+    expect(screen.queryByText(/aspetta/i)).toBeNull();
+  });
+
+  it('sessione bloccata: avviso in evidenza', () => {
+    render(<SessionPanel session={session({ waiting: true })} status="waiting" />);
+    expect(screen.getByText('Aspetta un tuo input')).toBeTruthy();
+    expect(screen.getByRole('img', { name: /in attesa/ })).toBeTruthy();
   });
 
   it('barra contesto con % e aria-valuenow, livello ok', () => {
@@ -65,11 +73,10 @@ describe('SessionPanel', () => {
 
   it('finestra sconosciuta, campi nulli → trattini, niente barra', () => {
     render(
-      <SessionPanel session={session({ model: null, effort: null, tokensLeft: null, context: { used: 1234, window: null } })} />,
+      <SessionPanel session={session({ model: null, effort: null, context: { used: 1234, window: null } })} />,
     );
     expect(screen.queryByRole('progressbar')).toBeNull();
     expect(screen.getByText('1.2k / ?')).toBeTruthy();
-    expect(screen.getByTestId('tokens-left').textContent).toBe('—');
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
   });
 });
@@ -81,7 +88,7 @@ describe('SessionPanel ripartizione token', () => {
         session={session({ tokensUsed: { input: 1_200, output: 3_400, cacheRead: 17_700_000, cacheCreation: 90_000, total: 17_794_600 } })}
       />,
     );
-    expect(screen.getByTestId('tokens-used').textContent).toBe('17.8M');
+    expect(screen.getByTestId('tokens-total').textContent).toBe('17.8M');
     const details = screen.getByText(/ripartizione/i).closest('details');
     expect(details).toBeTruthy();
     expect(screen.getByTestId('tokens-input').textContent).toBe('1.2k');

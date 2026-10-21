@@ -59,7 +59,6 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         effort: 'high',
         context: { used: 20 + 1200 + 100, window: 200_000 },
         tokensUsed: { input: 49, output: 235, cacheRead: 6350, cacheCreation: 850, total: 7484 },
-        tokensLeft: 140_000,
         startedAt: ts('2026-01-01T10:00:00.000Z'),
         updatedAt: T0,
         active: true,

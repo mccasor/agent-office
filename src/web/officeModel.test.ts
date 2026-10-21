@@ -8,7 +8,7 @@ const agent = (id: string): AgentState => ({
 });
 const session = (id: string, active: boolean, updatedAt: number): SessionState => ({
   id, title: null, model: null, effort: null, context: { used: 0, window: null }, tokensUsed: tokens,
-  tokensLeft: null, startedAt: 0, updatedAt, active, status: 'working', issues: [], cwd: null, branch: null, waiting: false,
+  startedAt: 0, updatedAt, active, status: 'working', issues: [], cwd: null, branch: null, waiting: false,
 });
 const EMPTY = EMPTY_SEATING;
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
@@ -53,11 +53,24 @@ describe('officeModel', () => {
 
   it('chi ha finito va sui divani finché un altro lavora; quando hanno finito tutti escono (target null)', () => {
     const done = { ...agent('d'), status: 'done' as const };
-    const m = officeModel(snap([done, agent('w')]), EMPTY);
+    const start = officeModel(snap([agent('d'), agent('w')]), EMPTY);
+    const m = officeModel(snap([done, agent('w')]), start);
     expect(m.targets.d?.id).toMatch(/^lounge-/);
     expect(m.targets.w?.id).toBe(m.seats.w);
     const all = officeModel(snap([done, { ...agent('w'), status: 'done' }]), m);
     expect(all.targets).toEqual({ d: null, w: null });
+    expect(all.seats).toEqual({});
+  });
+
+  it('chi è uscito, o non è mai stato visto lavorare, non torna in area relax quando entra un nuovo agente', () => {
+    const done = (id: string) => ({ ...agent(id), status: 'done' as const });
+    const before = officeModel(snap([agent('old')]), EMPTY);
+    const out = officeModel(snap([done('old')]), before);
+    expect(out.targets.old).toBeNull();
+    const again = officeModel(snap([done('old'), done('never'), agent('new')]), out);
+    expect(again.targets.old).toBeNull();
+    expect(again.targets.never).toBeNull();
+    expect(again.targets.new?.id).toMatch(/^seat-/);
   });
 
   it('Claudio Code: nella stanza del boss mentre lavora, sui divani se finisce prima degli agenti, poi esce', () => {
@@ -87,7 +100,8 @@ describe('officeModel', () => {
   it('area relax piena: nessuno si siede sopra un altro; chi non trova posto in piedi esce', () => {
     const working = agent('w');
     const many = Array.from({ length: 60 }, (_, i) => ({ ...agent(`d${i}`), status: 'done' as const }));
-    const m = officeModel(snap([working, ...many]), EMPTY);
+    const seen = officeModel(snap([working, ...many.map((a) => ({ ...a, status: 'working' as const }))]), EMPTY);
+    const m = officeModel(snap([working, ...many]), seen);
     const spots = many.map((a) => m.targets[a.id]?.id).filter((id): id is string => id !== undefined);
     expect(new Set(spots).size).toBe(spots.length);
     expect(spots.some((id) => id.startsWith('stand-'))).toBe(true);

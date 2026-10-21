@@ -10,7 +10,6 @@ export interface FileSummary {
   tokens: TokenUsage;
   /** input + cache dell'ultima richiesta */
   contextUsed: number | null;
-  tokensLeft: { value: number; at: number } | null;
   firstAt: number | null;
   lastAt: number | null;
   progress: TodoProgress | null;
@@ -43,7 +42,7 @@ const FILE_TOOLS = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit'
 /** tool che restano in attesa di una risposta dell'utente finché non arriva il tool_result */
 const QUESTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 const MAX_FILE_PATHS = 200;
-const TOKENS_LEFT_RE = /<total_tokens>\s*(\d+)\s*tokens left/;
+const MAX_COUNTED = 32;
 
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
@@ -94,7 +93,6 @@ export function createAccumulator(): Accumulator {
     effort: null,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
     contextUsed: null,
-    tokensLeft: null,
     firstAt: null,
     lastAt: null,
     progress: null,
@@ -188,7 +186,11 @@ export function createAccumulator(): Accumulator {
       const previous = id ? counted.get(id) : undefined;
       if (previous) addUsage(previous, -1);
       addUsage(usage, 1);
-      if (id) counted.set(id, usage);
+      if (id) {
+        counted.set(id, usage);
+        // le righe di uno stesso messaggio sono consecutive: bastano gli ultimi id (la mappa non cresce col transcript)
+        if (counted.size > MAX_COUNTED) counted.delete(counted.keys().next().value!);
+      }
       state.contextUsed = usage[0] + usage[2] + usage[3];
     }
 
@@ -213,12 +215,9 @@ export function createAccumulator(): Accumulator {
     else state.finished = msg.stop_reason === 'end_turn' ? 'confirmed' : 'tentative';
   };
 
-  const onAttachment = (row: Json, at: number) => {
+  const onAttachment = (row: Json) => {
     const att = isObj(row.attachment) ? row.attachment : {};
-    if (att.type === 'total_tokens_reminder') {
-      const m = typeof att.text === 'string' ? TOKENS_LEFT_RE.exec(att.text) : null;
-      if (m?.[1]) state.tokensLeft = { value: Number(m[1]), at: Number.isFinite(at) ? at : (state.lastAt ?? 0) };
-    } else if (att.type === 'model') {
+    if (att.type === 'model') {
       const identity = isObj(att.identity) ? att.identity : {};
       state.declaredModel = str(identity.modelId) ?? state.declaredModel;
     } else if (att.type === 'structured_output') {
@@ -268,7 +267,7 @@ export function createAccumulator(): Accumulator {
         break;
       }
       case 'attachment':
-        onAttachment(row, at);
+        onAttachment(row);
         break;
     }
   };

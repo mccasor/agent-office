@@ -39,7 +39,7 @@ describe('e2e: CLI -> API', () => {
     expect(res.status).toBe(200);
     const snap = (await res.json()) as Snapshot;
     expect(snap.sessions).toHaveLength(1);
-    expect(snap.sessions[0]).toMatchObject({ effort: 'high', tokensLeft: 140_000 });
+    expect(snap.sessions[0]).toMatchObject({ effort: 'high' });
     expect(snap.sessions[0]!.tokensUsed.total).toBe(7484);
     // a0000000000000001 ha terminato da più di DONE_LINGER_MS: è già uscito dall'ufficio
     expect(snap.agents.map((a) => a.id)).toEqual(['a0000000000000002']);

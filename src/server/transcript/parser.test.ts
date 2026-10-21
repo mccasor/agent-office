@@ -26,7 +26,6 @@ describe('createAccumulator', () => {
       effort: null,
       tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
       contextUsed: null,
-      tokensLeft: null,
       firstAt: null,
       lastAt: null,
       progress: null,
@@ -78,7 +77,6 @@ describe('createAccumulator', () => {
     expect(acc.state.title).toBe('Second');
     expect(acc.state.effort).toBe('xhigh');
     expect(acc.state.model).toBe('claude-sonnet-4-5');
-    expect(acc.state.tokensLeft).toEqual({ value: 14969158, at: Date.parse('2026-01-01T10:00:05.000Z') });
     expect(acc.state.firstAt).toBe(Date.parse('2026-01-01T09:59:00.000Z'));
     expect(acc.state.lastAt).toBe(Date.parse('2026-01-01T10:00:05.000Z'));
   });

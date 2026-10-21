@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { HookEvent, Watcher } from '../../shared/types.js';
 import { createAllHookEventsWatcher, createHookEventsWatcher, eventsFilePath } from './index.js';
+import { INITIAL_TAIL_BYTES, MERGE_WINDOW_MS } from './watcher.js';
 
 const ev = (i: number): HookEvent => ({
   event: 'PreToolUse',
@@ -117,13 +118,50 @@ describe('createAllHookEventsWatcher', () => {
     const b = eventsFilePath('/b', { dataDir });
     await mkdir(dirname(a), { recursive: true });
     await writeFile(a, line(3) + line(1));
-    const w = createAllHookEventsWatcher({ dataDir });
+    const w = createAllHookEventsWatcher({ dataDir, now: () => 0 });
     try {
       await w.start();
       expect(w.current().map((e) => e.timestamp)).toEqual([1, 3]);
       await writeFile(b, line(2));
       await waitFor(() => w.current().length === 3);
       expect(w.current().map((e) => e.timestamp)).toEqual([1, 2, 3]);
+    } finally {
+      await w.stop();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it('tiene solo gli eventi recenti (MERGE_WINDOW_MS)', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'agent-office-all-'));
+    const a = eventsFilePath('/a', { dataDir });
+    await mkdir(dirname(a), { recursive: true });
+    await writeFile(a, line(1) + line(MERGE_WINDOW_MS + 10));
+    const w = createAllHookEventsWatcher({ dataDir, now: () => MERGE_WINDOW_MS + 10 });
+    try {
+      await w.start();
+      expect(w.current().map((e) => e.timestamp)).toEqual([MERGE_WINDOW_MS + 10]);
+    } finally {
+      await w.stop();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('createHookEventsWatcher: file lungo', () => {
+  it('all\'avvio legge solo la coda (INITIAL_TAIL_BYTES), senza la prima riga spezzata', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'agent-office-tail-'));
+    const f = eventsFilePath('/big', { dataDir });
+    await mkdir(dirname(f), { recursive: true });
+    const one = line(1);
+    const count = Math.ceil((INITIAL_TAIL_BYTES * 2) / one.length);
+    await writeFile(f, one.repeat(count) + line(2));
+    const w = createHookEventsWatcher({ file: f });
+    try {
+      await w.start();
+      const got = w.current();
+      expect(got.at(-1)?.timestamp).toBe(2);
+      expect(got.length).toBeLessThan(count / 2 + 2);
+      expect(got.length).toBeGreaterThan(10);
     } finally {
       await w.stop();
       await rm(dataDir, { recursive: true, force: true });

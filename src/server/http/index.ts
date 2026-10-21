@@ -13,6 +13,8 @@ export interface OfficeServer {
 
 const HOST = '127.0.0.1';
 const HEARTBEAT_MS = 15_000;
+/** un client SSE che non legge (buffer oltre questa soglia) viene chiuso invece di accumulare snapshot */
+const MAX_SSE_BUFFER = 4 * 1024 * 1024;
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -53,13 +55,21 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
 /** Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/events (SSE), statici da webDir. */
 export async function startServer(opts: { port: number; webDir: string; initial: Snapshot }): Promise<OfficeServer> {
   let current = opts.initial;
+  // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
+  let currentJson = JSON.stringify(current);
+  let version = 1;
+  const etag = () => `"v${version}"`;
   const clients = new Set<ServerResponse>();
   // realpath: confronto coerente anche se webDir passa per symlink (es. /var → /private/var su macOS)
   const root = await realpath(resolve(opts.webDir));
   let allowedHosts: string[] = [];
 
-  const sseWrite = (res: ServerResponse, snapshot: Snapshot): void => {
-    res.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+  const sseWrite = (res: ServerResponse, json: string): void => {
+    if (res.writableLength > MAX_SSE_BUFFER) {
+      res.destroy();
+      return;
+    }
+    res.write(`event: snapshot\ndata: ${json}\n\n`);
   };
 
   /** Risolve il path richiesto dentro root; null se non valido o fuori da root. */
@@ -135,9 +145,16 @@ export async function startServer(opts: { port: number; webDir: string; initial:
     const pathname = (req.url ?? '/').split('?')[0] ?? '/';
 
     if (pathname === '/api/snapshot') {
-      send(res, 200, JSON.stringify(current), {
+      // l'app della menu bar lo interroga ogni 2 s: senza cambiamenti risponde 304 senza corpo
+      if (req.headers['if-none-match'] === etag()) {
+        res.writeHead(304, { ETag: etag(), 'Cache-Control': 'no-cache' });
+        res.end();
+        return;
+      }
+      send(res, 200, currentJson, {
         'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store',
+        'Cache-Control': 'no-cache',
+        ETag: etag(),
       });
       return;
     }
@@ -163,7 +180,7 @@ export async function startServer(opts: { port: number; webDir: string; initial:
         return;
       }
       res.flushHeaders();
-      sseWrite(res, current);
+      sseWrite(res, currentJson);
       clients.add(res);
       const drop = (): void => {
         clients.delete(res);
@@ -208,7 +225,9 @@ export async function startServer(opts: { port: number; webDir: string; initial:
     url: `http://${HOST}:${port}`,
     publish(snapshot) {
       current = snapshot;
-      for (const res of clients) sseWrite(res, snapshot);
+      currentJson = JSON.stringify(snapshot);
+      version++;
+      for (const res of clients) sseWrite(res, currentJson);
     },
     close() {
       clearInterval(heartbeat);

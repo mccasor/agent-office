@@ -5,6 +5,10 @@ import type { HookEvent, Watcher } from '../../shared/types.js';
 import { eventsFilePath, parseEventLine, type HookPathsOptions } from './events.js';
 
 export const MAX_EVENTS = 2000;
+/** all'avvio si leggono solo gli ultimi byte del file (la storia completa cresce senza limiti) */
+export const INITIAL_TAIL_BYTES = 512 * 1024;
+/** nell'unione di più file contano solo gli eventi recenti: servono per le sessioni attive */
+export const MERGE_WINDOW_MS = 2 * 60 * 60_000;
 
 /** Tail incrementale (per offset) del file eventi dell'hook di una cartella (o del file indicato). */
 export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string }) & HookPathsOptions): Watcher<HookEvent[]> {
@@ -16,6 +20,8 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
   let fsw: FSWatcher | null = null;
   let running = false;
   let queue: Promise<void> = Promise.resolve();
+  /** si è partiti a metà file: la prima riga letta è incompleta */
+  let skipFirstLine = false;
 
   async function readNew(): Promise<void> {
     const { size } = await stat(file);
@@ -41,6 +47,12 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
       await fh.close();
     }
     offset += chunk.length;
+    if (skipFirstLine) {
+      const first = chunk.indexOf(0x0a);
+      if (first === -1) return;
+      skipFirstLine = false;
+      chunk = chunk.subarray(first + 1);
+    }
     // le righe sono UTF-8: si spezza solo su '\n' (byte mai interno a sequenze multibyte)
     const nl = chunk.lastIndexOf(0x0a);
     if (nl === -1) {
@@ -77,6 +89,11 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
       await mkdir(dirname(file), { recursive: true });
       await (await open(file, 'a')).close();
       running = true;
+      const { size } = await stat(file);
+      if (size > INITIAL_TAIL_BYTES) {
+        offset = size - INITIAL_TAIL_BYTES;
+        skipFirstLine = true;
+      }
       await schedule();
       const { watch } = await import('chokidar');
       fsw = watch(file, { ignoreInitial: true });
@@ -104,9 +121,11 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
 
 /**
  * Eventi di tutte le cartelle (app della menu bar): un tail per ogni file in <dataDir>/events, compresi quelli
- * creati dopo l'avvio. Eventi uniti in ordine di timestamp, al più MAX_EVENTS.
+ * creati dopo l'avvio. Eventi delle ultime MERGE_WINDOW_MS uniti in ordine di timestamp: un limite per numero
+ * farebbe uscire gli eventi delle sessioni poco attive quando un'altra ne produce tanti.
  */
-export function createAllHookEventsWatcher(opts: HookPathsOptions = {}): Watcher<HookEvent[]> {
+export function createAllHookEventsWatcher(opts: HookPathsOptions & { now?: () => number } = {}): Watcher<HookEvent[]> {
+  const now = opts.now ?? Date.now;
   const dir = dirname(eventsFilePath('/', opts));
   const tails = new Map<string, Watcher<HookEvent[]>>();
   const listeners = new Set<(v: HookEvent[]) => void>();
@@ -115,10 +134,10 @@ export function createAllHookEventsWatcher(opts: HookPathsOptions = {}): Watcher
   let running = false;
 
   const merge = () => {
+    const since = now() - MERGE_WINDOW_MS;
     events = [...tails.values()]
-      .flatMap((t) => t.current())
-      .sort((a, b) => a.timestamp - b.timestamp)
-      .slice(-MAX_EVENTS);
+      .flatMap((t) => t.current().filter((e) => e.timestamp >= since))
+      .sort((a, b) => a.timestamp - b.timestamp);
     if (running) for (const l of listeners) l(events);
   };
 

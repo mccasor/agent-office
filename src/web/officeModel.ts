@@ -71,13 +71,18 @@ export function officeModel(snapshot: Snapshot | null, prev: Seating): OfficeMod
   // un layout nuovo a ogni snapshot ricostruirebbe la scena e farebbe ripartire i percorsi di tutti gli attori
   // (la capienza cresce a scatti: finché i posti bastano, createLayout darebbe la stessa pianta)
   const layout = prev.layout && capacity <= prev.layout.seats.length ? prev.layout : createLayout(capacity);
-  const workers = [...agents, ...deskless].filter((a) => a.status !== 'done' || prev.seats[a.id]);
-  const seats = assignSeats(prev.seats, workers.map((a) => a.id), layout);
 
-  // chi ha finito aspetta in area relax finché lavora un subagente della sua sessione; poi escono tutti insieme
+  // chi ha finito aspetta in area relax finché lavora un subagente della sua sessione; poi escono tutti insieme.
+  // Solo chi era in ufficio (con una scrivania o già in area relax): un terminato mai visto lavorare, o già uscito,
+  // non rientra
   const busy = new Set(agents.filter((a) => a.status !== 'done').map((a) => a.sessionId));
-  const resting = [...agents, ...bosses].filter((a) => a.status === 'done' && busy.has(a.sessionId)).map((a) => a.id);
+  const present = (a: AgentState) => a.id.startsWith(BOSS_PREFIX) || a.id in prev.seats || a.id in prev.lounge;
+  const resting = [...agents, ...bosses].filter((a) => a.status === 'done' && busy.has(a.sessionId) && present(a)).map((a) => a.id);
   const lounge = assignSpots(prev.lounge, resting, layout.lounge.map((s) => s.id));
+
+  // la scrivania resta occupata da chi aspetta in area relax e si libera quando esce
+  const workers = [...agents, ...deskless].filter((a) => a.status !== 'done' || (a.id in lounge && prev.seats[a.id]));
+  const seats = assignSeats(prev.seats, workers.map((a) => a.id), layout);
 
   const seatById = new Map([...layout.seats, ...layout.lounge, ...layout.bossSeats].map((s) => [s.id, s]));
   const targets: Record<string, Seat | null> = {};
