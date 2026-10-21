@@ -1,22 +1,26 @@
-import type { ReactNode } from 'react';
-import type { AgentState, RepoState, SessionState } from '../../shared/types';
+import { Html } from '@react-three/drei';
+import type { AgentState } from '../../shared/types';
+import { AgentLabelContent } from './AgentLabelContent';
 
-/** 1234 -> "1.2k", 2_500_000 -> "2.5M" */
-export function formatTokens(_n: number): string {
-  throw new Error('not implemented');
-}
+export { formatTokens, percent, contextLevel } from './format';
+export type { ContextLevel } from './format';
+export { SessionPanel, RepoPanel, HudOverlay } from './panels';
+export { AgentLabelContent } from './AgentLabelContent';
+export { ProgressBar } from './ProgressBar';
 
-/** Pannello overlay: modello, effort, contesto (barra), token usati/rimanenti. */
-export function SessionPanel(_props: { session: SessionState | null }): ReactNode {
-  return null;
-}
-
-/** Pannello overlay: progetto, branch, +righe / -righe. */
-export function RepoPanel(_props: { repo: RepoState | null }): ReactNode {
-  return null;
+export interface AgentLabelProps {
+  agent: AgentState;
+  /** posizione locale rispetto al personaggio (default: sopra la testa) */
+  position?: [number, number, number];
+  /** scala dell'Html in funzione della distanza dalla camera */
+  distanceFactor?: number;
 }
 
 /** Etichetta 3D sopra il personaggio (drei <Html>): nome, area colorata, barra % (o indeterminata), token. */
-export function AgentLabel(_props: { agent: AgentState }): ReactNode {
-  return null;
+export function AgentLabel({ agent, position = [0, 2.2, 0], distanceFactor = 10 }: AgentLabelProps) {
+  return (
+    <Html center distanceFactor={distanceFactor} position={position} pointerEvents="none" zIndexRange={[10, 0]}>
+      <AgentLabelContent agent={agent} />
+    </Html>
+  );
 }
