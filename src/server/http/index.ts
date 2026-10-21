@@ -160,9 +160,9 @@ export async function startServer(opts: { port: number; webDir: string; initial:
     }
 
     if (pathname === '/api/status') {
-      // piccolo e senza stream: lo interroga l'icona della menu bar
+      // piccolo e senza stream: l'app della menu bar lo usa per riconoscere il server (firma `app`) prima di usarlo
       const active = current.sessions.filter((s) => s.active).length;
-      send(res, 200, JSON.stringify({ status: current.status, activeSessions: active }), {
+      send(res, 200, JSON.stringify({ app: 'agent-office', status: current.status, activeSessions: active }), {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
       });

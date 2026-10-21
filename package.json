@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Ufficio 3D che visualizza in tempo reale gli agenti di Claude Code della cartella corrente",
   "type": "module",
   "license": "MIT",

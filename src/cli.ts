@@ -42,6 +42,17 @@ const PUBLISH_DELAY_MS = 150;
 const WEB_DIR = fileURLToPath(new URL('../dist/web', import.meta.url));
 const HOOK_BIN = fileURLToPath(new URL('../bin/agent-office-hook.mjs', import.meta.url));
 
+/** Argomento per sh tra apici singoli: nessuna espansione di `$`, backtick o virgolette. */
+const shQuote = (s: string): string => `'${s.replaceAll("'", `'\\''`)}'`;
+
+/**
+ * Comando degli hook: Node con percorso assoluto (Claude Code esegue gli hook con un PATH che può non contenerlo)
+ * e mai un errore se l'app è stata disinstallata senza togliere gli hook.
+ */
+export function hookCommand(node: string, hookBin: string): string {
+  return `[ -f ${shQuote(hookBin)} ] && ${shQuote(node)} ${shQuote(hookBin)} || true`;
+}
+
 export function parseArgs(argv: string[], cwd: string): CliOptions {
   const opts: CliOptions = { command: 'serve', port: DEFAULT_PORT, open: true, cwd, all: false, exitWithStdin: false };
   for (let i = 0; i < argv.length; i++) {
@@ -139,8 +150,8 @@ export async function main(argv: string[]): Promise<RunningOffice | void> {
   const opts = parseArgs(argv, process.cwd());
 
   if (opts.command === 'install-hooks') {
-    // se l'app viene disinstallata senza togliere gli hook, il comando non fallisce (nessun errore in Claude Code)
-    const command = `[ -f "${HOOK_BIN}" ] && node "${HOOK_BIN}" || true`;
+    // l'app passa il Node che usa (es. /opt/homebrew/bin/node, stabile tra gli aggiornamenti di brew)
+    const command = hookCommand(process.env.AGENT_OFFICE_NODE || process.execPath, HOOK_BIN);
     const { changed, file } = opts.all ? await installHooksIn(globalSettingsFile(), command) : await installHooks(opts.cwd, command);
     console.log(changed ? `Hook installati in ${file}` : `Hook già presenti in ${file}`);
     return;

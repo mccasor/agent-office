@@ -203,3 +203,22 @@ describe('cwd, branch e domande in attesa', () => {
     expect(acc.state.awaitingUser).toBe(false);
   });
 });
+
+describe('task in background', () => {
+  const toolResult = (text: string) =>
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: text }] } });
+  const endTurn = JSON.stringify({ type: 'assistant', message: { id: 'm9', role: 'assistant', content: [{ type: 'text', text: 'aspetto' }], stop_reason: 'end_turn' } });
+
+  it('conta i comandi e gli agenti avviati in background finché non arriva la loro notifica', () => {
+    const acc = createAccumulator();
+    acc.ingest(toolResult('Command running in background with ID: bxqc4zf1o. Output is being written to: /tmp/x'));
+    acc.ingest(toolResult('Async agent launched successfully.\nagentId: a816d6b49e4346d22 (internal ID)'));
+    expect(acc.state.backgroundTasks).toBe(2);
+    acc.ingest(endTurn);
+    expect(acc.state.finished).toBe('confirmed');
+    acc.ingest(JSON.stringify({ type: 'user', message: { role: 'user', content: '<task-notification>\n<task-id>bxqc4zf1o</task-id>\n<status>completed</status>' } }));
+    expect(acc.state.backgroundTasks).toBe(1);
+    acc.ingest(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<task-id>a816d6b49e4346d22</task-id>' }] } }));
+    expect(acc.state.backgroundTasks).toBe(0);
+  });
+});

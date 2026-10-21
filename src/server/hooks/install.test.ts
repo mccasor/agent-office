@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { HOOK_EVENTS, installHooks, uninstallHooks } from './index.js';
+import { HOOK_EVENTS, installHooks, installHooksIn, uninstallHooks } from './index.js';
 
 const CMD = 'npx -y agent-office-hook';
 
@@ -20,6 +20,20 @@ describe('installHooks / uninstallHooks', () => {
   });
 
   const read = async () => JSON.parse(await readFile(file, 'utf8'));
+
+  it('settings.json come link simbolico (dotfiles): resta un link e si aggiorna il file reale, con i suoi permessi', async () => {
+    const real = join(dir, 'dotfiles', 'settings.json');
+    const link = join(dir, 'settings.json');
+    await mkdir(join(dir, 'dotfiles'), { recursive: true });
+    await writeFile(real, JSON.stringify({ model: 'opus' }), { mode: 0o600 });
+    await symlink(real, link);
+    expect((await installHooksIn(link, CMD)).changed).toBe(true);
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+    const written = JSON.parse(await readFile(real, 'utf8'));
+    expect(written.model).toBe('opus');
+    expect(Object.keys(written.hooks)).toEqual([...HOOK_EVENTS]);
+    expect((await stat(real)).mode & 0o777).toBe(0o600);
+  });
 
   it('crea settings.local.json con tutti gli eventi', async () => {
     expect(await installHooks(dir, CMD)).toEqual({ changed: true, file });

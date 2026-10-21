@@ -142,8 +142,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   const agentKey = (sessionId: string, agentId: string) => `${sessionId}/${agentId}`;
 
   const agentStatus = (f: TrackedFile, updatedAt: number, t: number): AgentStatus => {
-    const { finished, hasAssistant } = f.acc.state;
-    if (finished === 'confirmed' || (finished === 'tentative' && t - updatedAt >= doneGraceMs)) return 'done';
+    const { finished, hasAssistant, backgroundTasks } = f.acc.state;
+    // fine del turno ma con comandi in background aperti: riprenderà alla loro notifica, non ha finito
+    const done = finished === 'confirmed' || (finished === 'tentative' && t - updatedAt >= doneGraceMs);
+    if (done && backgroundTasks === 0) return 'done';
     if (!hasAssistant) return 'entering';
     return t - updatedAt > idleAfterMs ? 'idle' : 'working';
   };
@@ -300,6 +302,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       }
       tracked.loaded = true;
       emitIfChanged();
+    }).catch(() => {
+      // lettura fallita (file sparito o illeggibile): la catena resta viva, si riprova al prossimo evento
     });
     return tracked.queue;
   };
@@ -404,6 +408,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       if (!match || !running) return;
       candidates.delete(abs);
       follow(abs);
+    }).catch(() => {
+      // come per i file seguiti: si riprova al prossimo evento
     });
     return cand.queue;
   };

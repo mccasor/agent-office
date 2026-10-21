@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,24 +26,53 @@ const settingsFile = (projectDir: string) => join(projectDir, '.claude', 'settin
 export const globalSettingsFile = (claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')) =>
   join(claudeHome, 'settings.json');
 
-async function readSettings(file: string): Promise<Json | null> {
-  let text: string;
+async function readText(file: string): Promise<string | null> {
   try {
-    text = await readFile(file, 'utf8');
+    return await readFile(file, 'utf8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
   }
+}
+
+function parseSettings(file: string, text: string | null): Json | null {
+  if (text === null) return null;
   const parsed: unknown = JSON.parse(text);
   if (!isObj(parsed)) throw new Error(`${file}: atteso un oggetto JSON`);
   return parsed;
 }
 
-async function writeSettings(file: string, settings: Json): Promise<void> {
-  await mkdir(join(file, '..'), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(settings, null, 2) + '\n');
-  await rename(tmp, file);
+/** tentativi quando il file cambia mentre lo si aggiorna (es. Claude Code salva i permessi nello stesso istante) */
+const UPDATE_ATTEMPTS = 5;
+
+/**
+ * Aggiorna il file di impostazioni con `change` (null = da eliminare); false se non cambia nulla.
+ * Scrive sul file reale se è un link simbolico (dotfiles), conserva i permessi e, se il file viene modificato da
+ * altri tra lettura e scrittura, riparte dal contenuto nuovo invece di sovrascriverlo.
+ */
+async function updateSettings(file: string, change: (current: Json | null) => Json | null): Promise<boolean> {
+  const target = await realpath(file).catch(() => file);
+  for (let attempt = 1; ; attempt++) {
+    const before = await readText(target);
+    const current = parseSettings(file, before);
+    const next = change(current);
+    if (JSON.stringify(current) === JSON.stringify(next)) return false;
+    if (next === null) {
+      await unlink(target);
+      return true;
+    }
+    await mkdir(join(target, '..'), { recursive: true });
+    const mode = await stat(target).then((s) => s.mode & 0o777, () => null);
+    const tmp = `${target}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(next, null, 2) + '\n');
+    if (mode !== null) await chmod(tmp, mode);
+    if ((await readText(target)) !== before && attempt < UPDATE_ATTEMPTS) {
+      await unlink(tmp);
+      continue;
+    }
+    await rename(tmp, target);
+    return true;
+  }
 }
 
 /** Rimuove le nostre voci (puro); elimina gruppi/array/oggetto hooks svuotati dalla rimozione. */
@@ -86,29 +115,27 @@ export function uninstallHooks(projectDir: string): Promise<{ changed: boolean; 
 
 /** Installa gli hook nel file di impostazioni indicato (progetto o globale). Idempotente. */
 export async function installHooksIn(file: string, hookCommand: string): Promise<{ changed: boolean; file: string }> {
-  const current = await readSettings(file);
-  const next = strip(current ?? {}, hookCommand);
-  const hooks: Json = isObj(next.hooks) ? { ...next.hooks } : {};
-  for (const event of HOOK_EVENTS) {
-    const handlers = [{ type: 'command', command: hookCommand }];
-    const group = TOOL_EVENTS.has(event) ? { matcher: '*', hooks: handlers } : { hooks: handlers };
-    const existing = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
-    hooks[event] = [...existing, group];
-  }
-  next.hooks = hooks;
-  const changed = current === null || JSON.stringify(current) !== JSON.stringify(next);
-  if (changed) await writeSettings(file, next);
+  const changed = await updateSettings(file, (current) => {
+    const next = strip(current ?? {}, hookCommand);
+    const hooks: Json = isObj(next.hooks) ? { ...next.hooks } : {};
+    for (const event of HOOK_EVENTS) {
+      const handlers = [{ type: 'command', command: hookCommand }];
+      const group = TOOL_EVENTS.has(event) ? { matcher: '*', hooks: handlers } : { hooks: handlers };
+      const existing = Array.isArray(hooks[event]) ? (hooks[event] as unknown[]) : [];
+      hooks[event] = [...existing, group];
+    }
+    return { ...next, hooks };
+  });
   return { changed, file };
 }
 
 /** Rimuove solo le voci di agent-office dal file di impostazioni indicato. */
 export async function uninstallHooksIn(file: string): Promise<{ changed: boolean; file: string }> {
-  const current = await readSettings(file);
-  if (current === null) return { changed: false, file };
-  const next = strip(current);
-  if (JSON.stringify(current) === JSON.stringify(next)) return { changed: false, file };
-  // file rimasto vuoto: lo avevamo creato noi (o non conteneva nulla) -> rimosso
-  if (Object.keys(next).length === 0) await unlink(file);
-  else await writeSettings(file, next);
-  return { changed: true, file };
+  const changed = await updateSettings(file, (current) => {
+    if (current === null) return null;
+    const next = strip(current);
+    // file rimasto vuoto: lo avevamo creato noi (o non conteneva nulla) -> rimosso
+    return Object.keys(next).length === 0 && JSON.stringify(next) !== JSON.stringify(current) ? null : next;
+  });
+  return { changed, file };
 }

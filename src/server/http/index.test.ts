@@ -111,7 +111,7 @@ describe('startServer', () => {
   it('GET /api/status: stato per l\'icona e numero di sessioni attive', async () => {
     const res = await fetch(`${server.url}/api/status`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ status: 'idle', activeSessions: 0 });
+    expect(await res.json()).toEqual({ app: 'agent-office', status: 'idle', activeSessions: 0 });
   });
 
   it('GET /api/events invia lo snapshot iniziale e poi ogni publish', async () => {
