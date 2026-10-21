@@ -52,18 +52,26 @@
 }
 
 /* ---- overlay ---- */
-.hud-overlay {
+.hud-stack {
   position: fixed;
   top: 12px;
+  left: 12px;
+  right: 12px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: min(320px, calc(100vw - 24px));
+  align-items: flex-start;
+  gap: 12px;
   pointer-events: none;
   z-index: 20;
 }
-.hud-overlay--left { left: 12px; }
-.hud-overlay--right { right: 12px; align-items: flex-end; }
+.hud-overlay {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(320px, 100%);
+}
+.hud-overlay--left { order: 0; }
+.hud-overlay--right { order: 1; margin-left: auto; align-items: flex-end; }
 .hud-overlay > * { pointer-events: auto; }
 
 /* ---- pannelli ---- */
@@ -90,6 +98,11 @@
 .hud-diff { display: flex; gap: 10px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .hud-added { color: var(--hud-added); font-weight: 600; }
 .hud-removed { color: var(--hud-removed); font-weight: 600; }
+
+.hud-details { margin-top: 4px; }
+.hud-details > summary { cursor: pointer; color: var(--hud-muted); font-size: 12px; }
+.hud-breakdown { margin: 2px 0 0; font-size: 12px; }
+.hud-label .hud-breakdown { font-size: 10px; margin-top: 3px; }
 
 .hud-context { margin: 6px 0; }
 .hud-context__head { display: flex; gap: 8px; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -138,15 +151,19 @@
   box-shadow: var(--hud-shadow);
   padding: 5px 8px;
   width: max-content;
-  min-width: 120px;
-  max-width: 200px;
+  min-width: 72px;
+  max-width: 140px;
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   user-select: none;
   transition: opacity 300ms ease;
 }
+.hud-label--expanded { min-width: 150px; max-width: 200px; }
 .hud-label--idle { opacity: 0.55; }
 .hud-label--done { opacity: 0.4; }
+.hud-label--expanded.hud-label--idle,
+.hud-label--expanded.hud-label--done { opacity: 1; }
+.hud-label .hud-bar { margin-top: 2px; }
 .hud-label__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-label__meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; white-space: nowrap; }
 .hud-label__tokens { font-variant-numeric: tabular-nums; }
@@ -172,3 +189,11 @@
 .hud-chip--devops { --chip: var(--area-devops); }
 .hud-chip--research { --chip: var(--area-research); }
 .hud-chip--other { --chip: var(--area-other); }
+
+/* ---- smartphone: overlay impilati in alto a tutta larghezza ---- */
+@media (max-width: 679.98px) {
+  .hud-stack { top: 16px; left: 16px; right: 16px; flex-direction: column; align-items: stretch; gap: 8px; }
+  .hud-overlay { max-width: none; }
+  .hud-overlay--right { margin-left: 0; align-items: stretch; }
+  .hud-panel { min-width: 0; padding: 6px 10px; font-size: 12px; }
+}
