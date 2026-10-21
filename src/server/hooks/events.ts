@@ -20,6 +20,16 @@ export function eventsFilePath(cwd: string, opts?: HookPathsOptions): string {
 
 const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
 
+/**
+ * Tipo di notifica senza conservarne il testo: `notification_type` se presente (idle_prompt, permission_prompt,
+ * elicitation_dialog...), altrimenti dal messaggio ("Claude is waiting for your input" = attesa del prossimo prompt).
+ */
+export function notificationKind(p: Record<string, unknown>): 'input' | 'idle' {
+  const type = str(p.notification_type);
+  if (type) return type === 'idle_prompt' ? 'idle' : 'input';
+  return /waiting for your input/i.test(str(p.message) ?? '') ? 'idle' : 'input';
+}
+
 export function toHookEvent(payload: unknown, now: number): HookEvent | null {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return null;
   const p = payload as Record<string, unknown>;
@@ -33,6 +43,7 @@ export function toHookEvent(payload: unknown, now: number): HookEvent | null {
     agentId: str(p.agent_id)?.replace(/^agent-/, '') || null,
     agentType: str(p.agent_type),
     toolName: str(p.tool_name),
+    ...(event === 'Notification' ? { notification: notificationKind(p) } : {}),
     cwd: str(p.cwd) ?? '',
     timestamp: now,
   };

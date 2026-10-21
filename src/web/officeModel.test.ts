@@ -8,11 +8,11 @@ const agent = (id: string): AgentState => ({
 });
 const session = (id: string, active: boolean, updatedAt: number): SessionState => ({
   id, title: null, model: null, effort: null, context: { used: 0, window: null }, tokensUsed: tokens,
-  tokensLeft: null, startedAt: 0, updatedAt, active, status: 'working', issues: [],
+  tokensLeft: null, startedAt: 0, updatedAt, active, status: 'working', issues: [], cwd: null, branch: null, waiting: false,
 });
 const EMPTY = { seats: {}, lounge: {}, capacity: 0 };
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
-  ({ repo: null, sessions, agents, generatedAt: 0 });
+  ({ status: 'idle', repo: null, sessions, agents, generatedAt: 0 });
 
 describe('officeModel', () => {
   it('senza snapshot: ufficio vuoto con capacità minima', () => {

@@ -65,6 +65,9 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         active: true,
         status: 'done',
         issues: [],
+        cwd: '/tmp/agent-office-fixture',
+        branch: null,
+        waiting: false,
       },
     ]);
 
@@ -273,5 +276,25 @@ describe('createTranscriptWatcher – sessioni in altre cartelle di projects (#2
     await mkdir(sub, { recursive: true });
     await writeFile(join(sub, 'agent-b0000000000000002.jsonl'), row(CWD));
     await vi.waitFor(() => expect(w.current().agents.map((a) => a.id)).toContain('b0000000000000002'), { timeout: 5000, interval: 20 });
+  });
+});
+
+describe('createTranscriptWatcher – modalità all (menu bar)', () => {
+  it('trova le sessioni attive di qualunque cartella, ignora i transcript vecchi', async () => {
+    const other = join(home, 'projects', '-altro-progetto');
+    await mkdir(other, { recursive: true });
+    const old = join(other, '22222222-2222-4222-8222-222222222222.jsonl');
+    await writeFile(old, JSON.stringify({ type: 'user', timestamp: '2025-01-01T00:00:00.000Z', cwd: '/altro', message: { content: 'x' } }) + '\n');
+    await utimes(old, Date.parse('2025-01-01') / 1000, Date.parse('2025-01-01') / 1000);
+    const w = await startWatcher({ cwd: '/qualunque', all: true });
+    const snap = w.current();
+    expect(snap.sessions.map((s) => [s.id, s.cwd])).toEqual([[SESSION, CWD]]);
+    expect(snap.agents.map((a) => a.id).sort()).toEqual(['a0000000000000001', 'a0000000000000002']);
+  });
+
+  it('con all restano solo le sessioni attive e i loro subagenti', async () => {
+    const w = await startWatcher({ cwd: '/qualunque', all: true, activeWindowMs: 10 * 60_000 });
+    clock = T0 + 11 * 60_000;
+    expect(w.current()).toEqual({ sessions: [], agents: [] });
   });
 });

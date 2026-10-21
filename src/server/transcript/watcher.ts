@@ -11,8 +11,13 @@ import { createAccumulator, extractIssues, type Accumulator } from './parser.js'
 import { createLineReader, type LineReader } from './reader.js';
 
 export interface TranscriptWatcherOptions {
-  /** cartella monitorata (cwd dell'utente) */
+  /** cartella monitorata (cwd dell'utente); ignorata con `all` */
   cwd: string;
+  /**
+   * tutte le sessioni di tutte le cartelle di projects (app della menu bar): all'avvio si leggono solo i transcript
+   * modificati negli ultimi discoveryWindowMs; nello snapshot restano solo le sessioni attive e i loro subagenti
+   */
+  all?: boolean;
   /** default: ~/.claude */
   claudeHome?: string;
   /** una sessione è attiva se modificata negli ultimi N ms (default 10 min) */
@@ -107,8 +112,17 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   const posixRel = (from: string, to: string) => relative(from, to).split(sep).join('/');
   const outside = (rel: string) => rel === '..' || rel.startsWith('../') || isAbsolute(rel);
 
-  /** file della cartella codificata, o di una sessione di altra cartella già selezionata */
+  const all = opts.all === true;
+  /** false durante la scansione iniziale: in modalità all i file vecchi non vengono letti */
+  let started = false;
+
+  /** file della cartella codificata, o di una sessione di altra cartella già selezionata (con `all`: qualunque) */
   const parseAbs = (abs: string): Parsed | null => {
+    if (all) {
+      const rel = posixRel(projectsRoot, abs);
+      const slash = rel.indexOf('/');
+      return outside(rel) || slash < 0 ? null : parsePath(rel.slice(slash + 1));
+    }
     const inProject = posixRel(projectDir, abs);
     if (!outside(inProject)) return parsePath(inProject);
     const rel = posixRel(projectsRoot, abs);
@@ -191,7 +205,17 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         active: t - updatedAt <= activeWindowMs,
         status: agentStatus(main, Math.max(s.lastAt ?? 0, main.mtime), t),
         issues: [...s.issues],
+        cwd: s.cwd,
+        branch: s.gitBranch,
+        waiting: s.awaitingUser && !s.finished,
       });
+    }
+
+    if (all) {
+      // solo il lavoro in corso: sessioni attive e i loro subagenti
+      const active = new Set(sessions.filter((x) => x.active).map((x) => x.id));
+      sessions.splice(0, sessions.length, ...sessions.filter((x) => active.has(x.id)));
+      agents.splice(0, agents.length, ...agents.filter((a) => active.has(a.sessionId)));
     }
 
     sessions.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
@@ -227,7 +251,19 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     if (!p) return Promise.resolve();
     if (p.kind === 'meta') return readMeta(abs, p).then(emitIfChanged);
 
-    let f = files.get(abs);
+    const f = files.get(abs);
+    if (!f && all && !started) {
+      // scansione iniziale in modalità all: si leggono solo i transcript recenti
+      return stat(abs).then(
+        (st) => (st.mtimeMs >= now() - discoveryWindowMs ? track(abs, p) : undefined),
+        () => undefined,
+      );
+    }
+    return track(abs, p, f);
+  };
+
+  const track = (abs: string, p: Exclude<Parsed, { kind: 'meta' }>, existing?: TrackedFile): Promise<void> => {
+    let f = existing ?? files.get(abs);
     if (!f) {
       f = { parsed: p, reader: createLineReader(abs), acc: createAccumulator(), mtime: 0, size: 0, loaded: false, queue: Promise.resolve() };
       files.set(abs, f);
@@ -261,6 +297,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
     for (const [abs, c] of candidates) {
       checks.push(stat(abs).then((st) => (st.size > c.offset ? evaluate(abs, false) : undefined), () => {}));
+    }
+    if (all) {
+      await Promise.all(checks);
+      return;
     }
     // transcript di altre cartelle mai segnalati dal watcher di discovery
     const dirs = await readdir(projectsRoot).catch(() => [] as string[]);
@@ -358,11 +398,11 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     async start() {
       if (running) return;
       running = true;
-      await startDiscovery();
+      if (!all) await startDiscovery();
       const pending: Promise<void>[] = [];
-      fsWatcher = watch([projectDir, ...pendingFollow], {
-        // profondità massima: <session>/subagents/workflows/<wf>/agent-x.jsonl
-        depth: 4,
+      fsWatcher = watch(all ? [projectsRoot] : [projectDir, ...pendingFollow], {
+        // profondità massima: [<cartella>/]<session>/subagents/workflows/<wf>/agent-x.jsonl
+        depth: all ? 5 : 4,
         ignored: (abs, stats) => Boolean(stats?.isFile()) && !isRelevant(abs),
       });
       fsWatcher.on('add', (abs) => void pending.push(processFile(abs)));
@@ -377,6 +417,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       fsWatcher.removeAllListeners('add');
       fsWatcher.on('add', (abs) => void processFile(abs));
       pendingFollow = [];
+      started = true;
       lastEmitted = JSON.stringify(compute());
       timer = setInterval(() => void resync().then(emitIfChanged), tickMs);
       timer.unref();

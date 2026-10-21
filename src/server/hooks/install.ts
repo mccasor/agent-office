@@ -1,8 +1,9 @@
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /** Eventi registrati (verificati su https://code.claude.com/docs/en/hooks). */
-export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit'] as const;
+export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit', 'Notification'] as const;
 
 /** Eventi con matcher sul nome del tool: "*" = tutti. Per gli altri il matcher omesso significa "tutti". */
 const TOOL_EVENTS = new Set<string>(['PreToolUse', 'PostToolUse']);
@@ -20,6 +21,10 @@ function isOurs(handler: unknown, extra?: string): boolean {
 }
 
 const settingsFile = (projectDir: string) => join(projectDir, '.claude', 'settings.local.json');
+
+/** Impostazioni utente di Claude Code: hook validi per tutte le sessioni, in qualunque cartella. */
+export const globalSettingsFile = (claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')) =>
+  join(claudeHome, 'settings.json');
 
 async function readSettings(file: string): Promise<Json | null> {
   let text: string;
@@ -71,8 +76,16 @@ function strip(settings: Json, extra?: string): Json {
   return out;
 }
 
-export async function installHooks(projectDir: string, hookCommand: string): Promise<{ changed: boolean; file: string }> {
-  const file = settingsFile(projectDir);
+export function installHooks(projectDir: string, hookCommand: string): Promise<{ changed: boolean; file: string }> {
+  return installHooksIn(settingsFile(projectDir), hookCommand);
+}
+
+export function uninstallHooks(projectDir: string): Promise<{ changed: boolean; file: string }> {
+  return uninstallHooksIn(settingsFile(projectDir));
+}
+
+/** Installa gli hook nel file di impostazioni indicato (progetto o globale). Idempotente. */
+export async function installHooksIn(file: string, hookCommand: string): Promise<{ changed: boolean; file: string }> {
   const current = await readSettings(file);
   const next = strip(current ?? {}, hookCommand);
   const hooks: Json = isObj(next.hooks) ? { ...next.hooks } : {};
@@ -88,8 +101,8 @@ export async function installHooks(projectDir: string, hookCommand: string): Pro
   return { changed, file };
 }
 
-export async function uninstallHooks(projectDir: string): Promise<{ changed: boolean; file: string }> {
-  const file = settingsFile(projectDir);
+/** Rimuove solo le voci di agent-office dal file di impostazioni indicato. */
+export async function uninstallHooksIn(file: string): Promise<{ changed: boolean; file: string }> {
   const current = await readSettings(file);
   if (current === null) return { changed: false, file };
   const next = strip(current);

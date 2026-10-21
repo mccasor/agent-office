@@ -50,7 +50,7 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
   res.end(res.req.method === 'HEAD' ? undefined : body);
 }
 
-/** Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/events (SSE), statici da webDir. */
+/** Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/events (SSE), statici da webDir. */
 export async function startServer(opts: { port: number; webDir: string; initial: Snapshot }): Promise<OfficeServer> {
   let current = opts.initial;
   const clients = new Set<ServerResponse>();
@@ -136,6 +136,16 @@ export async function startServer(opts: { port: number; webDir: string; initial:
 
     if (pathname === '/api/snapshot') {
       send(res, 200, JSON.stringify(current), {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store',
+      });
+      return;
+    }
+
+    if (pathname === '/api/status') {
+      // piccolo e senza stream: lo interroga l'icona della menu bar
+      const active = current.sessions.filter((s) => s.active).length;
+      send(res, 200, JSON.stringify({ status: current.status, activeSessions: active }), {
         'Content-Type': 'application/json; charset=utf-8',
         'Cache-Control': 'no-store',
       });

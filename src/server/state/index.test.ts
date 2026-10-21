@@ -38,6 +38,9 @@ function session(over: Partial<SessionState> = {}): SessionState {
     active: true,
     status: 'working',
     issues: [],
+    cwd: null,
+    branch: null,
+    waiting: false,
     ...over,
   };
 }
@@ -229,6 +232,7 @@ describe('buildSnapshot: snapshot', () => {
 
   it('input vuoto', () => {
     expect(buildSnapshot({ transcript: { sessions: [], agents: [] }, hookEvents: [], repo: null, now: NOW })).toEqual({
+      status: 'idle',
       repo: null,
       sessions: [],
       agents: [],
@@ -290,5 +294,34 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
     [null, null],
   ])('branchIssue(%s) = %s', (branch, expected) => {
     expect(branchIssue(branch)).toBe(expected);
+  });
+});
+
+describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
+  const notif = (t: number, notification: 'input' | 'idle') => hook('Notification', t, { agentId: null, notification });
+  const build = (sessions: SessionState[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
+    buildSnapshot({ transcript: { sessions, agents }, hookEvents, repo: null, now: NOW });
+
+  it('notifica di permesso senza attività successiva → waiting; quella di attesa prompt no', () => {
+    expect(build([session()], [notif(NOW - 500, 'input')]).sessions[0]!.waiting).toBe(true);
+    expect(build([session()], [notif(NOW - 500, 'idle')]).sessions[0]!.waiting).toBe(false);
+    expect(build([session()], [notif(NOW - 500, 'input'), hook('PostToolUse', NOW - 100, { agentId: null })]).sessions[0]!.waiting).toBe(false);
+    // il transcript è andato avanti dopo la notifica
+    expect(build([session({ updatedAt: NOW - 100 })], [notif(NOW - 60_000, 'input')]).sessions[0]!.waiting).toBe(false);
+    expect(build([session({ waiting: true })]).sessions[0]!.waiting).toBe(true);
+  });
+
+  it('status: waiting > working > idle, solo sessioni attive', () => {
+    expect(build([]).status).toBe('idle');
+    expect(build([session({ status: 'working' })]).status).toBe('working');
+    expect(build([session({ status: 'done' })], [], [agent({ status: 'working' })]).status).toBe('working');
+    expect(build([session({ status: 'done' })]).status).toBe('idle');
+    expect(build([session({ status: 'working', waiting: true })]).status).toBe('waiting');
+    expect(build([session({ status: 'working', waiting: true, active: false })]).status).toBe('idle');
+  });
+
+  it('area relax per sessione: i terminati di una sessione non aspettano gli agenti di un\'altra', () => {
+    const done = agent({ id: 'd', sessionId: 's2', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 });
+    expect(build([], [], [done, agent({ id: 'w', sessionId: 's1' })]).agents.map((a) => a.id)).toEqual(['w']);
   });
 });

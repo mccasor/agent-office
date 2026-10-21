@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../shared/types';
-import { connectSnapshotStream, useOfficeStore } from './index';
+import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './index';
 
 type Listener = (ev: MessageEvent) => void;
 
@@ -36,7 +36,7 @@ class FakeEventSource {
   }
 }
 
-const snap = (generatedAt: number): Snapshot => ({ repo: null, sessions: [], agents: [], generatedAt });
+const snap = (generatedAt: number): Snapshot => ({ status: 'idle', repo: null, sessions: [], agents: [], generatedAt });
 const last = () => FakeEventSource.instances.at(-1)!;
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -178,5 +178,29 @@ describe('connectSnapshotStream', () => {
     es2.emit('snapshot', JSON.stringify(snap(9)));
     expect(useOfficeStore.getState().snapshot).toBeNull();
     expect(useOfficeStore.getState().connected).toBe(false);
+  });
+});
+
+describe('sessioni visibili nell\'ufficio', () => {
+  it('visibleSnapshot toglie le sessioni nascoste e i loro agenti', () => {
+    const s = (id: string) => ({ id }) as Snapshot['sessions'][number];
+    const a = (id: string, sessionId: string) => ({ id, sessionId }) as Snapshot['agents'][number];
+    const snap = { status: 'idle', repo: null, sessions: [s('x'), s('y')], agents: [a('1', 'x'), a('2', 'y')], generatedAt: 0 } as Snapshot;
+    expect(visibleSnapshot(snap, [])).toBe(snap);
+    const v = visibleSnapshot(snap, ['y'])!;
+    expect(v.sessions.map((x) => x.id)).toEqual(['x']);
+    expect(v.agents.map((x) => x.id)).toEqual(['1']);
+    expect(visibleSnapshot(null, ['y'])).toBeNull();
+  });
+
+  it('toggleSession e setView aggiornano lo store', () => {
+    const st = useOfficeStore.getState();
+    st.toggleSession('z');
+    expect(useOfficeStore.getState().hiddenSessions).toEqual(['z']);
+    useOfficeStore.getState().toggleSession('z');
+    expect(useOfficeStore.getState().hiddenSessions).toEqual([]);
+    useOfficeStore.getState().setView('list');
+    expect(useOfficeStore.getState().view).toBe('list');
+    useOfficeStore.getState().setView('office');
   });
 });

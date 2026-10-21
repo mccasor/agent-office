@@ -2,7 +2,15 @@ import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { RepoState } from './shared/types.js';
 import { createTranscriptWatcher } from './server/transcript/index.js';
-import { createHookEventsWatcher, installHooks, uninstallHooks } from './server/hooks/index.js';
+import {
+  createAllHookEventsWatcher,
+  createHookEventsWatcher,
+  globalSettingsFile,
+  installHooks,
+  installHooksIn,
+  uninstallHooks,
+  uninstallHooksIn,
+} from './server/hooks/index.js';
 import { readRepoState } from './server/git/index.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
@@ -12,6 +20,8 @@ export interface CliOptions {
   port: number;
   open: boolean;
   cwd: string;
+  /** tutte le sessioni attive di qualunque cartella (app della menu bar); con install-hooks: hook globali */
+  all: boolean;
 }
 
 export interface RunningOffice {
@@ -29,17 +39,18 @@ const WEB_DIR = fileURLToPath(new URL('../dist/web', import.meta.url));
 const HOOK_BIN = fileURLToPath(new URL('../bin/agent-office-hook.mjs', import.meta.url));
 
 export function parseArgs(argv: string[], cwd: string): CliOptions {
-  const opts: CliOptions = { command: 'serve', port: DEFAULT_PORT, open: true, cwd };
+  const opts: CliOptions = { command: 'serve', port: DEFAULT_PORT, open: true, cwd, all: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === 'install-hooks' || arg === 'uninstall-hooks') opts.command = arg;
     else if (arg === '--no-open') opts.open = false;
+    else if (arg === '--all' || arg === '--global') opts.all = true;
     else if (arg === '--port') {
       const port = Number(argv[++i]);
       if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Porta non valida: ${argv[i]}`);
       opts.port = port;
     } else if (arg === '--cwd' && argv[i + 1]) opts.cwd = argv[++i]!;
-    else throw new Error(`Argomento sconosciuto: ${arg}\nUso: agent-office [--port N] [--no-open] [--cwd DIR] | install-hooks | uninstall-hooks`);
+    else throw new Error(`Argomento sconosciuto: ${arg}\nUso: agent-office [--port N] [--no-open] [--cwd DIR | --all] | install-hooks [--global] | uninstall-hooks [--global]`);
   }
   return opts;
 }
@@ -51,9 +62,11 @@ function openBrowser(url: string): void {
 
 async function serve(opts: CliOptions): Promise<RunningOffice> {
   const dataDir = process.env.AGENT_OFFICE_DATA_DIR || undefined;
-  const transcript = createTranscriptWatcher({ cwd: opts.cwd, claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined });
-  const hooks = createHookEventsWatcher({ cwd: opts.cwd, dataDir });
-  let repo: RepoState | null = await readRepoState(opts.cwd);
+  const transcript = createTranscriptWatcher({ cwd: opts.cwd, all: opts.all, claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined });
+  const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
+  // con --all il branch di ciascuna sessione arriva dal transcript
+  const readRepo = () => (opts.all ? Promise.resolve(null) : readRepoState(opts.cwd));
+  let repo: RepoState | null = await readRepo();
 
   await Promise.all([transcript.start(), hooks.start()]);
   const snapshot = () =>
@@ -72,7 +85,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish)];
   const tick = setInterval(publish, TICK_MS);
   const gitPoll = setInterval(async () => {
-    repo = await readRepoState(opts.cwd);
+    repo = await readRepo();
     publish();
   }, GIT_POLL_MS);
 
@@ -88,23 +101,27 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   };
 }
 
-/** Entry point: `agent-office [--port N] [--no-open] [--cwd DIR]` · `agent-office install-hooks` · `agent-office uninstall-hooks` */
+/**
+ * Entry point: `agent-office [--port N] [--no-open] [--cwd DIR | --all]` ·
+ * `agent-office install-hooks [--global]` · `agent-office uninstall-hooks [--global]`
+ */
 export async function main(argv: string[]): Promise<RunningOffice | void> {
   const opts = parseArgs(argv, process.cwd());
 
   if (opts.command === 'install-hooks') {
-    const { changed, file } = await installHooks(opts.cwd, `node "${HOOK_BIN}"`);
+    const command = `node "${HOOK_BIN}"`;
+    const { changed, file } = opts.all ? await installHooksIn(globalSettingsFile(), command) : await installHooks(opts.cwd, command);
     console.log(changed ? `Hook installati in ${file}` : `Hook già presenti in ${file}`);
     return;
   }
   if (opts.command === 'uninstall-hooks') {
-    const { changed, file } = await uninstallHooks(opts.cwd);
+    const { changed, file } = opts.all ? await uninstallHooksIn(globalSettingsFile()) : await uninstallHooks(opts.cwd);
     console.log(changed ? `Hook rimossi da ${file}` : 'Nessun hook agent-office da rimuovere');
     return;
   }
 
   const office = await serve(opts);
-  console.log(`Agent Office: ${office.url}  (cartella monitorata: ${opts.cwd})`);
+  console.log(`Agent Office: ${office.url}  (${opts.all ? 'tutte le sessioni attive' : `cartella monitorata: ${opts.cwd}`})`);
   if (opts.open) openBrowser(office.url);
   return office;
 }
