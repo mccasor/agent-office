@@ -1,6 +1,6 @@
 //! Agent Office nella menu bar di macOS: icona (scrivania) con il pallino di stato in basso a destra
 //! (verde: Claude lavora, rosso: aspetta un tuo input, grigio: niente di attivo). Al clic un menu a tendina con lo
-//! stato, l'apertura dell'ufficio, le impostazioni, le istanze di Claude Code e gli agenti IA aperti.
+//! stato, l'apertura dell'ufficio, le impostazioni, le istanze di Claude Code e gli agenti attivi.
 //! Il server Node di agent-office (`--all`) gira in background come processo figlio e chiude con l'app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -25,8 +25,6 @@ const PORT: u16 = 4318;
 const TRAY_ID: &str = "status";
 const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
-/// il tema della barra (chiaro/scuro) si ricontrolla ogni N giri
-const THEME_EVERY: u32 = 5;
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 /// voci al massimo in ciascun sottomenu delle istanze
 const MAX_ITEMS: usize = 20;
@@ -95,7 +93,7 @@ struct Overview {
     status: Status,
     /// sessioni di Claude Code attive (istanze aperte)
     sessions: Vec<Entry>,
-    /// subagenti non terminati delle sessioni attive (istanze IA aperte)
+    /// subagenti non terminati delle sessioni attive (agenti attivi)
     agents: Vec<Entry>,
 }
 
@@ -190,8 +188,35 @@ fn fetch_overview() -> Overview {
     http_get("/api/snapshot").map(|body| overview_from(&body)).unwrap_or_else(Overview::offline)
 }
 
-/// Barra dei menu scura (tema scuro di macOS): icona bianca invece che nera.
-fn dark_menu_bar() -> bool {
+/// Barra dei menu scura: icona bianca invece che nera. Si legge l'aspetto effettivo del pulsante dell'icona
+/// (su macOS 26 la barra è trasparente e segue lo sfondo); se non disponibile, il tema di sistema.
+fn dark_menu_bar(handle: &AppHandle) -> bool {
+    status_item_is_dark(handle).unwrap_or_else(system_is_dark)
+}
+
+#[cfg(target_os = "macos")]
+fn status_item_is_dark(handle: &AppHandle) -> Option<bool> {
+    let tray = handle.tray_by_id(TRAY_ID)?;
+    tray.with_inner_tray_icon(|inner| {
+        use objc2_app_kit::{NSAppearanceCustomization, NSAppearanceNameAqua, NSAppearanceNameDarkAqua};
+        use objc2_foundation::{MainThreadMarker, NSArray};
+        let mtm = MainThreadMarker::new()?;
+        let button = inner.ns_status_item()?.button(mtm)?;
+        // SAFETY: costanti di AppKit, valide per tutta la vita del processo
+        let (aqua, dark) = unsafe { (NSAppearanceNameAqua, NSAppearanceNameDarkAqua) };
+        let best = button.effectiveAppearance().bestMatchFromAppearancesWithNames(&NSArray::from_slice(&[aqua, dark]))?;
+        Some(best.isEqualToString(dark))
+    })
+    .ok()
+    .flatten()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn status_item_is_dark(_: &AppHandle) -> Option<bool> {
+    None
+}
+
+fn system_is_dark() -> bool {
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
         .output()
@@ -307,7 +332,7 @@ fn show_office(app: &AppHandle, view: &str) {
     }
 }
 
-/// Menu a tendina: stato, apri ufficio, impostazioni, istanze di Claude Code, agenti IA, esci.
+/// Menu a tendina: stato, apri ufficio, impostazioni, istanze di Claude Code, agenti attivi, esci.
 fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
     let status = IconMenuItemBuilder::with_id("status", o.status.label())
         .icon(Image::from_bytes(o.status.dot())?)
@@ -333,7 +358,7 @@ fn build_menu(app: &AppHandle, o: &Overview) -> tauri::Result<Menu<Wry>> {
         sub.build()
     };
     let sessions = list(format!("Istanze aperte ({})", o.sessions.len()), &o.sessions, "Nessuna sessione di Claude Code attiva")?;
-    let agents = list(format!("Istanze IA aperte ({})", o.agents.len()), &o.agents, "Nessun agente al lavoro")?;
+    let agents = list(format!("Agenti attivi ({})", o.agents.len()), &o.agents, "Nessun agente al lavoro")?;
 
     MenuBuilder::new(app)
         .item(&status)
@@ -361,7 +386,7 @@ fn main() {
 
             let initial = Overview::offline();
             TrayIconBuilder::with_id(TRAY_ID)
-                .icon(Image::from_bytes(initial.status.tray_icon(dark_menu_bar()))?)
+                .icon(Image::from_bytes(initial.status.tray_icon(system_is_dark()))?)
                 .icon_as_template(false)
                 .tooltip("Agent Office")
                 .menu(&build_menu(&handle, &initial)?)
@@ -379,11 +404,8 @@ fn main() {
             // icona e menu aggiornati ogni POLL, solo quando cambia qualcosa
             thread::spawn(move || {
                 let mut last: Option<(Overview, bool)> = None;
-                let mut dark = dark_menu_bar();
-                for tick in 1u32.. {
-                    if tick % THEME_EVERY == 0 {
-                        dark = dark_menu_bar();
-                    }
+                loop {
+                    let dark = dark_menu_bar(&handle);
                     let overview = fetch_overview();
                     let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
                     if changed {

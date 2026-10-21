@@ -4,7 +4,7 @@ export { createLayout, deskCapacity, deskCells, plantCells, loungePlan, BOARD_CO
 export { findPath, isWalkable } from './path';
 export { assignSeats, assignSpots, seatsByDoorDistance } from './seats';
 export type { PathPosition } from './motion';
-export { advanceAlongPath, pathLength, WALK_SPEED } from './motion';
+export { advanceAlongPath, pathLength, WALK_SPEED, START_GAP, StartQueue } from './motion';
 export type { Motion } from './AgentActor';
 export { Office, DESK_CUP } from './Office';
 export { AgentActor, cardSteps, BOARD_PAUSE } from './AgentActor';

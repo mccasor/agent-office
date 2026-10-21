@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
-import { AgentActor, DESK_CUP, Office, PostIt, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
+import { AgentActor, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
 import { BOSS_PRESET, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
 import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
@@ -29,6 +29,8 @@ export function App() {
     setView({ snapshot, model, board: syncBoard(view.board, model.agents) });
   }
   const { model, board } = view;
+  // turni di partenza condivisi: chi entra (o esce) insieme sfila in fila indiana invece di sovrapporsi
+  const [queue] = useState(() => new StartQueue());
   const onCard = useCallback((id: string, place: CardPlace) => setView((v) => ({ ...v, board: moveCard(v.board, id, place) })), []);
 
   useEffect(() => connectSnapshotStream(), []);
@@ -58,9 +60,12 @@ export function App() {
             layout={layout}
             card={board[agent.id] ?? null}
             onCard={onCard}
+            queue={queue}
           />
         ))}
-        {model.boss && <Actor agent={model.boss} preset={BOSS_PRESET} target={model.targets[model.boss.id] ?? null} layout={layout} />}
+        {model.boss && (
+          <Actor agent={model.boss} preset={BOSS_PRESET} target={model.targets[model.boss.id] ?? null} layout={layout} queue={queue} />
+        )}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
       {viewMode === 'list' && (
@@ -82,17 +87,18 @@ export function App() {
  * e la riprende quando si alza; sui divani dell'area relax la tiene in mano. Gli agenti con un post-it passano dalle
  * board: entrando lo spostano da "to do" a "in progress", andando via da "in progress" a "in review".
  */
-function Actor({ agent, preset, target, layout, card = null, onCard }: {
+function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
   agent: AgentState;
   preset: CharacterPreset;
   target: Seat | null;
   layout: ReturnType<typeof officeModel>['layout'];
   card?: TaskCard | null;
   onCard?: (id: string, place: CardPlace) => void;
+  queue?: StartQueue;
 }) {
   const move = useCallback((place: CardPlace) => onCard?.(agent.id, place), [onCard, agent.id]);
   return (
-    <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move}>
+    <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move} queue={queue}>
       {(motion) => {
         const atDesk = motion.seated && (motion.seatId === 'boss' || (motion.seatId?.startsWith('seat-') ?? false));
         return (

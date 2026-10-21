@@ -62,10 +62,11 @@ const EYE_WHITE = '#f6f3ee';
 const MOUTH_COLOR = '#2a0f17';
 const GEAR_COLOR = '#2d2f36';
 const TIE_COLOR = '#9b2226';
+const SOLE_COLOR = '#efe9df';
 
 type GeometryKey =
   | 'skull' | 'beard' | 'ear' | 'eye' | 'pupil' | 'lidTop' | 'lidLow' | 'nose' | 'lips' | 'mouth'
-  | 'torso' | 'pantsTop' | 'arm' | 'hand' | 'thigh' | 'shin' | 'shoe'
+  | 'torso' | 'pantsTop' | 'arm' | 'hand' | 'hipCap' | 'thigh' | 'knee' | 'shin' | 'cuff' | 'shoe' | 'sole'
   | 'hairCap' | 'hairBack' | 'bun' | 'hatCap' | 'visor' | 'rim' | 'bridge' | 'band' | 'earcup' | 'tie' | 'knot';
 
 let geometries: Record<GeometryKey, BufferGeometry> | null = null;
@@ -89,9 +90,15 @@ function sharedGeometries(): Record<GeometryKey, BufferGeometry> {
     pantsTop: new SphereGeometry(0.165, 24, 10, 0, Math.PI * 2, HALF_PI, HALF_PI),
     arm: new CapsuleGeometry(0.05, 0.15, 8, 14),
     hand: new SphereGeometry(0.052, 16, 12),
-    thigh: new CapsuleGeometry(THIGH_THICKNESS / 2, 0.2 - THIGH_THICKNESS, 8, 16),
-    shin: new CapsuleGeometry(0.068, 0.07, 8, 16),
-    shoe: new SphereGeometry(0.075, 18, 12),
+    // gamba di pantalone continua: coscia e stinco cilindrici appena rastremati, raccordati da anca e ginocchio
+    hipCap: new SphereGeometry(THIGH_THICKNESS / 2, 20, 12),
+    thigh: new CylinderGeometry(THIGH_THICKNESS / 2, 0.074, 0.2, 24, 1, true),
+    knee: new SphereGeometry(0.074, 20, 12),
+    shin: new CylinderGeometry(0.074, 0.068, 0.16, 24, 1, true),
+    cuff: new CylinderGeometry(0.073, 0.076, 0.03, 24),
+    // sneaker: tomaia a capsula distesa in avanti e suola chiara un po' più larga
+    shoe: new CapsuleGeometry(0.058, 0.09, 8, 16),
+    sole: new CapsuleGeometry(0.062, 0.1, 8, 16),
     hairCap: new SphereGeometry(SKULL_R * 1.04, 32, 10, 0, Math.PI * 2, 0, Math.PI * 0.4),
     hairBack: new SphereGeometry(SKULL_R * 1.035, 24, 12, Math.PI + 0.35, Math.PI - 0.7, Math.PI * 0.2, Math.PI * 0.55),
     bun: new SphereGeometry(0.075, 16, 12),
@@ -145,7 +152,7 @@ interface Rig {
 }
 
 type Materials = Record<
-  'skin' | 'warm' | 'lips' | 'mouth' | 'eye' | 'pupil' | 'hair' | 'beard' | 'shirt' | 'pants' | 'shoe' | 'gear' | 'tie',
+  'skin' | 'warm' | 'lips' | 'mouth' | 'eye' | 'pupil' | 'hair' | 'beard' | 'shirt' | 'pants' | 'shoe' | 'sole' | 'gear' | 'tie',
   MeshStandardMaterial
 >;
 
@@ -185,6 +192,7 @@ export function Character({
       shirt: material(preset.shirt),
       pants: material(preset.pants, true),
       shoe: material(SHOE_COLOR),
+      sole: material(SOLE_COLOR),
       gear: material(GEAR_COLOR, true, 0.7),
       tie: material(TIE_COLOR),
     }),
@@ -261,10 +269,14 @@ export function Character({
       position={[0.095 * side, HIP_Y, 0]}
       ref={(o) => { rig.current[side === 1 ? 'hipR' : 'hipL'] = o; }}
     >
+      <mesh geometry={g.hipCap} material={m.pants} castShadow />
       <mesh geometry={g.thigh} material={m.pants} position={[0, -0.1, 0]} castShadow />
       <group position={[0, -0.2, 0]} ref={(o) => { rig.current[side === 1 ? 'kneeR' : 'kneeL'] = o; }}>
+        <mesh geometry={g.knee} material={m.pants} castShadow />
         <mesh geometry={g.shin} material={m.pants} position={[0, -0.08, 0]} castShadow />
-        <mesh geometry={g.shoe} material={m.shoe} position={[0, -0.188, 0.035]} scale={[1, 0.5, 1.35]} castShadow />
+        <mesh geometry={g.cuff} material={m.pants} position={[0, -0.152, 0]} castShadow />
+        <mesh geometry={g.sole} material={m.sole} position={[0, -0.208, 0.03]} rotation-x={HALF_PI} scale={[1.05, 1, 0.28]} />
+        <mesh geometry={g.shoe} material={m.shoe} position={[0, -0.188, 0.03]} rotation-x={HALF_PI} scale={[1, 1, 0.62]} castShadow />
       </group>
     </group>
   );

@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
 import { cellToWorld, type BoardColumn, type Cell, type OfficeLayout, type Seat } from './layout';
 import { findPath } from './path';
-import { advanceAlongPath, WALK_SPEED } from './motion';
+import { advanceAlongPath, WALK_SPEED, type StartQueue } from './motion';
 import type { CardPlace } from './TaskBoard';
 
 export interface Motion {
@@ -53,6 +53,8 @@ interface Sim {
   heading: number;
   /** posto del post-it secondo l'attore (aggiornato subito, prima che arrivi il nuovo prop) */
   card: CardPlace | null;
+  /** istante (clock della scena) da cui può muoversi: turno assegnato dalla StartQueue */
+  holdUntil: number;
 }
 
 const TURN_SPEED = 10; // rad/s (smorzamento esponenziale)
@@ -89,6 +91,7 @@ export function AgentActor({
   target,
   card = null,
   onCard,
+  queue,
   children,
 }: {
   layout: OfficeLayout;
@@ -96,16 +99,19 @@ export function AgentActor({
   /** posto iniziale del post-it; null = nessun task (es. Claudio Code) */
   card?: CardPlace | null;
   onCard?: (place: CardPlace) => void;
+  /** turni di partenza condivisi: senza, ognuno parte subito */
+  queue?: StartQueue;
   children: (motion: Motion) => ReactNode;
 }): ReactNode {
   const group = useRef<Group>(null);
   const sim = useRef<Sim>({
     key: null, layout: null, legs: [], path: [], dist: 0, wait: 0, phase: 'init', pos: layout.door, heading: Math.PI, card,
+    holdUntil: 0,
   });
   const [phase, setPhase] = useState<Phase>('init');
   const [seatedAt, setSeatedAt] = useState<string | null>(null);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const s = sim.current;
     const g = group.current;
     if (!g) return;
@@ -120,8 +126,11 @@ export function AgentActor({
       s.dist = 0;
     };
 
+    const now = state.clock.elapsedTime;
     if (s.key !== key || s.layout !== layout) {
       const fresh = s.key === null || s.phase === 'gone';
+      // nuova meta: si aspetta il proprio turno (un cambio del solo layout non rimette in coda)
+      if (s.key !== key) s.holdUntil = queue ? queue.slot(now) : now;
       const steps = cardSteps(s.card, isDesk(seat));
       s.legs = [
         ...steps.map((step) => ({ to: layout.boards[step.column].cell, step })),
@@ -142,6 +151,9 @@ export function AgentActor({
     let aim = s.heading;
     if (s.legs.length === 0) {
       next = 'gone';
+    } else if (now < s.holdUntil) {
+      // in attesa del turno: fuori dalla porta (invisibile) o fermo dov'è
+      next = s.phase;
     } else if (s.wait > 0) {
       // davanti alla board: allo scadere stacca/attacca il post-it e riparte verso la tappa successiva
       next = 'board';
