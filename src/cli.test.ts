@@ -1,4 +1,5 @@
-import { parseArgs } from './cli';
+import { execFileSync } from 'node:child_process';
+import { hookCommand, parseArgs } from './cli';
 
 describe('parseArgs', () => {
   it('default: serve sulla cwd, porta 4317, apre il browser', () => {
@@ -25,5 +26,19 @@ describe('parseArgs', () => {
   it('argomenti non validi -> errore', () => {
     expect(() => parseArgs(['--port', 'abc'], '/p')).toThrow(/porta/i);
     expect(() => parseArgs(['--boh'], '/p')).toThrow(/sconosciut/i);
+  });
+});
+
+describe('hookCommand', () => {
+  it('percorsi tra apici singoli, anche con spazi, virgolette e $', () => {
+    expect(hookCommand('/opt/homebrew/bin/node', "/Applications/Agent Office.app/hook's $HOME.mjs")).toBe(
+      "[ -f '/Applications/Agent Office.app/hook'\\''s $HOME.mjs' ] && '/opt/homebrew/bin/node' '/Applications/Agent Office.app/hook'\\''s $HOME.mjs' || true",
+    );
+  });
+
+  it('eseguito da sh: lancia il file se esiste, altrimenti esce senza errori', () => {
+    const run = (cmd: string) => execFileSync('/bin/sh', ['-c', cmd], { input: '{}' }).toString();
+    expect(run(hookCommand('/bin/echo', '/bin/sh'))).toBe('/bin/sh\n');
+    expect(run(hookCommand('/bin/echo', '/non/esiste/hook.mjs'))).toBe('');
   });
 });

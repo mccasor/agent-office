@@ -23,6 +23,8 @@ export interface FileSummary {
   gitBranch: string | null;
   /** domanda all'utente (AskUserQuestion, ExitPlanMode) ancora senza risposta */
   awaitingUser: boolean;
+  /** comandi o agenti avviati in background e non ancora terminati (l'agente riprenderà alla loro notifica) */
+  backgroundTasks: number;
   /**
    * risposta finale dell'agente: 'confirmed' (stop_reason end_turn o structured_output),
    * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
@@ -75,6 +77,26 @@ function toolResultIds(row: Json): string[] {
   return content.filter((b): b is Json => isObj(b) && b.type === 'tool_result').map((b) => str(b.tool_use_id) ?? '');
 }
 
+/** testo dei blocchi di una riga utente (stringa, text, tool_result), solo per cercarvi degli id */
+function userTexts(row: Json): string[] {
+  const content = isObj(row.message) ? row.message.content : null;
+  if (typeof content === 'string') return [content];
+  if (!Array.isArray(content)) return [];
+  const out: string[] = [];
+  for (const b of content) {
+    if (!isObj(b)) continue;
+    if (typeof b.text === 'string') out.push(b.text);
+    if (typeof b.content === 'string') out.push(b.content);
+    else if (Array.isArray(b.content)) for (const c of b.content) if (isObj(c) && typeof c.text === 'string') out.push(c.text);
+  }
+  return out;
+}
+
+/** avvio di un comando o di un agente in background (tool_result di Bash/Agent) */
+const BACKGROUND_STARTED_RE = /(?:running in background with ID|agentId): ([\w-]+)/g;
+/** notifica di fine di un task in background */
+const BACKGROUND_DONE_RE = /<task-id>([\w-]+)<\/task-id>/g;
+
 /** Issue citate in un prompt utente (testo scritto, non tool_result né messaggi meta). */
 function promptIssues(row: Json): number[] {
   if (row.isMeta === true || !isObj(row.message)) return [];
@@ -102,10 +124,13 @@ export function createAccumulator(): Accumulator {
     cwd: null,
     gitBranch: null,
     awaitingUser: false,
+    backgroundTasks: 0,
     finished: false,
   };
   /** tool_use che aspettano una risposta dell'utente, per id */
   const pendingQuestions = new Set<string>();
+  /** id dei task in background ancora aperti (solo gli id, mai il testo dei messaggi) */
+  const background = new Set<string>();
   /**
    * Usage già conteggiato per message.id. Claude Code scrive una riga per blocco di contenuto
    * (thinking, text, tool_use) dello stesso messaggio ripetendo l'usage, a volte con output_tokens
@@ -261,6 +286,11 @@ export function createAccumulator(): Accumulator {
         if (issues.length > 0) state.issues = issues;
         for (const id of toolResultIds(row)) pendingQuestions.delete(id);
         state.awaitingUser = pendingQuestions.size > 0;
+        for (const text of userTexts(row)) {
+          for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
+          for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+        }
+        state.backgroundTasks = background.size;
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) state.finished = false;
         structuredOutputPending = false;
