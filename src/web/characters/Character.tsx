@@ -13,15 +13,13 @@ import {
   type Mesh,
 } from 'three';
 import type { CharacterPreset } from './presets';
+import { HIP_Y, SEATED_HIP_Y, SEATED_SHIN_SCALE } from './dimensions';
 
 /*
  * Proporzioni (unità mondo, origine ai piedi, faccia verso +z):
  * gambe 0..0.42 (coscia 0.2 + stinco/scarpa 0.22), busto 0.41..0.79, testa centro 0.9 r 0.2 => alto ~1.1.
- * Seduto: anca a SEAT_Y + spessore coscia, cosce in avanti, stinchi verticali.
+ * Seduto: cosce in avanti appoggiate sulla seduta, stinchi verticali allungati fino al pavimento (vedi ./dimensions).
  */
-const HIP_Y = 0.42;
-const SEAT_Y = 0.45;
-const SEATED_HIP_Y = SEAT_Y + 0.07;
 const HALF_PI = Math.PI / 2;
 
 const SHOE_COLOR = '#2b2b2b';
@@ -154,6 +152,8 @@ export function Character({ preset, walking, seated }: { preset: CharacterPreset
     r.hipR.rotation.x = damp(r.hipR.rotation.x, hipR);
     r.kneeL.rotation.x = damp(r.kneeL.rotation.x, kneeL);
     r.kneeR.rotation.x = damp(r.kneeR.rotation.x, kneeR);
+    const shin = damp(r.kneeL.scale.y, seated ? SEATED_SHIN_SCALE : 1);
+    r.kneeL.scale.y = r.kneeR.scale.y = shin;
     r.armL.rotation.x = damp(r.armL.rotation.x, armL);
     r.armR.rotation.x = damp(r.armR.rotation.x, armR);
     r.body.position.y = walking && !seated ? bodyY : damp(r.body.position.y, bodyY);

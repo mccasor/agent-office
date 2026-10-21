@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import * as THREE from 'three';
 import { cellToWorld, deskCells, plantCells, type OfficeLayout } from './layout';
+import { SEAT_HEIGHT } from '../characters/dimensions';
 
 const WALL_H = 0.55;
 const WALL_T = 0.3;
@@ -139,14 +140,16 @@ function DeskModel(): ReactNode {
   );
 }
 
-/** Sedia: local +z verso la scrivania, schienale dietro. */
+const SEAT_T = 0.08;
+
+/** Sedia: local +z verso la scrivania, schienale dietro; piano seduta a SEAT_HEIGHT (condiviso col personaggio). */
 function ChairModel(): ReactNode {
   return (
     <group position={[0, 0, -0.08]}>
       <mesh geometry={G.cyl} material={M.chairBase} position={[0, 0.02, 0]} scale={[0.4, 0.04, 0.4]} />
-      <mesh geometry={G.cyl} material={M.chairBase} position={[0, 0.22, 0]} scale={[0.06, 0.4, 0.06]} />
-      <mesh geometry={G.box} material={M.chair} position={[0, 0.44, 0]} scale={[0.46, 0.08, 0.44]} castShadow receiveShadow />
-      <mesh geometry={G.box} material={M.chair} position={[0, 0.72, -0.21]} scale={[0.44, 0.5, 0.07]} castShadow />
+      <mesh geometry={G.cyl} material={M.chairBase} position={[0, (SEAT_HEIGHT - SEAT_T) / 2, 0]} scale={[0.06, SEAT_HEIGHT - SEAT_T, 0.06]} />
+      <mesh geometry={G.box} material={M.chair} position={[0, SEAT_HEIGHT - SEAT_T / 2, 0]} scale={[0.46, SEAT_T, 0.44]} castShadow receiveShadow />
+      <mesh geometry={G.box} material={M.chair} position={[0, SEAT_HEIGHT + 0.24, -0.21]} scale={[0.44, 0.5, 0.07]} castShadow />
     </group>
   );
 }
