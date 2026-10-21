@@ -139,16 +139,22 @@ export function createAccumulator(): Accumulator {
 
     let hasToolUse = false;
     let hasText = false;
+    let handback = false;
     for (const block of Array.isArray(msg.content) ? msg.content.filter(isObj) : []) {
       if (block.type === 'tool_use') {
         hasToolUse = true;
+        if (block.name === 'SubagentHandback') handback = true;
         onToolUse(block);
       } else if (block.type === 'text') {
         hasText = true;
       }
     }
     state.hasAssistant = true;
-    if (!hasText || hasToolUse || msg.stop_reason === 'tool_use') state.finished = false;
+    if (handback) {
+      // report finale del subagente: il tool_result che segue non lo riattiva
+      state.finished = 'confirmed';
+      structuredOutputPending = true;
+    } else if (!hasText || hasToolUse || msg.stop_reason === 'tool_use') state.finished = false;
     else state.finished = msg.stop_reason === 'end_turn' ? 'confirmed' : 'tentative';
   };
 

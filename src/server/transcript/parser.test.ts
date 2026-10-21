@@ -135,6 +135,13 @@ describe('createAccumulator', () => {
     expect(acc.state.finished).toBe('confirmed');
   });
 
+  it('finished: tool_use SubagentHandback (report finale) seguito dal suo tool_result', () => {
+    const acc = createAccumulator();
+    acc.ingest(assistant('m1', [0, 0, 0, 0], toolUse('SubagentHandback', {})));
+    acc.ingest('{"type":"user","message":{"role":"user","content":[{"type":"tool_result"}]}}');
+    expect(acc.state.finished).toBe('confirmed');
+  });
+
   it('una riga di testo seguita da tool_use dello stesso messaggio non è finale', () => {
     const acc = createAccumulator();
     acc.ingest(assistant('m1', [0, 0, 0, 0], [{ type: 'text', text: 'x' }]));
