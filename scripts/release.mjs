@@ -17,6 +17,9 @@ const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit'
 
 const tauriVersion = JSON.parse(readFileSync(join(root, 'src-tauri/tauri.conf.json'), 'utf8')).version;
 if (tauriVersion !== version) throw new Error(`versione di package.json (${version}) diversa da tauri.conf.json (${tauriVersion})`);
+// l'app confronta la propria versione (Cargo.toml) con le release del tap per proporre gli aggiornamenti
+const cargoVersion = /^version = "([^"]+)"/m.exec(readFileSync(join(root, 'src-tauri/Cargo.toml'), 'utf8'))?.[1];
+if (cargoVersion !== version) throw new Error(`versione di package.json (${version}) diversa da Cargo.toml (${cargoVersion})`);
 
 run('npx', ['tauri', 'build', '--target', 'universal-apple-darwin', '--bundles', 'app,dmg']);
 
