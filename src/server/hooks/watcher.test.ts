@@ -89,14 +89,15 @@ describe('createHookEventsWatcher', () => {
     expect(cur.at(-1)?.timestamp).toBe(2099);
   });
 
-  it('file troncato -> riparte da capo', async () => {
+  it('file ruotato o troncato -> legge il nuovo da capo, gli eventi già letti restano', async () => {
     await mkdir(dirname(file), { recursive: true });
     await writeFile(file, line(1) + line(2));
     w = createHookEventsWatcher({ cwd: '/proj', dataDir });
     await w.start();
     await truncate(file, 0);
     await appendFile(file, line(9));
-    await waitFor(() => w!.current().length === 1 && w!.current()[0]?.timestamp === 9);
+    await waitFor(() => w!.current().length === 3);
+    expect(w.current().map((e) => e.timestamp)).toEqual([1, 2, 9]);
   });
 
   it('stop() ferma le notifiche', async () => {

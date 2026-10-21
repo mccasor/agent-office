@@ -284,9 +284,13 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
     const tracked = f;
     tracked.queue = tracked.queue.then(async () => {
-      const { lines, reset } = await tracked.reader.read();
-      if (reset) tracked.acc = createAccumulator();
-      for (const line of lines) tracked.acc.ingest(line);
+      // a blocchi: la prima lettura di un transcript grande non lo carica tutto in memoria
+      for (let more = true; more; ) {
+        const r = await tracked.reader.read();
+        if (r.reset) tracked.acc = createAccumulator();
+        for (const line of r.lines) tracked.acc.ingest(line);
+        more = r.more;
+      }
       try {
         const st = await stat(abs);
         tracked.mtime = st.mtimeMs;

@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eventsFilePath, runHook, toHookEvent } from './index.js';
-import { notificationKind } from './events.js';
+import { MAX_EVENTS_FILE_BYTES, notificationKind } from './events.js';
 
 describe('eventsFilePath', () => {
   it('usa ~/.agent-office/events/<cwd codificata>.jsonl di default', () => {
@@ -102,6 +102,15 @@ describe('runHook', () => {
       { event: 'SubagentStart', sessionId: 's1', agentId: 'a1', agentType: 'Explore', toolName: null, cwd: '/proj/x', timestamp: 1 },
       { event: 'SubagentStop', sessionId: 's1', agentId: 'a1', agentType: 'Explore', toolName: null, cwd: '/proj/x', timestamp: 2 },
     ]);
+  });
+
+  it('ruota il file oltre MAX_EVENTS_FILE_BYTES in <file>.old', async () => {
+    const file = eventsFilePath('/proj/x', { dataDir });
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, 'x'.repeat(MAX_EVENTS_FILE_BYTES + 1));
+    await runHook(payload(), { dataDir, now: 5 });
+    expect((await stat(`${file}.old`)).size).toBe(MAX_EVENTS_FILE_BYTES + 1);
+    expect(JSON.parse(await readFile(file, 'utf8')).timestamp).toBe(5);
   });
 
   it('usa CLAUDE_PROJECT_DIR (se presente) per scegliere il file', async () => {
