@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import * as THREE from 'three';
-import { BOSS_W, cellToWorld, coffeeBarCells, deskCells, LOUNGE_W, loungeTable, plantCells, type OfficeLayout } from './layout';
+import { BOSS_W, cellToWorld, deskCells, LOUNGE_W, loungePlan, plantCells, type OfficeLayout } from './layout';
 import { SEAT_HEIGHT } from '../characters/dimensions';
 
 /** Pareti di fondo (nord, ovest) alte; quelle verso la camera (sud, est) basse, come in uno spaccato. */
@@ -77,6 +77,33 @@ function slatTexture(length: number): THREE.Texture | null {
   return t;
 }
 
+/** Muschio stabilizzato: macchie di verdi diversi su fondo scuro (texture procedurale, deterministica). */
+function mossTexture(length: number): THREE.Texture | null {
+  if (typeof document === 'undefined') return null;
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext('2d');
+  if (!ctx) return null;
+  ctx.fillStyle = '#2f4a25';
+  ctx.fillRect(0, 0, 128, 128);
+  const greens = ['#3f6b2c', '#55823a', '#6f9a45', '#4a7a3a', '#86a957', '#36592a'];
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 420; i++) {
+    ctx.fillStyle = greens[i % greens.length]!;
+    ctx.beginPath();
+    ctx.arc(rnd() * 128, rnd() * 128, 2 + rnd() * 6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(length / 1.2, WALL_H / 1.2);
+  return t;
+}
+
 /** Ufficio: stanza del boss, openspace a isole con fioriere, area relax, pareti a doghe e vetrate, luci. */
 export function Office({ layout }: { layout: OfficeLayout }): ReactNode {
   const desks = useMemo(() => deskCells(layout), [layout]);
@@ -87,7 +114,7 @@ export function Office({ layout }: { layout: OfficeLayout }): ReactNode {
   const at = (x: number, z: number) => cellToWorld(layout, { x, z });
   const [x0w, , z0w] = at(0, 0);
   const bossCenter = at((1 + BOSS_W) / 2, (d - 1) / 2);
-  const loungeX = w - 1 - LOUNGE_W + 1;
+  const loungeX = w - 1 - LOUNGE_W + 2;
 
   return (
     <group>
@@ -112,7 +139,7 @@ export function Office({ layout }: { layout: OfficeLayout }): ReactNode {
       <mesh geometry={G.box} material={M.carpet} position={[0, 0.002, 0]} scale={[w - 1, 0.004, d - 1]} receiveShadow />
       <mesh geometry={G.box} material={M.parquet} position={[bossCenter[0], 0.005, bossCenter[2]]} scale={[BOSS_W + 0.5, 0.006, d - 1]} receiveShadow />
       <mesh geometry={G.box} material={M.bossRug} position={[at(2, 4)[0], 0.01, at(2, 4)[2]]} scale={[2.2, 0.006, 3]} receiveShadow />
-      <mesh geometry={G.box} material={M.rug} position={[at(loungeX, (d - 1) / 2)[0], 0.008, at(loungeX, (d - 1) / 2)[2]]} scale={[LOUNGE_W + 0.4, 0.006, d - 2.4]} receiveShadow />
+      <mesh geometry={G.box} material={M.rug} position={[at(loungeX, (d - 1) / 2)[0], 0.008, at(loungeX, (d - 1) / 2)[2]]} scale={[LOUNGE_W - 1.2, 0.006, d - 2.4]} receiveShadow />
 
       {walls.map((s, i) => (
         <Wall key={i} segment={s} />
@@ -185,21 +212,14 @@ function Wall({ segment: s }: { segment: WallSegment }): ReactNode {
 function BackWallDecor({ layout, x0, z0 }: { layout: OfficeLayout; x0: number; z0: number }): ReactNode {
   const face = z0 + WALL_T / 2 + 0.02;
   const westFace = x0 + WALL_T / 2 + 0.02;
-  const windowsX = [...new Set(layout.islands.map((c) => cellToWorld(layout, { x: c.x + 0.5, z: 0 })[0]))];
-  const pilasters = [cellToWorld(layout, layout.bossDoor)[0], cellToWorld(layout, { x: layout.width - 1 - LOUNGE_W - 0.5, z: 0 })[0]];
+  const pilasters = [cellToWorld(layout, layout.bossDoor)[0]];
+  const lounge = loungePlan(layout);
+  const [mossX0] = cellToWorld(layout, { x: lounge.screenX, z: 0 });
+  const [mossX1] = cellToWorld(layout, { x: layout.width - 1, z: 0 });
+  const mossLen = mossX1 - mossX0 - WALL_T / 2;
   return (
     <group>
-      {windowsX.map((x) => (
-        <group key={x} position={[x, 0, face]}>
-          <mesh geometry={G.box} material={M.window} position={[0, 1.3, 0]} scale={[1.7, 1.3, 0.02]} />
-          {[-0.85, -0.28, 0.28, 0.85].map((dx) => (
-            <mesh key={dx} geometry={G.box} material={M.black} position={[dx, 1.3, 0.02]} scale={[0.04, 1.34, 0.03]} />
-          ))}
-          {[0.65, 1.3, 1.95].map((y) => (
-            <mesh key={y} geometry={G.box} material={M.black} position={[0, y, 0.02]} scale={[1.74, 0.04, 0.03]} />
-          ))}
-        </group>
-      ))}
+      <MossWall position={[mossX0 + mossLen / 2, 0, face]} length={mossLen} />
       {pilasters.map((x) => (
         <mesh key={x} geometry={G.box} material={M.wallDark} position={[x, WALL_H / 2, face]} scale={[0.6, WALL_H, 0.04]} />
       ))}
@@ -371,43 +391,83 @@ function BossOffice({ layout }: { layout: OfficeLayout }): ReactNode {
   );
 }
 
-/** Area relax: due divani affacciati sul tavolino, bancone con macchina del caffè. */
+/** Pannello di muschio con cornice in rovere, sulla parete nord dell'area relax. */
+function MossWall({ position, length }: { position: [number, number, number]; length: number }): ReactNode {
+  const material = useMemo(() => {
+    const map = mossTexture(length);
+    return map ? mat('#ffffff', { map, roughness: 1 }) : M.leafDark;
+  }, [length]);
+  return (
+    <group position={position}>
+      <mesh geometry={G.box} material={material} position={[0, WALL_H / 2, 0.03]} scale={[length, WALL_H - 0.04, 0.06]} receiveShadow />
+      <mesh geometry={G.box} material={M.oak} position={[0, WALL_H - 0.01, 0.05]} scale={[length, 0.04, 0.1]} />
+    </group>
+  );
+}
+
+/**
+ * Area relax: separè in doghe di rovere con fioriera alla base, salottini (due poltroncine, tavolino, divanetto),
+ * libreria, bancone con la macchina del caffè, lampada da terra.
+ */
 function Lounge({ layout }: { layout: OfficeLayout }): ReactNode {
-  const table = loungeTable(layout);
+  const plan = loungePlan(layout);
   const at = (x: number, z: number) => cellToWorld(layout, { x, z });
-  const bar = coffeeBarCells(layout);
-  const columns = [
-    { x: table.x - 1, facing: Math.PI / 2 },
-    { x: table.x + 1, facing: -Math.PI / 2 },
-  ];
-  const z0 = 2;
-  const z1 = layout.depth - 3;
-  const len = z1 - z0 + 1;
-  const tLen = table.z1 - table.z0 + 1;
-  const barMid = at((bar[0]!.x + bar[1]!.x) / 2, bar[0]!.z);
+  const [sx, , sz0] = at(plan.screenX, 0.5);
+  const [, , sz1] = at(plan.screenX, plan.screenZ1 + 0.5);
+  const screenLen = sz1 - sz0;
+  const slats = Math.round(screenLen / 0.14);
+  const barMid = at((plan.bar[0]!.x + plan.bar[1]!.x) / 2, 1);
   return (
     <group>
-      {columns.map((c) => (
-        <group key={c.x} position={at(c.x, (z0 + z1) / 2)} rotation-y={c.facing}>
-          <mesh geometry={G.box} material={M.oak} position={[0, 0.05, -0.1]} scale={[len, 0.1, 0.66]} receiveShadow />
-          <mesh geometry={G.box} material={M.fabric} position={[0, 0.12, -0.42]} scale={[len, 0.24, 0.06]} />
-          {Array.from({ length: len }, (_, i) => (
-            <mesh key={i} geometry={G.box} material={M.cushion} position={[-len / 2 + i + 0.5, SEAT_HEIGHT - 0.075, -0.08]} scale={[0.94, 0.15, 0.6]} castShadow receiveShadow />
-          ))}
-          <mesh geometry={G.box} material={M.fabric} position={[0, 0.48, -0.42]} scale={[len, 0.5, 0.16]} castShadow />
-          {[-1, 1].map((sx) => (
-            <mesh key={sx} geometry={G.box} material={M.fabric} position={[sx * (len / 2 + 0.08), 0.3, -0.12]} scale={[0.16, 0.42, 0.66]} castShadow />
-          ))}
-        </group>
-      ))}
-      <group position={at(table.x, (table.z0 + table.z1) / 2)}>
-        <mesh geometry={G.box} material={M.oak} position={[0, 0.34, 0]} scale={[0.7, 0.04, tLen - 0.3]} castShadow receiveShadow />
-        <mesh geometry={G.box} material={M.black} position={[0, 0.16, 0]} scale={[0.5, 0.32, tLen - 0.6]} />
-        <mesh geometry={G.box} material={M.paper} position={[0.1, 0.37, -tLen / 4]} rotation-y={0.3} scale={[0.22, 0.02, 0.3]} />
-        <group position={[0, 0.36, tLen / 4]} scale={0.45}>
-          <PlantModel />
-        </group>
+      {/* separè: fioriera bassa e doghe verticali */}
+      <group position={[sx, 0, (sz0 + sz1) / 2]}>
+        <mesh geometry={G.box} material={M.black} position={[0, 0.2, 0]} scale={[0.4, 0.4, screenLen]} castShadow receiveShadow />
+        {Array.from({ length: Math.round(screenLen * 2) }, (_, i) => (
+          <mesh key={`b${i}`} geometry={G.leaf} material={i % 2 ? M.leaf : M.leafLight} position={[0, 0.45, -screenLen / 2 + (i + 0.5) / 2]} scale={[0.5, 0.35, 0.5]} castShadow />
+        ))}
+        {Array.from({ length: slats }, (_, i) => (
+          <mesh key={i} geometry={G.box} material={M.oak} position={[0, 1.05, -screenLen / 2 + (i + 0.5) * (screenLen / slats)]} scale={[0.06, 1.3, 0.06]} castShadow />
+        ))}
+        <mesh geometry={G.box} material={M.oak} position={[0, 1.72, 0]} scale={[0.1, 0.04, screenLen]} />
       </group>
+
+      {plan.nooks.map(({ z0 }) => {
+        const [tx, , tz] = at(plan.tableX, z0 + 0.5);
+        return (
+          <group key={z0}>
+            {/* tavolino tondo */}
+            <group position={[tx, 0, tz]}>
+              <mesh geometry={G.cyl} material={M.oak} position={[0, 0.36, 0]} scale={[0.8, 0.04, 1.4]} castShadow receiveShadow />
+              <mesh geometry={G.cyl} material={M.black} position={[0, 0.17, 0]} scale={[0.08, 0.34, 0.08]} />
+              <mesh geometry={G.cyl} material={M.black} position={[0, 0.01, 0]} scale={[0.4, 0.02, 0.4]} />
+              <mesh geometry={G.box} material={M.paper} position={[0.05, 0.39, -0.3]} rotation-y={0.4} scale={[0.2, 0.02, 0.28]} />
+            </group>
+            {/* due poltroncine a ovest */}
+            {[z0, z0 + 1].map((z) => (
+              <group key={z} position={at(plan.tableX - 1, z)} rotation-y={Math.PI / 2}>
+                <Armchair />
+              </group>
+            ))}
+            {/* divanetto a due posti a est */}
+            <group position={at(plan.tableX + 1, z0 + 0.5)} rotation-y={-Math.PI / 2}>
+              <Loveseat />
+            </group>
+          </group>
+        );
+      })}
+
+      {/* libreria contro la parete nord */}
+      <group position={[at(plan.shelf.x, 0)[0], 0, at(0, 0)[2] + WALL_T / 2 + 0.2]}>
+        <mesh geometry={G.box} material={M.walnut} position={[0, 0.85, 0]} scale={[0.9, 1.7, 0.36]} castShadow />
+        {[0.3, 0.75, 1.2].map((y, i) => (
+          <group key={y}>
+            <mesh geometry={G.box} material={M.black} position={[0, y, 0.02]} scale={[0.82, 0.03, 0.34]} />
+            <mesh geometry={G.box} material={i === 1 ? M.fabric : M.paper} position={[-0.15 + i * 0.1, y + 0.15, 0.02]} scale={[0.36, 0.26, 0.24]} />
+            <mesh geometry={G.box} material={M.oak} position={[0.25, y + 0.1, 0.02]} scale={[0.08, 0.17, 0.2]} />
+          </group>
+        ))}
+      </group>
+
       {/* bancone del caffè contro la parete nord */}
       <group position={[barMid[0], 0, barMid[2] - 0.15]}>
         <mesh geometry={G.box} material={M.black} position={[0, 0.45, 0]} scale={[1.9, 0.9, 0.6]} castShadow receiveShadow />
@@ -421,6 +481,46 @@ function Lounge({ layout }: { layout: OfficeLayout }): ReactNode {
           <mesh key={x} geometry={G.cyl} material={M.paper} position={[x, 0.99, 0.05]} scale={[0.08, 0.1, 0.08]} />
         ))}
       </group>
+
+      {/* lampada da terra nell'angolo sud-est, mobile basso lungo la parete est */}
+      <group position={at(layout.width - 2, layout.depth - 3)}>
+        <mesh geometry={G.cyl} material={M.black} position={[0.3, 0.01, 0.3]} scale={[0.25, 0.02, 0.25]} />
+        <mesh geometry={G.cyl} material={M.black} position={[0.3, 0.75, 0.3]} scale={[0.03, 1.5, 0.03]} />
+        <mesh geometry={G.cyl} material={M.lampLight} position={[0.3, 1.55, 0.3]} scale={[0.3, 0.22, 0.3]} />
+      </group>
+    </group>
+  );
+}
+
+/** Poltroncina imbottita: local +z verso il tavolino, seduta a SEAT_HEIGHT. */
+function Armchair(): ReactNode {
+  return (
+    <group position={[0, 0, -0.08]}>
+      <mesh geometry={G.box} material={M.cushion} position={[0, SEAT_HEIGHT - 0.07, 0]} scale={[0.62, 0.14, 0.56]} castShadow receiveShadow />
+      <mesh geometry={G.box} material={M.fabric} position={[0, 0.06, 0]} scale={[0.6, 0.1, 0.54]} />
+      <mesh geometry={G.box} material={M.fabric} position={[0, 0.48, -0.27]} scale={[0.66, 0.5, 0.12]} castShadow />
+      {[-1, 1].map((sx) => (
+        <mesh key={sx} geometry={G.box} material={M.fabric} position={[sx * 0.33, 0.3, -0.02]} scale={[0.1, 0.34, 0.56]} castShadow />
+      ))}
+      {[-0.25, 0.25].map((x) => [-0.22, 0.22].map((z) => (
+        <mesh key={`${x},${z}`} geometry={G.box} material={M.black} position={[x, 0.005, z]} scale={[0.04, 0.01, 0.04]} />
+      )))}
+    </group>
+  );
+}
+
+/** Divanetto a due posti (uno per cella): local +z verso il tavolino, lungo l'asse x locale. */
+function Loveseat(): ReactNode {
+  return (
+    <group position={[0, 0, -0.08]}>
+      <mesh geometry={G.box} material={M.oak} position={[0, 0.05, 0]} scale={[1.9, 0.1, 0.62]} receiveShadow />
+      {[-0.5, 0.5].map((x) => (
+        <mesh key={x} geometry={G.box} material={M.leafDark} position={[x, SEAT_HEIGHT - 0.075, 0.02]} scale={[0.94, 0.15, 0.56]} castShadow receiveShadow />
+      ))}
+      <mesh geometry={G.box} material={M.leafDark} position={[0, 0.5, -0.28]} scale={[1.9, 0.5, 0.14]} castShadow />
+      {[-1, 1].map((sx) => (
+        <mesh key={sx} geometry={G.box} material={M.leafDark} position={[sx * 0.98, 0.32, -0.02]} scale={[0.14, 0.38, 0.6]} castShadow />
+      ))}
     </group>
   );
 }

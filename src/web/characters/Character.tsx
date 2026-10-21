@@ -26,6 +26,10 @@ const HALF_PI = Math.PI / 2;
 const HOLD_ARM = -0.9;
 /** mano destra con il braccio a HOLD_ARM (spalla 0.27/0.74, mano a -0.28 lungo il braccio): qui il fondo della tazza */
 const CUP_IN_HAND: [number, number, number] = [0.29, 0.515, 0.25];
+/** stessa presa, mano sinistra (post-it) */
+const LEFT_IN_HAND: [number, number, number] = [-0.29, 0.6, 0.27];
+/** braccio sinistro alzato verso la board */
+const REACH_ARM = -2.3;
 /** braccia appoggiate sulle gambe da seduto, senza digitare */
 const REST_ARM = -0.45;
 
@@ -100,7 +104,8 @@ interface Rig {
 
 /**
  * Personaggio low-poly procedurale (solo primitive three.js), animato via useFrame.
- * `holding`: regge la tazza di caffè con la destra; `typing` (default true): da seduto digita, altrimenti si rilassa.
+ * `holding`: regge la tazza di caffè con la destra; `typing` (default true): da seduto digita, altrimenti si rilassa;
+ * `leftHand`: oggetto retto con la sinistra (es. un post-it); `reaching`: alza la sinistra verso la board.
  */
 export function Character({
   preset,
@@ -108,12 +113,16 @@ export function Character({
   seated,
   holding = false,
   typing = true,
+  leftHand,
+  reaching = false,
 }: {
   preset: CharacterPreset;
   walking: boolean;
   seated: boolean;
   holding?: boolean;
   typing?: boolean;
+  leftHand?: ReactNode;
+  reaching?: boolean;
 }): ReactNode {
   const g = useMemo(() => sharedGeometries(), []);
   const m = useMemo(
@@ -175,6 +184,8 @@ export function Character({
       armR = -armL;
     }
     if (holding) armR = HOLD_ARM + Math.sin(t * 2) * 0.02;
+    if (reaching) armL = REACH_ARM + Math.sin(t * 6) * 0.08;
+    else if (leftHand) armL = HOLD_ARM;
 
     r.hipL.rotation.x = damp(r.hipL.rotation.x, hipL);
     r.hipR.rotation.x = damp(r.hipR.rotation.x, hipR);
@@ -230,6 +241,7 @@ export function Character({
         {arm(-1)}
         {arm(1)}
         {holding && <CoffeeCup position={CUP_IN_HAND} />}
+        {leftHand && !reaching && <group position={LEFT_IN_HAND}>{leftHand}</group>}
         <group ref={(o) => { rig.current.head = o; }} position={[0, 0.9, 0]}>
           <mesh geometry={g.head} material={m.skin} castShadow />
           <mesh geometry={g.eye} material={m.eye} position={[-0.07, -0.01, 0.19]} />

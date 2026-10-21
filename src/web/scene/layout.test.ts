@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createLayout, deskCells, plantCells, cellKey, loungeTable } from './layout';
+import { BOARD_COLUMNS, createLayout, deskCells, plantCells, cellKey, loungePlan } from './layout';
 import { findPath } from './path';
 
 const sizes = [0, 1, 4, 8, 9, 13, 24, 40];
@@ -112,16 +112,39 @@ describe('stanza del boss e area relax', () => {
     for (let z = 1; z < l.depth - 1; z++) expect(l.walkable[z]![l.bossDoor.x]).toBe(z === l.bossDoor.z);
   });
 
-  it('divani rivolti al tavolino (cella davanti non walkable) e posti sufficienti per tutti', () => {
+  it('poltroncine e divanetti rivolti al tavolino del salottino, posti distinti', () => {
     for (const n of sizes) {
       const l = createLayout(n);
+      const plan = loungePlan(l);
+      expect(plan.nooks.length).toBeGreaterThanOrEqual(2);
+      expect(l.lounge.length).toBe(plan.nooks.length * 4);
       expect(new Set(l.lounge.map((s) => cellKey(s.cell))).size).toBe(l.lounge.length);
-      expect(l.lounge.length).toBeGreaterThanOrEqual(Math.min(l.seats.length, 12));
-      const table = loungeTable(l);
-      for (const s of l.lounge.filter((x) => x.cell.z <= table.z1)) {
-        const dx = Math.round(Math.sin(s.facing));
-        expect(s.cell.x + dx).toBe(table.x);
-        expect(l.walkable[s.cell.z]![table.x]).toBe(false);
+      for (const s of l.lounge) {
+        expect(s.cell.x + Math.round(Math.sin(s.facing))).toBe(plan.tableX);
+        expect(l.walkable[s.cell.z]![plan.tableX]).toBe(false);
+      }
+    }
+  });
+
+  it("il separè chiude l'area relax tranne a sud, verso l'ingresso", () => {
+    const l = createLayout(8);
+    const { screenX, screenZ1 } = loungePlan(l);
+    for (let z = 1; z < l.depth - 1; z++) expect(l.walkable[z]![screenX]).toBe(z > screenZ1);
+  });
+});
+
+describe('board dei task', () => {
+  it('tre board sulla parete nord, nel corridoio, raggiungibili, in ordine to do → in review', () => {
+    for (const n of sizes) {
+      const l = createLayout(n);
+      const xs = BOARD_COLUMNS.map((c) => l.boards[c].cell.x);
+      expect(xs).toEqual([...xs].sort((a, b) => a - b));
+      for (const c of BOARD_COLUMNS) {
+        const b = l.boards[c];
+        expect(b.cell.z).toBe(1);
+        expect(b.facing).toBe(Math.PI);
+        expect(findPath(l, l.door, b.cell).length).toBeGreaterThan(0);
+        for (const s of l.seats) expect(findPath(l, b.cell, s.cell).length).toBeGreaterThan(0);
       }
     }
   });
