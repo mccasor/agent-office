@@ -45,6 +45,12 @@ describe('toHookEvent', () => {
     });
   });
 
+  it('agent_id con prefisso "agent-" normalizzato come negli id dei transcript', () => {
+    expect(
+      toHookEvent({ session_id: 's1', hook_event_name: 'SubagentStart', agent_id: 'agent-abc123' }, NOW)?.agentId,
+    ).toBe('abc123');
+  });
+
   it('campi opzionali mancanti o di tipo errato -> null', () => {
     expect(toHookEvent({ session_id: 's1', hook_event_name: 'Stop', cwd: '/p', agent_id: 3, tool_name: '' }, NOW)).toEqual({
       event: 'Stop',

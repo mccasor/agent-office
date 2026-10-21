@@ -29,7 +29,8 @@ export function toHookEvent(payload: unknown, now: number): HookEvent | null {
   return {
     event,
     sessionId,
-    agentId: str(p.agent_id),
+    // i transcript usano l'id senza prefisso (subagents/agent-<id>.jsonl)
+    agentId: str(p.agent_id)?.replace(/^agent-/, '') || null,
     agentType: str(p.agent_type),
     toolName: str(p.tool_name),
     cwd: str(p.cwd) ?? '',
