@@ -100,7 +100,13 @@ agent-office install-hooks --global   # hook per tutte le sessioni (servono per 
 
 - Il server ascolta solo su `127.0.0.1` e rifiuta richieste con header `Host` diverso (anti DNS rebinding).
 - Espone solo metadati e numeri: mai il testo di prompt, risposte o input dei tool.
-- Nessuna chiamata di rete verso l'esterno.
+- **Testi derivati dai prompt:** il titolo della sessione (scritto da Claude Code) e il nome o la descrizione degli
+  agenti (scritti da Claude quando li avvia) riassumono il lavoro richiesto, e vengono mostrati così come sono.
+  Anche cartella di lavoro e branch sono esposti. L'API non ha autenticazione: qualunque processo dello stesso Mac,
+  anche di un altro utente, può leggerli da `127.0.0.1`. Su un Mac condiviso tienilo presente.
+- Il server non fa chiamate di rete verso l'esterno. L'app per la menu bar interroga GitHub
+  (`api.github.com`, release del tap `mccasor/homebrew-agent-office`) per cercare gli aggiornamenti: poco dopo
+  l'avvio, ogni 6 ore e quando clicchi "Aggiornamenti".
 
 ## Limiti noti
 
