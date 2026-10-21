@@ -116,8 +116,9 @@ fn start_server(app: &AppHandle) -> Option<Child> {
     let node = find_node()?;
     Command::new(node)
         .arg(app_dir(app).join("bin/agent-office.mjs"))
-        .args(["--all", "--no-open", "--port", &PORT.to_string()])
-        .stdin(Stdio::null())
+        .args(["--all", "--no-open", "--exit-with-stdin", "--port", &PORT.to_string()])
+        // pipe tenuta aperta dall'app: se l'app termina in qualunque modo il server si chiude da solo
+        .stdin(Stdio::piped())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

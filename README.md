@@ -68,6 +68,18 @@ agent-office uninstall-hooks   # rimuove solo le voci di agent-office
 
 L'installazione è idempotente e preserva le altre impostazioni. L'hook non scrive mai su stdout ed esce sempre con 0: non può bloccare Claude Code. Richiede `npm run build` (il binario usa `dist/`).
 
+## App per la menu bar (macOS)
+
+Icona nella topbar con un pallino: **verde** se Claude sta lavorando, **rosso** se aspetta un tuo input (permesso di un tool, domanda), **grigio** se non c'è attività. Al clic si apre una finestra con l'ufficio; in alto a destra si passa alla vista lista, da cui si sceglie quali sessioni mostrare nell'ufficio. Chiudere la finestra la nasconde: l'app resta nella menu bar (menu col tasto destro: apri, installa gli hook, esci).
+
+L'app avvia in background `agent-office --all` sulla porta 4318: tutte le sessioni attive di Claude Code, in qualunque cartella. Richiede Node ≥ 22 (Homebrew o shell di login).
+
+```bash
+npm run app:build    # crea src-tauri/target/release/bundle/macos/Agent Office.app (richiede Rust: brew install rustup)
+npm run app:dev      # sviluppo
+agent-office install-hooks --global   # hook per tutte le sessioni (servono per il pallino rosso)
+```
+
 ## Cosa mostra
 
 | Dato | Fonte |
