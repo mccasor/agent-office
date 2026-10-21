@@ -139,7 +139,8 @@ export async function main(argv: string[]): Promise<RunningOffice | void> {
   const opts = parseArgs(argv, process.cwd());
 
   if (opts.command === 'install-hooks') {
-    const command = `node "${HOOK_BIN}"`;
+    // se l'app viene disinstallata senza togliere gli hook, il comando non fallisce (nessun errore in Claude Code)
+    const command = `[ -f "${HOOK_BIN}" ] && node "${HOOK_BIN}" || true`;
     const { changed, file } = opts.all ? await installHooksIn(globalSettingsFile(), command) : await installHooks(opts.cwd, command);
     console.log(changed ? `Hook installati in ${file}` : `Hook già presenti in ${file}`);
     return;

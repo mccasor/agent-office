@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Ufficio 3D che visualizza in tempo reale gli agenti di Claude Code della cartella corrente",
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build && npm test",
     "app:dev": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "app:release": "node scripts/release.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

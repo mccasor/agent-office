@@ -431,6 +431,11 @@ fn main() {
             // solo menu bar: niente icona nel Dock
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // avvio al login già attivo: il LaunchAgent punta all'eseguibile corrente (l'app può essere stata
+            // spostata o reinstallata, es. da Homebrew in /Applications)
+            if autostart_enabled() {
+                set_autostart(true);
+            }
 
             let handle = app.handle().clone();
             *app.state::<Server>().0.lock().unwrap() = start_server(&handle);
