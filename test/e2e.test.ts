@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -6,6 +6,8 @@ import { main, type RunningOffice } from '../src/cli';
 import type { Snapshot } from '../src/shared/types';
 
 const fixtures = fileURLToPath(new URL('./fixtures/transcript', import.meta.url));
+/** mtime fissa nel passato: lo stato degli agenti non deve dipendere da quando è stato fatto il checkout */
+const OLD = new Date('2026-01-01T00:00:00Z');
 
 describe('e2e: CLI -> API', () => {
   let office: RunningOffice;
@@ -13,8 +15,13 @@ describe('e2e: CLI -> API', () => {
 
   beforeAll(async () => {
     dataDir = mkdtempSync(join(tmpdir(), 'agent-office-e2e-'));
-    process.env.CLAUDE_CONFIG_DIR = fixtures;
-    process.env.AGENT_OFFICE_DATA_DIR = dataDir;
+    const claudeHome = join(dataDir, 'claude');
+    cpSync(fixtures, claudeHome, { recursive: true });
+    for (const f of readdirSync(claudeHome, { recursive: true, withFileTypes: true })) {
+      if (f.isFile()) utimesSync(join(f.parentPath, f.name), OLD, OLD);
+    }
+    process.env.CLAUDE_CONFIG_DIR = claudeHome;
+    process.env.AGENT_OFFICE_DATA_DIR = join(dataDir, 'events');
     const res = await main(['--no-open', '--port', '0', '--cwd', '/tmp/agent-office-fixture']);
     if (!res) throw new Error('main non ha avviato il server');
     office = res;
