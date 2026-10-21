@@ -47,8 +47,8 @@ export function assignSeats(prev: Record<string, string>, agentIds: string[], la
 }
 
 /**
- * agentId -> id del posto tra `spotIds` (es. divani dell'area relax). Stabile come assignSeats; i nuovi prendono
- * il primo libero nell'ordine dato. Se i posti finiscono si riusano dall'inizio (meglio stretti che in piedi).
+ * agentId -> id del posto tra `spotIds` (es. area relax). Stabile come assignSeats; i nuovi prendono il primo
+ * libero nell'ordine dato. Mai due agenti sullo stesso posto: se finiscono, gli ultimi restano senza chiave.
  */
 export function assignSpots(prev: Record<string, string>, agentIds: string[], spotIds: string[]): Record<string, string> {
   const valid = new Set(spotIds);
@@ -65,9 +65,10 @@ export function assignSpots(prev: Record<string, string>, agentIds: string[], sp
   const free = spotIds.filter((s) => !taken.has(s));
   let k = 0;
   for (const id of ids) {
-    if (id in out || spotIds.length === 0) continue;
-    out[id] = free[k] ?? spotIds[(k - free.length) % spotIds.length]!;
-    k++;
+    if (id in out) continue;
+    const spot = free[k++];
+    if (spot === undefined) break;
+    out[id] = spot;
   }
   return out;
 }

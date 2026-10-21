@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import type { Group } from 'three';
 import { cellToWorld, type BoardColumn, type Cell, type OfficeLayout, type Seat } from './layout';
 import { findPath } from './path';
-import { advanceAlongPath, WALK_SPEED } from './motion';
+import { advanceAlongPath, WALK_SPEED, type StartQueue } from './motion';
 import type { CardPlace } from './TaskBoard';
 
 export interface Motion {
@@ -11,7 +11,7 @@ export interface Motion {
   seated: boolean;
   /** davanti a una board mentre stacca o attacca il post-it */
   reaching: boolean;
-  /** id del posto raggiunto (scrivania 'seat-N', 'boss' o 'lounge-N'); null altrimenti */
+  /** id del posto raggiunto (scrivania 'seat-x-z', 'boss', 'lounge-N' a sedere, 'stand-N' in piedi); null altrimenti */
   seatId: string | null;
 }
 
@@ -32,7 +32,10 @@ export function cardSteps(place: CardPlace | null, toDesk: boolean): CardStep[] 
 
 const isDesk = (seat: Seat | null): boolean => seat?.id.startsWith('seat-') ?? false;
 
-type Phase = 'init' | 'walking' | 'board' | 'seated' | 'gone';
+type Phase = 'init' | 'walking' | 'board' | 'seated' | 'standing' | 'gone';
+
+/** posti in piedi dell'area relax: si arriva e si resta lì col caffè, senza sedersi */
+const isStanding = (seat: Seat): boolean => seat.id.startsWith('stand-');
 
 interface Leg { to: Cell; step: CardStep | null }
 
@@ -50,6 +53,8 @@ interface Sim {
   heading: number;
   /** posto del post-it secondo l'attore (aggiornato subito, prima che arrivi il nuovo prop) */
   card: CardPlace | null;
+  /** istante (clock della scena) da cui può muoversi: turno assegnato dalla StartQueue */
+  holdUntil: number;
 }
 
 const TURN_SPEED = 10; // rad/s (smorzamento esponenziale)
@@ -73,7 +78,7 @@ const motionOf = (phase: Phase, seatId: string | null): Motion => ({
   walking: phase === 'walking',
   seated: phase === 'seated',
   reaching: phase === 'board',
-  seatId: phase === 'seated' ? seatId : null,
+  seatId: phase === 'seated' || phase === 'standing' ? seatId : null,
 });
 
 /**
@@ -86,6 +91,7 @@ export function AgentActor({
   target,
   card = null,
   onCard,
+  queue,
   children,
 }: {
   layout: OfficeLayout;
@@ -93,16 +99,19 @@ export function AgentActor({
   /** posto iniziale del post-it; null = nessun task (es. Claudio Code) */
   card?: CardPlace | null;
   onCard?: (place: CardPlace) => void;
+  /** turni di partenza condivisi: senza, ognuno parte subito */
+  queue?: StartQueue;
   children: (motion: Motion) => ReactNode;
 }): ReactNode {
   const group = useRef<Group>(null);
   const sim = useRef<Sim>({
     key: null, layout: null, legs: [], path: [], dist: 0, wait: 0, phase: 'init', pos: layout.door, heading: Math.PI, card,
+    holdUntil: 0,
   });
   const [phase, setPhase] = useState<Phase>('init');
   const [seatedAt, setSeatedAt] = useState<string | null>(null);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const s = sim.current;
     const g = group.current;
     if (!g) return;
@@ -117,8 +126,11 @@ export function AgentActor({
       s.dist = 0;
     };
 
+    const now = state.clock.elapsedTime;
     if (s.key !== key || s.layout !== layout) {
       const fresh = s.key === null || s.phase === 'gone';
+      // nuova meta: si aspetta il proprio turno (un cambio del solo layout non rimette in coda)
+      if (s.key !== key) s.holdUntil = queue ? queue.slot(now) : now;
       const steps = cardSteps(s.card, isDesk(seat));
       s.legs = [
         ...steps.map((step) => ({ to: layout.boards[step.column].cell, step })),
@@ -139,6 +151,9 @@ export function AgentActor({
     let aim = s.heading;
     if (s.legs.length === 0) {
       next = 'gone';
+    } else if (now < s.holdUntil) {
+      // in attesa del turno: fuori dalla porta (invisibile) o fermo dov'è
+      next = s.phase;
     } else if (s.wait > 0) {
       // davanti alla board: allo scadere stacca/attacca il post-it e riparte verso la tappa successiva
       next = 'board';
@@ -163,7 +178,7 @@ export function AgentActor({
         s.wait = BOARD_PAUSE;
         next = 'board';
       } else if (seat) {
-        next = 'seated';
+        next = isStanding(seat) ? 'standing' : 'seated';
         aim = seat.facing;
       } else {
         next = 'gone';
@@ -176,7 +191,7 @@ export function AgentActor({
     g.rotation.y = s.heading;
     g.visible = next !== 'gone';
 
-    if (next !== s.phase || (next === 'seated' && seat && seat.id !== seatedAt)) {
+    if (next !== s.phase || ((next === 'seated' || next === 'standing') && seat && seat.id !== seatedAt)) {
       s.phase = next;
       setPhase(next);
       setSeatedAt(seat?.id ?? null);

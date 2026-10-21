@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { advanceAlongPath, pathLength, WALK_SPEED } from './motion';
+import { advanceAlongPath, pathLength, START_GAP, StartQueue, WALK_SPEED } from './motion';
 
 const path = [
   { x: 0, z: 0 },
@@ -65,5 +65,15 @@ describe('advanceAlongPath', () => {
     ];
     expect(pathLength(p)).toBeCloseTo(1.4);
     expect(advanceAlongPath(p, 0.2).x).toBeCloseTo(0.2);
+  });
+});
+
+describe('StartQueue', () => {
+  it('chi parte insieme è distanziato di START_GAP; dopo una pausa si riparte subito', () => {
+    const q = new StartQueue();
+    expect(q.slot(10)).toBe(10);
+    expect(q.slot(10)).toBeCloseTo(10 + START_GAP);
+    expect(q.slot(10.5)).toBeCloseTo(10 + 2 * START_GAP);
+    expect(q.slot(100)).toBe(100);
   });
 });

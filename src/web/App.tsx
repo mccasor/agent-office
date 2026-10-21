@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
-import { AgentActor, DESK_CUP, Office, PostIt, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
-import { BOSS_PRESET, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
+import { AgentActor, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
+import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
 import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
-import { officeModel } from './officeModel';
+import { EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
 import './app.css';
 
@@ -21,7 +21,7 @@ export function App() {
   const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden), [fullSnapshot, hidden]);
   // posti ricalcolati solo quando arriva un nuovo snapshot, partendo dai precedenti (posti stabili)
   const [view, setView] = useState(() => {
-    const model = officeModel(snapshot, { seats: {}, lounge: {}, capacity: 0 });
+    const model = officeModel(snapshot, EMPTY_SEATING);
     return { snapshot, model, board: syncBoard({}, model.agents) };
   });
   if (view.snapshot !== snapshot) {
@@ -29,6 +29,8 @@ export function App() {
     setView({ snapshot, model, board: syncBoard(view.board, model.agents) });
   }
   const { model, board } = view;
+  // turni di partenza condivisi: chi entra (o esce) insieme sfila in fila indiana invece di sovrapporsi
+  const [queue] = useState(() => new StartQueue());
   const onCard = useCallback((id: string, place: CardPlace) => setView((v) => ({ ...v, board: moveCard(v.board, id, place) })), []);
 
   useEffect(() => connectSnapshotStream(), []);
@@ -41,7 +43,7 @@ export function App() {
       {/* vista a 3/4 dall'angolo sud-est, come uno spaccato isometrico: pareti di fondo nord e ovest */}
       <Canvas
         shadows
-        camera={{ position: [span * 0.5, span * 0.58, span * 0.64], fov: 38 }}
+        camera={{ position: [span * 0.56, span * 0.66, span * 0.72], fov: 38 }}
         // in vista lista la scena resta montata (posizioni e post-it intatti) ma non viene disegnata
         frameloop={viewMode === 'office' ? 'always' : 'never'}
         style={{ display: viewMode === 'office' ? 'block' : 'none' }}
@@ -58,9 +60,20 @@ export function App() {
             layout={layout}
             card={board[agent.id] ?? null}
             onCard={onCard}
+            queue={queue}
           />
         ))}
-        {model.boss && <Actor agent={model.boss} preset={BOSS_PRESET} target={model.targets[model.boss.id] ?? null} layout={layout} />}
+        {model.bosses.map((boss) => (
+          <Actor
+            key={boss.id}
+            agent={boss}
+            // camicia legata alla postazione: resta la stessa anche quando cambia l'ordine delle sessioni
+            preset={bossPreset(Number(model.bossDesks[boss.id]?.slice('boss-'.length) ?? 0))}
+            target={model.targets[boss.id] ?? null}
+            layout={layout}
+            queue={queue}
+          />
+        ))}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
       {viewMode === 'list' && (
@@ -82,19 +95,20 @@ export function App() {
  * e la riprende quando si alza; sui divani dell'area relax la tiene in mano. Gli agenti con un post-it passano dalle
  * board: entrando lo spostano da "to do" a "in progress", andando via da "in progress" a "in review".
  */
-function Actor({ agent, preset, target, layout, card = null, onCard }: {
+function Actor({ agent, preset, target, layout, card = null, onCard, queue }: {
   agent: AgentState;
   preset: CharacterPreset;
   target: Seat | null;
   layout: ReturnType<typeof officeModel>['layout'];
   card?: TaskCard | null;
   onCard?: (id: string, place: CardPlace) => void;
+  queue?: StartQueue;
 }) {
   const move = useCallback((place: CardPlace) => onCard?.(agent.id, place), [onCard, agent.id]);
   return (
-    <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move}>
+    <AgentActor layout={layout} target={target} card={card?.place ?? null} onCard={move} queue={queue}>
       {(motion) => {
-        const atDesk = motion.seated && motion.seatId !== null && !motion.seatId.startsWith('lounge-');
+        const atDesk = motion.seated && /^(seat|boss)-/.test(motion.seatId ?? '');
         return (
           <>
             <Character

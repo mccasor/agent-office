@@ -22,6 +22,8 @@ export interface CliOptions {
   cwd: string;
   /** tutte le sessioni attive di qualunque cartella (app della menu bar); con install-hooks: hook globali */
   all: boolean;
+  /** chiude il server quando si chiude stdin: il processo padre (l'app della menu bar) è terminato */
+  exitWithStdin: boolean;
 }
 
 export interface RunningOffice {
@@ -39,12 +41,13 @@ const WEB_DIR = fileURLToPath(new URL('../dist/web', import.meta.url));
 const HOOK_BIN = fileURLToPath(new URL('../bin/agent-office-hook.mjs', import.meta.url));
 
 export function parseArgs(argv: string[], cwd: string): CliOptions {
-  const opts: CliOptions = { command: 'serve', port: DEFAULT_PORT, open: true, cwd, all: false };
+  const opts: CliOptions = { command: 'serve', port: DEFAULT_PORT, open: true, cwd, all: false, exitWithStdin: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === 'install-hooks' || arg === 'uninstall-hooks') opts.command = arg;
     else if (arg === '--no-open') opts.open = false;
     else if (arg === '--all' || arg === '--global') opts.all = true;
+    else if (arg === '--exit-with-stdin') opts.exitWithStdin = true;
     else if (arg === '--port') {
       const port = Number(argv[++i]);
       if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Porta non valida: ${argv[i]}`);
@@ -123,5 +126,10 @@ export async function main(argv: string[]): Promise<RunningOffice | void> {
   const office = await serve(opts);
   console.log(`Agent Office: ${office.url}  (${opts.all ? 'tutte le sessioni attive' : `cartella monitorata: ${opts.cwd}`})`);
   if (opts.open) openBrowser(office.url);
+  if (opts.exitWithStdin) {
+    // l'app tiene aperta la pipe di stdin finché vive: se termina (anche con un segnale) la pipe si chiude
+    process.stdin.on('end', () => void office.close().finally(() => process.exit(0)));
+    process.stdin.resume();
+  }
   return office;
 }

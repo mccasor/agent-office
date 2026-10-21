@@ -1,5 +1,5 @@
 import type { AgentState, SessionState, Snapshot } from '../shared/types';
-import { officeModel } from './officeModel';
+import { EMPTY_SEATING, officeModel } from './officeModel';
 
 const tokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 };
 const agent = (id: string): AgentState => ({
@@ -10,7 +10,7 @@ const session = (id: string, active: boolean, updatedAt: number): SessionState =
   id, title: null, model: null, effort: null, context: { used: 0, window: null }, tokensUsed: tokens,
   tokensLeft: null, startedAt: 0, updatedAt, active, status: 'working', issues: [], cwd: null, branch: null, waiting: false,
 });
-const EMPTY = { seats: {}, lounge: {}, capacity: 0 };
+const EMPTY = EMPTY_SEATING;
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
   ({ status: 'idle', repo: null, sessions, agents, generatedAt: 0 });
 
@@ -56,10 +56,34 @@ describe('officeModel', () => {
   it('Claudio Code: nella stanza del boss mentre lavora, sui divani se finisce prima degli agenti, poi esce', () => {
     const s = (status: SessionState['status']) => ({ ...session('s1', true, 1), status, issues: [14] });
     const working = officeModel(snap([agent('w')], [s('working')]), EMPTY);
-    expect(working.boss).toMatchObject({ name: 'Claudio Code', issues: [14] });
-    expect(working.targets.boss?.id).toBe('boss');
-    expect(officeModel(snap([agent('w')], [s('done')]), EMPTY).targets.boss?.id).toMatch(/^lounge-/);
-    expect(officeModel(snap([], [s('done')]), EMPTY).targets.boss).toBeNull();
-    expect(officeModel(snap([], [{ ...s('working'), active: false }]), EMPTY).boss).toBeNull();
+    expect(working.bosses).toMatchObject([{ id: 'boss:s1', name: 'Claudio Code', issues: [14] }]);
+    expect(working.targets['boss:s1']?.id).toBe('boss-0');
+    expect(officeModel(snap([agent('w')], [s('done')]), EMPTY).targets['boss:s1']?.id).toMatch(/^lounge-/);
+    expect(officeModel(snap([], [s('done')]), EMPTY).targets['boss:s1']).toBeNull();
+    expect(officeModel(snap([], [{ ...s('working'), active: false }]), EMPTY).bosses).toEqual([]);
+  });
+
+  it('più sessioni attive: un Claudio per sessione, ognuno alla sua postazione; oltre 4 nell\'openspace', () => {
+    const s = (id: string, project: string, updatedAt = 1) => ({ ...session(id, true, updatedAt), cwd: `/u/${project}` });
+    const two = officeModel(snap([], [s('a', 'alpha'), s('b', 'beta')]), EMPTY);
+    expect(two.bosses.map((b) => b.name)).toEqual(['Claudio Code · alpha', 'Claudio Code · beta']);
+    expect(new Set(two.bosses.map((b) => two.targets[b.id]?.id))).toEqual(new Set(['boss-0', 'boss-1']));
+    // postazioni stabili anche se cambia l'ordine delle sessioni
+    const swapped = officeModel(snap([], [s('b', 'beta', 9), s('a', 'alpha')]), two);
+    expect(swapped.targets['boss:a']?.id).toBe(two.targets['boss:a']?.id);
+    const six = officeModel(snap([], ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => s(id, id))), EMPTY);
+    const places = six.bosses.map((b) => six.targets[b.id]?.id ?? '');
+    expect(places.filter((p) => p.startsWith('boss-'))).toHaveLength(4);
+    expect(places.filter((p) => p.startsWith('seat-'))).toHaveLength(2);
+  });
+
+  it('area relax piena: nessuno si siede sopra un altro; chi non trova posto in piedi esce', () => {
+    const working = agent('w');
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...agent(`d${i}`), status: 'done' as const }));
+    const m = officeModel(snap([working, ...many]), EMPTY);
+    const spots = many.map((a) => m.targets[a.id]?.id).filter((id): id is string => id !== undefined);
+    expect(new Set(spots).size).toBe(spots.length);
+    expect(spots.some((id) => id.startsWith('stand-'))).toBe(true);
+    expect(many.some((a) => m.targets[a.id] === null)).toBe(true);
   });
 });

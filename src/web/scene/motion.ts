@@ -43,3 +43,21 @@ export function advanceAlongPath(path: readonly Cell[], distanceTravelled: numbe
   const last = path[path.length - 1]!;
   return { x: last.x, z: last.z, direction, done: true };
 }
+
+/** secondi tra due partenze: più della sosta alla board, così chi segue non si sovrappone a chi è davanti */
+export const START_GAP = 1.2;
+
+/**
+ * Turni di partenza condivisi tra gli attori: chi si muove nello stesso momento (es. più agenti che entrano
+ * insieme dalla porta) parte in fila indiana, distanziato di START_GAP secondi. Tempo in secondi (clock della scena).
+ */
+export class StartQueue {
+  private next = -Infinity;
+
+  /** istante di partenza assegnato a chi chiede il turno all'istante `now` */
+  slot(now: number): number {
+    const at = Math.max(now, this.next);
+    this.next = at + START_GAP;
+    return at;
+  }
+}

@@ -24,7 +24,9 @@
     "test:visual": "vitest run test/visual.test.ts",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
-    "check": "npm run lint && npm run typecheck && npm run build && npm test"
+    "check": "npm run lint && npm run typecheck && npm run build && npm test",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
@@ -37,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tauri-apps/cli": "^2.12.4",
     "@testing-library/react": "^16.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",

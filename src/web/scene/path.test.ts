@@ -9,9 +9,10 @@ function grid(rows: string[]): OfficeLayout {
     door: { x: 0, z: 0 },
     seats: [],
     islands: [],
-    bossSeat: { id: 'boss', cell: { x: 0, z: 0 }, facing: 0 },
+    bossSeats: [],
     bossDoor: { x: 0, z: 0 },
     lounge: [],
+    dividers: [],
     boards: {
       todo: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
       progress: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },

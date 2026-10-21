@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Office</title>
+  <style>
+    :root { color-scheme: light dark; --bg: #eceef1; --fg: #1b1f24; --muted: #5b6470; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1b1f24; --fg: #e8ebef; --muted: #9aa4b0; } }
+    html, body { height: 100%; margin: 0; }
+    body { display: grid; place-items: center; background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, -apple-system, sans-serif; }
+    p { color: var(--muted); margin: 4px 0 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <strong>Agent Office</strong>
+    <p id="msg">Avvio del server…</p>
+  </main>
+  <script>
+    // Il server locale parte insieme all'app: appena risponde si apre l'ufficio.
+    const params = new URLSearchParams(location.search);
+    const url = 'http://127.0.0.1:' + (params.get('port') || '4318');
+    const view = params.get('view') === 'list' ? 'list' : 'office';
+    let tries = 0;
+    async function check() {
+      try {
+        await fetch(url + '/api/status', { mode: 'no-cors', cache: 'no-store' });
+        location.replace(url + '/?view=' + view);
+      } catch {
+        if (++tries === 20) document.getElementById('msg').textContent = 'Il server non risponde: serve Node ≥ 22 installato.';
+        setTimeout(check, 500);
+      }
+    }
+    check();
+  </script>
+</body>
+</html>
