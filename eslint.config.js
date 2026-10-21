@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', '.claude/worktrees'] },
+  { ignores: ['dist', 'node_modules', '.claude/worktrees', 'src-tauri/target', 'src-tauri/resources'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -16,5 +16,5 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
-  { files: ['bin/**/*.mjs'], languageOptions: { globals: globals.node } },
+  { files: ['bin/**/*.mjs', 'scripts/**/*.mjs'], languageOptions: { globals: globals.node } },
 );
