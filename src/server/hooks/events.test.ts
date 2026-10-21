@@ -3,6 +3,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { eventsFilePath, runHook, toHookEvent } from './index.js';
+import { notificationKind } from './events.js';
 
 describe('eventsFilePath', () => {
   it('usa ~/.agent-office/events/<cwd codificata>.jsonl di default', () => {
@@ -130,5 +131,18 @@ describe('runHook', () => {
       now: 1,
     });
     expect(await readFile(eventsFilePath('/proj/x', { dataDir }), 'utf8')).not.toContain('SEGRETO');
+  });
+});
+
+describe('notificationKind', () => {
+  it('notification_type se presente, altrimenti dal messaggio; mai il testo nell\'evento', () => {
+    expect(notificationKind({ notification_type: 'idle_prompt' })).toBe('idle');
+    expect(notificationKind({ notification_type: 'permission_prompt' })).toBe('input');
+    expect(notificationKind({ message: 'Claude is waiting for your input' })).toBe('idle');
+    expect(notificationKind({ message: 'Claude needs your permission to use Bash' })).toBe('input');
+    const e = toHookEvent({ session_id: 's', hook_event_name: 'Notification', message: 'segreto', cwd: '/p' }, 1);
+    expect(e).toMatchObject({ event: 'Notification', notification: 'input' });
+    expect(JSON.stringify(e)).not.toMatch(/segreto/);
+    expect(toHookEvent({ session_id: 's', hook_event_name: 'Stop', cwd: '/p' }, 1)).not.toHaveProperty('notification');
   });
 });

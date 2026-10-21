@@ -6,9 +6,9 @@ import { eventsFilePath, parseEventLine, type HookPathsOptions } from './events.
 
 export const MAX_EVENTS = 2000;
 
-/** Tail incrementale (per offset) del file eventi dell'hook. */
-export function createHookEventsWatcher(opts: { cwd: string } & HookPathsOptions): Watcher<HookEvent[]> {
-  const file = eventsFilePath(opts.cwd, opts);
+/** Tail incrementale (per offset) del file eventi dell'hook di una cartella (o del file indicato). */
+export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string }) & HookPathsOptions): Watcher<HookEvent[]> {
+  const file = 'file' in opts ? opts.file : eventsFilePath(opts.cwd, opts);
   const listeners = new Set<(v: HookEvent[]) => void>();
   let events: HookEvent[] = [];
   let offset = 0;
@@ -93,6 +93,66 @@ export function createHookEventsWatcher(opts: { cwd: string } & HookPathsOptions
       fsw = null;
       await w?.close();
       await queue;
+    },
+    current: () => events,
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+/**
+ * Eventi di tutte le cartelle (app della menu bar): un tail per ogni file in <dataDir>/events, compresi quelli
+ * creati dopo l'avvio. Eventi uniti in ordine di timestamp, al più MAX_EVENTS.
+ */
+export function createAllHookEventsWatcher(opts: HookPathsOptions = {}): Watcher<HookEvent[]> {
+  const dir = dirname(eventsFilePath('/', opts));
+  const tails = new Map<string, Watcher<HookEvent[]>>();
+  const listeners = new Set<(v: HookEvent[]) => void>();
+  let events: HookEvent[] = [];
+  let fsw: FSWatcher | null = null;
+  let running = false;
+
+  const merge = () => {
+    events = [...tails.values()]
+      .flatMap((t) => t.current())
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-MAX_EVENTS);
+    if (running) for (const l of listeners) l(events);
+  };
+
+  const follow = async (file: string) => {
+    if (!file.endsWith('.jsonl') || tails.has(file)) return;
+    const tail = createHookEventsWatcher({ file });
+    tails.set(file, tail);
+    tail.onChange(merge);
+    await tail.start();
+    merge();
+  };
+
+  return {
+    async start() {
+      if (running) return;
+      await mkdir(dir, { recursive: true });
+      running = true;
+      const { watch } = await import('chokidar');
+      const initial: Promise<void>[] = [];
+      fsw = watch(dir, { depth: 0 });
+      fsw.on('add', (file) => void initial.push(follow(file)));
+      fsw.on('error', () => {});
+      await new Promise<void>((resolve) => fsw!.once('ready', () => resolve()));
+      await Promise.all(initial);
+      fsw.removeAllListeners('add');
+      fsw.on('add', (file) => void follow(file));
+    },
+    async stop() {
+      running = false;
+      const w = fsw;
+      fsw = null;
+      await w?.close();
+      await Promise.all([...tails.values()].map((t) => t.stop()));
+      tails.clear();
     },
     current: () => events,
     onChange(listener) {

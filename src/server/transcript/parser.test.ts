@@ -189,3 +189,19 @@ describe('issue citate', () => {
     expect(acc.state.issues).toEqual([21, 20]);
   });
 });
+
+describe('cwd, branch e domande in attesa', () => {
+  it('ultimo cwd/gitBranch; AskUserQuestion senza risposta = in attesa finché non arriva il tool_result', () => {
+    const acc = createAccumulator();
+    acc.ingest(JSON.stringify({ type: 'user', cwd: '/p', gitBranch: 'fix/14-x', message: { content: 'via' } }));
+    expect([acc.state.cwd, acc.state.gitBranch]).toEqual(['/p', 'fix/14-x']);
+    acc.ingest(JSON.stringify({
+      type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: {} }] },
+    }));
+    expect(acc.state.awaitingUser).toBe(true);
+    acc.ingest(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'altro' }] } }));
+    expect(acc.state.awaitingUser).toBe(true);
+    acc.ingest(JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'q1' }] } }));
+    expect(acc.state.awaitingUser).toBe(false);
+  });
+});

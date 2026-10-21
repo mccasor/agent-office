@@ -73,7 +73,16 @@ export interface SessionState {
   status: AgentStatus;
   /** issue dell'ultimo prompt con riferimenti, altrimenti dedotte dal branch; max 3 */
   issues: number[];
+  /** cartella di lavoro della sessione (ultimo `cwd` del transcript) */
+  cwd: string | null;
+  /** branch git dichiarato dal transcript */
+  branch: string | null;
+  /** bloccata in attesa dell'utente: permesso di un tool, domanda, richiesta di input (non il prossimo prompt) */
+  waiting: boolean;
 }
+
+/** Stato complessivo per l'icona nella menu bar: rosso, verde, grigio. */
+export type OfficeStatus = 'waiting' | 'working' | 'idle';
 
 export interface RepoState {
   project: string;
@@ -84,6 +93,8 @@ export interface RepoState {
 }
 
 export interface Snapshot {
+  /** priorità: waiting (una sessione aspetta l'utente) > working > idle */
+  status: OfficeStatus;
   repo: RepoState | null;
   sessions: SessionState[];
   agents: AgentState[];
@@ -98,6 +109,8 @@ export interface HookEvent {
   agentId: string | null;
   agentType: string | null;
   toolName: string | null;
+  /** solo per Notification: 'input' = Claude è bloccato su un permesso o una domanda, 'idle' = aspetta il prossimo prompt */
+  notification?: 'input' | 'idle' | null;
   cwd: string;
   /** epoch ms */
   timestamp: number;

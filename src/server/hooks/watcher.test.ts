@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { HookEvent, Watcher } from '../../shared/types.js';
-import { createHookEventsWatcher, eventsFilePath } from './index.js';
+import { createAllHookEventsWatcher, createHookEventsWatcher, eventsFilePath } from './index.js';
 
 const ev = (i: number): HookEvent => ({
   event: 'PreToolUse',
@@ -107,5 +107,26 @@ describe('createHookEventsWatcher', () => {
     await appendFile(file, line(1));
     await new Promise((r) => setTimeout(r, 200));
     expect(calls).toBe(0);
+  });
+});
+
+describe('createAllHookEventsWatcher', () => {
+  it('unisce in ordine di tempo gli eventi di tutte le cartelle, anche file creati dopo l\'avvio', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'agent-office-all-'));
+    const a = eventsFilePath('/a', { dataDir });
+    const b = eventsFilePath('/b', { dataDir });
+    await mkdir(dirname(a), { recursive: true });
+    await writeFile(a, line(3) + line(1));
+    const w = createAllHookEventsWatcher({ dataDir });
+    try {
+      await w.start();
+      expect(w.current().map((e) => e.timestamp)).toEqual([1, 3]);
+      await writeFile(b, line(2));
+      await waitFor(() => w.current().length === 3);
+      expect(w.current().map((e) => e.timestamp)).toEqual([1, 2, 3]);
+    } finally {
+      await w.stop();
+      await rm(dataDir, { recursive: true, force: true });
+    }
   });
 });

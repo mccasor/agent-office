@@ -8,6 +8,7 @@ export type { ContextLevel } from './format';
 export { SessionPanel, RepoPanel, HudOverlay } from './panels';
 export { AgentLabelContent } from './AgentLabelContent';
 export { ProgressBar } from './ProgressBar';
+export { ListView, ViewToggle, sessionDot } from './ListView';
 export { TokenBreakdown } from './TokenBreakdown';
 
 export interface AgentLabelProps {

@@ -60,7 +60,7 @@ describe('installHooks / uninstallHooks', () => {
     await installHooks(dir, CMD);
     const s = await read();
     expect(s.permissions).toEqual(original.permissions);
-    expect(s.hooks.Notification).toEqual(original.hooks.Notification);
+    expect(s.hooks.Notification).toEqual([original.hooks.Notification[0], { hooks: [{ type: 'command', command: CMD }] }]);
     expect(s.hooks.PreToolUse).toEqual([
       original.hooks.PreToolUse[0],
       { matcher: '*', hooks: [{ type: 'command', command: CMD }] },

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Snapshot } from '../../shared/types.js';
 import { startServer, type OfficeServer } from './index.js';
 
-const snap = (generatedAt: number): Snapshot => ({ repo: null, sessions: [], agents: [], generatedAt });
+const snap = (generatedAt: number): Snapshot => ({ status: 'idle', repo: null, sessions: [], agents: [], generatedAt });
 
 /** Richiesta raw (path non normalizzato, Host arbitrario): fetch non permette né l'uno né l'altro. */
 function raw(
@@ -94,6 +94,12 @@ describe('startServer', () => {
     server.publish(snap(2));
     res = await fetch(`${server.url}/api/snapshot`);
     expect(await res.json()).toEqual(snap(2));
+  });
+
+  it('GET /api/status: stato per l\'icona e numero di sessioni attive', async () => {
+    const res = await fetch(`${server.url}/api/status`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'idle', activeSessions: 0 });
   });
 
   it('GET /api/events invia lo snapshot iniziale e poi ogni publish', async () => {

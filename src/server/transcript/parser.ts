@@ -19,6 +19,11 @@ export interface FileSummary {
   hasAssistant: boolean;
   /** numeri di issue dell'ultimo prompt che ne cita (solo i numeri, mai il testo) */
   issues: number[];
+  /** ultimo `cwd` e `gitBranch` dichiarati dalle righe del transcript */
+  cwd: string | null;
+  gitBranch: string | null;
+  /** domanda all'utente (AskUserQuestion, ExitPlanMode) ancora senza risposta */
+  awaitingUser: boolean;
   /**
    * risposta finale dell'agente: 'confirmed' (stop_reason end_turn o structured_output),
    * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
@@ -35,6 +40,8 @@ type Json = Record<string, unknown>;
 type Usage4 = [input: number, output: number, cacheRead: number, cacheCreation: number];
 
 const FILE_TOOLS = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
+/** tool che restano in attesa di una risposta dell'utente finché non arriva il tool_result */
+const QUESTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
 const MAX_FILE_PATHS = 200;
 const TOKENS_LEFT_RE = /<total_tokens>\s*(\d+)\s*tokens left/;
 
@@ -62,6 +69,13 @@ export function extractIssues(text: string): number[] {
   return out;
 }
 
+/** id dei tool_use a cui risponde una riga utente (blocchi tool_result) */
+function toolResultIds(row: Json): string[] {
+  const content = isObj(row.message) ? row.message.content : null;
+  if (!Array.isArray(content)) return [];
+  return content.filter((b): b is Json => isObj(b) && b.type === 'tool_result').map((b) => str(b.tool_use_id) ?? '');
+}
+
 /** Issue citate in un prompt utente (testo scritto, non tool_result né messaggi meta). */
 function promptIssues(row: Json): number[] {
   if (row.isMeta === true || !isObj(row.message)) return [];
@@ -87,8 +101,13 @@ export function createAccumulator(): Accumulator {
     filePaths: [],
     hasAssistant: false,
     issues: [],
+    cwd: null,
+    gitBranch: null,
+    awaitingUser: false,
     finished: false,
   };
+  /** tool_use che aspettano una risposta dell'utente, per id */
+  const pendingQuestions = new Set<string>();
   /**
    * Usage già conteggiato per message.id. Claude Code scrive una riga per blocco di contenuto
    * (thinking, text, tool_use) dello stesso messaggio ripetendo l'usage, a volte con output_tokens
@@ -122,6 +141,11 @@ export function createAccumulator(): Accumulator {
   const onToolUse = (block: Json) => {
     const name = str(block.name);
     const input = isObj(block.input) ? block.input : {};
+    if (QUESTION_TOOLS.has(name ?? '')) {
+      const id = str(block.id);
+      if (id) pendingQuestions.add(id);
+      state.awaitingUser = pendingQuestions.size > 0;
+    }
     if (FILE_TOOLS.has(name ?? '')) {
       const path = str(input.file_path) ?? str(input.notebook_path);
       if (path && filePaths.size < MAX_FILE_PATHS && !filePaths.has(path)) {
@@ -212,6 +236,8 @@ export function createAccumulator(): Accumulator {
     }
     if (!isObj(row)) return;
 
+    state.cwd = str(row.cwd) ?? state.cwd;
+    state.gitBranch = str(row.gitBranch) ?? state.gitBranch;
     const at = typeof row.timestamp === 'string' ? Date.parse(row.timestamp) : NaN;
     if (Number.isFinite(at)) {
       state.firstAt = state.firstAt === null ? at : Math.min(state.firstAt, at);
@@ -234,6 +260,8 @@ export function createAccumulator(): Accumulator {
       case 'user': {
         const issues = promptIssues(row);
         if (issues.length > 0) state.issues = issues;
+        for (const id of toolResultIds(row)) pendingQuestions.delete(id);
+        state.awaitingUser = pendingQuestions.size > 0;
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) state.finished = false;
         structuredOutputPending = false;
