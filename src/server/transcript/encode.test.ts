@@ -33,4 +33,13 @@ describe('contextWindowFor', () => {
     expect(contextWindowFor('claude-opus-5-5', 150_000)).toBe(200_000);
     expect(contextWindowFor('gpt-4o', 300_000)).toBeNull();
   });
+
+  it('modello dichiarato con suffisso [1m] (attachment "model") -> variante 1M anche sotto 200k', () => {
+    expect(contextWindowFor('claude-opus-5', 50_000, 'claude-opus-5[1m]')).toBe(1_000_000);
+    expect(contextWindowFor('claude-sonnet-4-5-20250929', 0, 'claude-sonnet-4-5[1M]')).toBe(1_000_000);
+    // dichiarazione senza suffisso: nessuna informazione, resta l'euristica
+    expect(contextWindowFor('claude-opus-5-5', 50_000, 'claude-opus-5-5')).toBe(200_000);
+    // dichiarazione relativa a un altro modello (cambio /model): ignorata
+    expect(contextWindowFor('claude-haiku-4-5', 50_000, 'claude-opus-5[1m]')).toBe(200_000);
+  });
 });
