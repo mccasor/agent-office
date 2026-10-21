@@ -1,14 +1,27 @@
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { RepoState, SessionState } from '../../shared/types';
 import { contextLevel, formatTokens, percent } from './format';
 import { ProgressBar } from './ProgressBar';
+import { TokenBreakdown } from './TokenBreakdown';
 import './hud.css';
 
 const DASH = '—';
 
-/** Contenitore fisso dei pannelli: colonna in alto a sinistra, `side="right"` per l'alto a destra. */
+/** Contenitore fisso unico (in body) per tutti gli overlay: affiancati su desktop, impilati sotto 680px. */
+function hudStack(): HTMLElement {
+  let el = document.querySelector<HTMLElement>('body > .hud-stack');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'hud-stack';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+/** Colonna di pannelli: in alto a sinistra, `side="right"` per l'alto a destra. */
 export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; side?: 'left' | 'right' }) {
-  return <div className={`hud-overlay hud-overlay--${side}`}>{children}</div>;
+  return createPortal(<div className={`hud-overlay hud-overlay--${side}`}>{children}</div>, hudStack());
 }
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
@@ -53,6 +66,10 @@ export function SessionPanel({ session }: { session: SessionState | null }) {
           <span data-testid="tokens-left">{session.tokensLeft === null ? DASH : formatTokens(session.tokensLeft)}</span>
         </Row>
       </dl>
+      <details className="hud-details">
+        <summary>Ripartizione token</summary>
+        <TokenBreakdown tokens={session.tokensUsed} />
+      </details>
     </section>
   );
 }

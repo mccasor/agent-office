@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AgentState } from '../../shared/types';
 import { AgentLabelContent } from './AgentLabelContent';
@@ -23,8 +23,44 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
 });
 
 describe('AgentLabelContent', () => {
-  it('nome, chip area, token, stato', () => {
+  it('compatta di default: solo nome e barra, niente dettaglio', () => {
     render(<AgentLabelContent agent={agent()} />);
+    expect(screen.getByText('Implementa HUD')).toBeTruthy();
+    expect(screen.getByRole('progressbar')).toBeTruthy();
+    expect(screen.queryByText('frontend')).toBeNull();
+    expect(screen.queryByText('12.3k')).toBeNull();
+    expect(screen.queryByText(/al lavoro/i)).toBeNull();
+    expect(screen.queryByText('1/4 · 25%')).toBeNull();
+  });
+
+  it('hover sull\'etichetta mostra il dettaglio e notifica', () => {
+    const changes: boolean[] = [];
+    const { container } = render(<AgentLabelContent agent={agent()} onHoverChange={(h) => changes.push(h)} />);
+    const label = container.firstElementChild!;
+    fireEvent.mouseEnter(label);
+    expect(screen.getByText('frontend')).toBeTruthy();
+    expect(label.className).toContain('hud-label--expanded');
+    fireEvent.mouseLeave(label);
+    expect(screen.queryByText('frontend')).toBeNull();
+    expect(changes).toEqual([true, false]);
+  });
+
+  it('ripartizione token nel dettaglio', () => {
+    render(
+      <AgentLabelContent
+        expanded
+        agent={agent({ tokens: { input: 1_200, output: 3_400, cacheRead: 17_700_000, cacheCreation: 90_000, total: 17_794_600 } })}
+      />,
+    );
+    expect(screen.getByText('17.8M')).toBeTruthy();
+    expect(screen.getByTestId('tokens-input').textContent).toBe('1.2k');
+    expect(screen.getByTestId('tokens-output').textContent).toBe('3.4k');
+    expect(screen.getByTestId('tokens-cacheRead').textContent).toBe('17.7M');
+    expect(screen.getByTestId('tokens-cacheCreation').textContent).toBe('90k');
+  });
+
+  it('expanded (hover dalla scena): nome, chip area, token, stato', () => {
+    render(<AgentLabelContent agent={agent()} expanded />);
     expect(screen.getByText('Implementa HUD')).toBeTruthy();
     const chip = screen.getByText('frontend');
     expect(chip.getAttribute('data-area')).toBe('frontend');
@@ -33,7 +69,7 @@ describe('AgentLabelContent', () => {
   });
 
   it('barra determinata completed/total con %', () => {
-    render(<AgentLabelContent agent={agent()} />);
+    render(<AgentLabelContent agent={agent()} expanded />);
     const bar = screen.getByRole('progressbar');
     expect(bar.getAttribute('aria-valuenow')).toBe('25');
     expect(screen.getByText('1/4 · 25%')).toBeTruthy();
@@ -60,7 +96,7 @@ describe('AgentLabelContent', () => {
   });
 
   it('idle attenuato', () => {
-    const { container } = render(<AgentLabelContent agent={agent({ status: 'idle' })} />);
+    const { container } = render(<AgentLabelContent agent={agent({ status: 'idle' })} expanded />);
     expect(container.firstElementChild!.className).toContain('hud-label--idle');
     expect(screen.getByText(/inattivo/i)).toBeTruthy();
   });

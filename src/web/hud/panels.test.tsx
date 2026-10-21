@@ -3,6 +3,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RepoState, SessionState } from '../../shared/types';
 import { HudOverlay, RepoPanel, SessionPanel } from './panels';
+import { readFileSync } from 'node:fs';
+
+const hudCss = readFileSync('src/web/hud/hud.css', 'utf8'); // cwd = root vitest
 
 afterEach(cleanup);
 
@@ -66,6 +69,24 @@ describe('SessionPanel', () => {
   });
 });
 
+describe('SessionPanel ripartizione token', () => {
+  it('details con input, output, cache read, cache creation', () => {
+    render(
+      <SessionPanel
+        session={session({ tokensUsed: { input: 1_200, output: 3_400, cacheRead: 17_700_000, cacheCreation: 90_000, total: 17_794_600 } })}
+      />,
+    );
+    expect(screen.getByTestId('tokens-used').textContent).toBe('17.8M');
+    const details = screen.getByText(/ripartizione/i).closest('details');
+    expect(details).toBeTruthy();
+    expect(screen.getByTestId('tokens-input').textContent).toBe('1.2k');
+    expect(screen.getByTestId('tokens-output').textContent).toBe('3.4k');
+    expect(screen.getByTestId('tokens-cacheRead').textContent).toBe('17.7M');
+    expect(screen.getByTestId('tokens-cacheCreation').textContent).toBe('90k');
+    expect(details!.contains(screen.getByTestId('tokens-cacheRead'))).toBe(true);
+  });
+});
+
 describe('RepoPanel', () => {
   it('placeholder se repo null', () => {
     render(<RepoPanel repo={null} />);
@@ -98,5 +119,29 @@ describe('HudOverlay', () => {
     );
     const el = screen.getByText('figlio').parentElement!;
     expect(el.className).toContain('hud-overlay');
+  });
+
+  it('sinistra e destra nello stesso contenitore (impilabili sotto 680px)', () => {
+    render(
+      <>
+        <HudOverlay side="right">
+          <span>destra</span>
+        </HudOverlay>
+        <HudOverlay side="left">
+          <span>sinistra</span>
+        </HudOverlay>
+      </>,
+    );
+    const left = screen.getByText('sinistra').parentElement!;
+    const right = screen.getByText('destra').parentElement!;
+    expect(left.parentElement).toBe(right.parentElement);
+    expect(left.parentElement!.className).toContain('hud-stack');
+  });
+
+  it('css: media query < 680px a tutta larghezza con gutter 16px', () => {
+    const media = hudCss.match(/@media \(max-width: 679\.98px\) \{([\s\S]*?)\n\}/);
+    expect(media).toBeTruthy();
+    expect(media![1]).toMatch(/\.hud-stack \{[^}]*flex-direction: column/);
+    expect(media![1]).toMatch(/\.hud-stack \{[^}]*left: 16px;[^}]*right: 16px/);
   });
 });
