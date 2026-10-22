@@ -1,6 +1,6 @@
 [package]
 name = "agent-office-menubar"
-version = "0.4.1"
+version = "0.4.2"
 description = "Agent Office nella menu bar di macOS"
 edition = "2021"
 

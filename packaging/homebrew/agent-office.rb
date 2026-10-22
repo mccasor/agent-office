@@ -15,8 +15,11 @@ cask "agent-office" do
   app "Agent Office.app"
 
   # firma ad-hoc, non notarizzata: senza la quarantena macOS la apre senza chiedere conferma
+  # e la registra tra le applicazioni (LaunchServices): l'app lo rifà comunque a ogni avvio
   postflight_steps do
     run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{appdir}}/Agent Office.app"], must_succeed: false
+    run "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister",
+        args: ["-f", "-R", "{{appdir}}/Agent Office.app"], must_succeed: false
   end
 
   uninstall quit: "app.agent-office.menubar"
