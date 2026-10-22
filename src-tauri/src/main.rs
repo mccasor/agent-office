@@ -347,6 +347,20 @@ fn run_hooks(app: &AppHandle, command: &'static str) {
     });
 }
 
+/// Registra il bundle dell'app in LaunchServices e in Spotlight: così compare tra le applicazioni e nella ricerca
+/// anche quando è stata spostata o installata da un processo che non lo fa (es. Homebrew in sandbox).
+fn register_bundle() {
+    let Ok(exe) = std::env::current_exe() else { return };
+    // .../Agent Office.app/Contents/MacOS/agent-office-menubar
+    let Some(bundle) = exe.ancestors().nth(3).filter(|p| p.extension().is_some_and(|e| e == "app")) else { return };
+    let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+    let quiet = |cmd: &mut Command| {
+        let _ = cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).status();
+    };
+    quiet(Command::new(lsregister).args(["-f", "-R"]).arg(bundle));
+    quiet(Command::new("/usr/bin/mdimport").arg(bundle));
+}
+
 fn launch_agent_path() -> Option<PathBuf> {
     std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/LaunchAgents").join(format!("{LAUNCH_AGENT}.plist")))
 }
@@ -529,6 +543,7 @@ fn main() {
             if autostart_enabled() {
                 set_autostart(true);
             }
+            thread::spawn(register_bundle);
 
             let handle = app.handle().clone();
             let (wake, woken) = mpsc::channel::<()>();
