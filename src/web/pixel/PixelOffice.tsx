@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { Snapshot } from '../../shared/types';
 import { StartQueue } from '../scene/motion';
 import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
+import { agentName } from '../hud/labels';
 import { cameraViewport, type Camera } from './camera';
 import {
   actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
   wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
+import { ALL_LABELS_ZOOM, drawLabel, labelText } from './labels';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import {
@@ -73,9 +75,6 @@ function lookOf(actor: PixelActor, model: PixelModel): PixelLook {
   // la giacca segue la stanza; chi non ce l'ha prende un colore dopo quelli delle stanze
   return bossLook(room ?? 5 + Math.max(0, model.roomless.indexOf(actor.sessionId)));
 }
-
-/** nome breve per l'etichetta */
-const shortName = (name: string): string => (name.length > 32 ? `${name.slice(0, 31)}…` : name);
 
 interface Entry {
   actor: PixelActor;
@@ -192,6 +191,8 @@ function render(
   const rects: HitRect[] = [];
   const typing = new Set<string>();
   const labels: { entry: Entry; x: number; y: number }[] = [];
+  // ingrandita abbastanza c'è posto per il nome di tutti (compatto, senza ruolo); altrimenti boss, bloccati e selezionato
+  const everyone = view.scale / dpr >= ALL_LABELS_ZOOM;
   for (const e of s.entries.values()) {
     if (!isVisible(e.motion)) continue;
     const pose = poseOf(e.actor, e.motion);
@@ -202,7 +203,7 @@ function render(
       frame: frameAt(pose, now, seedOf(e.actor.id)), selected,
     }));
     rects.push(actorRect(e.actor.id, e.motion.pos));
-    if (selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
+    if (everyone || selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
   const screen = Math.floor(now * SCREEN_FPS);
   for (const f of solid) {
@@ -222,48 +223,23 @@ function render(
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
   for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
 
-  // sopra a tutto: fumetti di chi è bloccato ed etichette (boss, bloccati e selezionato)
+  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
   const bubble = cachedImage('x:bubble', bubbleImage);
-  for (const { entry, x, y } of labels) {
+  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
+  for (const { entry, x, y } of [...labels].sort((a, b) => rank(a) - rank(b))) {
+    const { actor } = entry;
     let top = y - 21;
-    if (entry.actor.waiting) {
+    if (actor.waiting) {
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }
-    drawLabel(ctx, view, dpr, x, top, shortName(entry.actor.agent.name), {
-      selected: entry.actor.id === selectedId,
-      waiting: entry.actor.waiting,
-    });
+    const selected = actor.id === selectedId;
+    drawLabel(ctx, {
+      text: labelText(agentName(actor.agent)),
+      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
+      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
+      selected,
+      waiting: actor.waiting,
+    }, view.ox + x * view.scale, view.oy + top * view.scale, dpr);
   }
-}
-
-/** Etichetta col nome: testo piccolo su una targhetta scura, centrata in x e con il fondo in y (pixel a scala 1). */
-function drawLabel(
-  ctx: CanvasRenderingContext2D,
-  view: Viewport,
-  dpr: number,
-  x: number,
-  bottom: number,
-  text: string,
-  { selected, waiting }: { selected: boolean; waiting: boolean },
-): void {
-  const font = Math.round(11 * dpr);
-  ctx.font = `600 ${font}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const padX = Math.round(4 * dpr);
-  const h = Math.round(font + 4 * dpr);
-  const w = Math.ceil(ctx.measureText(text).width) + 2 * padX;
-  const cx = view.ox + x * view.scale;
-  const left = Math.round(cx - w / 2);
-  const top = Math.round(view.oy + bottom * view.scale - h);
-  ctx.fillStyle = selected ? PALETTE.select[1] : waiting ? PALETTE.bubble[1] : PALETTE.outline;
-  ctx.globalAlpha = selected || waiting ? 1 : 0.85;
-  ctx.fillRect(left, top, w, h);
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineWidth = Math.max(1, Math.round(dpr));
-  ctx.strokeRect(left + ctx.lineWidth / 2, top + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
-  ctx.fillStyle = selected ? PALETTE.outline : '#ffffff';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  ctx.fillText(text, left + w / 2, top + h / 2 + Math.round(dpr / 2));
 }

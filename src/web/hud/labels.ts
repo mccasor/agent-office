@@ -1,4 +1,4 @@
-import type { AgentStatus, OfficeStatus, SessionState, ToolInUse, WaitingKind } from '../../shared/types';
+import type { AgentState, AgentStatus, OfficeStatus, SessionState, ToolInUse, WaitingKind, WorkArea } from '../../shared/types';
 import { formatDuration } from './format';
 
 /*
@@ -45,6 +45,25 @@ export function waitingText(kind: WaitingKind | null | undefined, since: number 
   const label = WAITING_LABEL[kind ?? 'input'];
   return since ? `${label} · da ${formatDuration(now - since)}` : label;
 }
+
+/** Ruolo dell'agente dall'area di lavoro (#88), in inglese come nel gergo: chip colorata con `hud-chip--<area>`. */
+export const AREA_LABEL: Record<WorkArea, string> = {
+  backend: 'backend',
+  frontend: 'frontend',
+  design: 'design',
+  architecture: 'architect',
+  test: 'QA',
+  docs: 'docs',
+  devops: 'devops',
+  research: 'research',
+  other: 'generalist',
+};
+
+/** Nome di persona dell'agente ("Marta Commit"); Claudio Code e i client vecchi usano il nome descrittivo. */
+export const agentName = (agent: Pick<AgentState, 'name' | 'nickname'>): string => agent.nickname ?? agent.name;
+
+/** Sottotitolo: il nome descrittivo (il compito), solo se c'è un nome di persona a precederlo. */
+export const agentTask = (agent: Pick<AgentState, 'name' | 'nickname'>): string | null => (agent.nickname ? agent.name : null);
 
 /** "Edit parser.ts", "Bash" */
 export const toolText = (tool: ToolInUse): string => (tool.target ? `${tool.name} ${tool.target}` : tool.name);

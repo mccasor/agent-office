@@ -42,6 +42,13 @@ describe('AgentCard', () => {
     expect(screen.queryByText('Progetto')).toBeNull();
   });
 
+  it('nome di persona come titolo, il compito sotto, il ruolo nella chip (#88)', () => {
+    render(<AgentCard agent={agent({ nickname: 'Marta Commit', area: 'architecture' })} onClose={() => {}} />);
+    expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();
+    expect(screen.getByText('Implementa HUD')).toBeTruthy();
+    expect(screen.getByText('architect').getAttribute('data-area')).toBe('architecture');
+  });
+
   it('terminato: quanto ha lavorato, niente tool né barra senza todo list', () => {
     const t = Date.now();
     render(

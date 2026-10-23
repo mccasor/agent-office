@@ -23,6 +23,7 @@ const BOARD_ACCENT: Record<BoardColumn, string> = { todo: '#8d99ae', progress: '
 const NOTE_COLOR: Record<WorkArea, string> = {
   backend: '#ffd166',
   frontend: '#a0e7e5',
+  design: '#ffc8dd',
   architecture: '#ffaebc',
   test: '#b4f8c8',
   docs: '#fbe7c6',

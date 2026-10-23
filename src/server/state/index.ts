@@ -10,6 +10,7 @@ import type {
   TranscriptSnapshot,
   WaitingKind,
 } from '../../shared/types.js';
+import { nicknameOf } from '../../shared/nickname.js';
 
 /** un agente è "entering" (cammina dalla porta) nei primi ms dopo startedAt */
 export const ENTERING_MS = 5_000;
@@ -279,7 +280,10 @@ export function buildSnapshot(input: {
   const { transcript, hookEvents, repo, now } = input;
   const hooks = latestAgentHooks(hookEvents);
   const asks = collectAsks(hookEvents);
-  const resolved = transcript.agents.map((a) => resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks));
+  const resolved = transcript.agents.map((a) => ({
+    ...resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks),
+    nickname: nicknameOf(a.id),
+  }));
   const agents = keepFinished(resolved, now);
   // attesa su due livelli: la sessione eredita quella dei subagenti (pallino rosso, status 'waiting', menu bar)
   const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, repo, input.repoAt, now).map(

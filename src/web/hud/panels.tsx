@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
-import { DOT_LABEL, waitingText } from './labels';
+import type { OfficeStatus, RepoDiff, RepoState, SessionState, WorkArea } from '../../shared/types';
+import { AREA_LABEL, DOT_LABEL, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -19,6 +19,15 @@ function hudStack(): HTMLElement {
 /** Colonna di pannelli: in alto a sinistra, `side="right"` per l'alto a destra. */
 export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; side?: 'left' | 'right' }) {
   return createPortal(<div className={`hud-overlay hud-overlay--${side}`}>{children}</div>, hudStack());
+}
+
+/** Etichetta colorata del ruolo (#88): stesso colore dell'area nel 2D, nella scheda, nell'accordion e nella lista. */
+export function RoleChip({ area }: { area: WorkArea }) {
+  return (
+    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={`Ruolo: ${AREA_LABEL[area]}`}>
+      {AREA_LABEL[area]}
+    </span>
+  );
 }
 
 export function Row({ label, children }: { label: string; children: ReactNode }) {

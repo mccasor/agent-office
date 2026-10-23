@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentState, AgentStatus, HookEvent, RepoState, TranscriptSession } from '../../shared/types.js';
+import { nicknameOf } from '../../shared/nickname.js';
 import { branchIssue, buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS, LOUNGE_WAIT_MS } from './index.js';
 
 const NOW = 1_000_000;
@@ -154,7 +155,13 @@ describe('buildSnapshot: stato agente', () => {
     const a = agent({ id: 'a1', name: 'uno' });
     const b = agent({ id: 'a2', name: 'due' });
     const snap = buildSnapshot({ transcript: { sessions: [], agents: [a, b] }, hookEvents: [], repo: null, now: NOW });
-    expect(snap.agents).toEqual([a, b]);
+    expect(snap.agents).toEqual([{ ...a, nickname: nicknameOf('a1') }, { ...b, nickname: nicknameOf('a2') }]);
+  });
+
+  it('ogni agente ha un nome di persona stabile (#88)', () => {
+    const build = () => buildSnapshot({ transcript: { sessions: [], agents: [agent({ id: 'a1' })] }, hookEvents: [], repo: null, now: NOW });
+    expect(build().agents[0]?.nickname).toMatch(/^\S+ \S+$/);
+    expect(build().agents[0]?.nickname).toBe(build().agents[0]?.nickname);
   });
 });
 
