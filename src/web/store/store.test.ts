@@ -204,3 +204,40 @@ describe('sessioni visibili nell\'ufficio', () => {
     useOfficeStore.getState().setView('office');
   });
 });
+
+describe('vista e scheda agente', () => {
+  it('select apre e chiude la scheda; setView accetta la vista 2D', () => {
+    useOfficeStore.getState().select('a1');
+    expect(useOfficeStore.getState().selectedAgent).toBe('a1');
+    useOfficeStore.getState().select(null);
+    expect(useOfficeStore.getState().selectedAgent).toBeNull();
+    useOfficeStore.getState().setView('pixel');
+    expect(useOfficeStore.getState().view).toBe('pixel');
+    useOfficeStore.getState().setView('office');
+  });
+
+  /** store nuovo con le preferenze salvate `saved` e la query `search` */
+  async function freshStore(saved: unknown, search = '') {
+    const data = new Map([['agent-office.prefs', JSON.stringify(saved)]]);
+    vi.stubGlobal('localStorage', { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v) });
+    vi.stubGlobal('location', { search });
+    vi.resetModules();
+    const { useOfficeStore: store } = await import('./index');
+    return { store, saved: () => JSON.parse(data.get('agent-office.prefs')!) as unknown };
+  }
+
+  it('preferenze: vista 2D ricordata, quelle vecchie valide, valori sconosciuti → 3D, ?view prevale', async () => {
+    const { store, saved } = await freshStore({ view: 'pixel', hiddenSessions: ['x'] });
+    expect(store.getState().view).toBe('pixel');
+    expect(store.getState().hiddenSessions).toEqual(['x']);
+    expect(store.getState().selectedAgent).toBeNull();
+    store.getState().setView('list');
+    expect(saved()).toEqual({ view: 'list', hiddenSessions: ['x'] });
+    store.getState().select('a1');
+    expect(saved()).toEqual({ view: 'list', hiddenSessions: ['x'] });
+    expect((await freshStore({ view: 'list' })).store.getState().view).toBe('list');
+    expect((await freshStore({ view: 'boh' })).store.getState().view).toBe('office');
+    expect((await freshStore({ view: 'list' }, '?view=pixel')).store.getState().view).toBe('pixel');
+    expect((await freshStore({ view: 'pixel' }, '?view=nulla')).store.getState().view).toBe('pixel');
+  });
+});
