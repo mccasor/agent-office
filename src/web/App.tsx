@@ -8,6 +8,7 @@ import { AgentCard, AgentLabel, HudOverlay, InstancesPanel, type Waiting, ListVi
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
 import { BOSS_PREFIX, EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
+import { PixelOffice } from './pixel/PixelOffice';
 import './app.css';
 
 /** animazioni semplici e lente: 30 fotogrammi al secondo bastano e dimezzano il lavoro di CPU e GPU */
@@ -135,8 +136,8 @@ export function App() {
         ))}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
-      {/* vista 2D (#71): segnaposto finché non arriva il componente in pixel art */}
-      {viewMode === 'pixel' && <div className="pixel-office-placeholder" />}
+      {/* vista 2D (#71): montata solo quando è mostrata; chi ha già un posto ricompare seduto */}
+      {viewMode === 'pixel' && <PixelOffice snapshot={snapshot} selectedId={selectedId} onSelect={select} active={pageVisible} />}
       {viewMode === 'list' && (
         <ListView
           sessions={fullSnapshot?.sessions ?? []}
