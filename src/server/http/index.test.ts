@@ -96,6 +96,13 @@ describe('startServer', () => {
     expect(await res.json()).toEqual(snap(2));
   });
 
+  it('publish con lo snapshot già serializzato: /api/snapshot restituisce quel testo senza riserializzare', async () => {
+    const json = JSON.stringify(snap(4));
+    server.publish(snap(4), json);
+    const res = await fetch(`${server.url}/api/snapshot`);
+    expect(await res.text()).toBe(json);
+  });
+
   it('GET /api/snapshot con If-None-Match: 304 finché non arriva uno snapshot nuovo', async () => {
     const first = await fetch(`${server.url}/api/snapshot`);
     const tag = first.headers.get('etag')!;
