@@ -1,95 +1,148 @@
 # Agent Office
 
-Ufficio 2D in pixel art che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente. Ogni istanza di Claude Code ha la sua stanza, dove Claude stesso siede alla scrivania del boss come **Claudio Code**: i suoi subagenti entrano dal corridoio, prendono una postazione e lavorano al computer; chi finisce aspetta in sala relax finché lavora un altro agente della stessa istanza, poi escono insieme. A sinistra l'elenco delle istanze (branch, diff, contesto, agenti), a destra la scheda dell'agente cliccato; in alto a destra si passa alla vista lista.
+A pixel-art 2D office that shows your Claude Code agents at work, in real time. Each Claude Code instance gets its own room, where Claude itself sits at the boss's desk as **Claudio Code**. Its subagents walk in from the corridor, take a workstation and work at the computer; those who finish wait in the lounge while another agent of the same instance is still working, then they all leave together.
 
-## Installazione (una volta sola)
+It runs as a macOS menu bar app (all active Claude Code sessions, in any folder) or as a command-line server for a single folder, viewed in the browser. Everything stays on your Mac: Agent Office only reads Claude Code's local transcripts and, optionally, events from its hooks.
 
-Requisiti: Node ≥ 22, git.
+## Installation
+
+### macOS app (recommended)
+
+```bash
+brew install --cask mccasor/agent-office/agent-office
+```
+
+The cask comes from the public tap [`mccasor/homebrew-agent-office`](https://github.com/mccasor/homebrew-agent-office) and installs Node as a dependency (the office server runs on Node ≥ 22). The app is ad-hoc signed and not notarized; the cask removes the quarantine flag so macOS opens it without asking.
+
+After installing, open the panel from the menu bar icon and, under "Impostazioni" (Settings):
+
+- **"Hook di Claude Code" → "Installa"** (Claude Code hooks → Install): installs the global hooks, needed for the red dot (permissions and questions) and for instant agent states;
+- **"Avvia al login"** (Launch at login): keeps the app in the menu bar after a restart.
+
+Updates: click the update banner in the panel ("Aggiorna alla versione X", Update to version X), or run
+
+```bash
+brew upgrade --cask agent-office
+```
+
+Then reinstall the hooks (see [Hooks](#hooks)). To uninstall, remove the hooks first ("Rimuovi", Remove), then `brew uninstall --cask agent-office` (`--zap` also deletes `~/.agent-office`).
+
+### From source (CLI)
+
+Requirements: Node ≥ 22, git.
 
 ```bash
 git clone git@github.com:mccasor/agent-office.git
 cd agent-office
 npm install
-npm run build       # obbligatorio: crea dist/ (server, hook e pagina web)
-npm link            # opzionale: comandi globali agent-office e agent-office-hook
+npm run build       # required: builds dist/ (server, hook and web page)
+npm link            # optional: global agent-office and agent-office-hook commands
 ```
 
-Dopo ogni `git pull` rilancia `npm install && npm run build`.
+After every `git pull`, run `npm install && npm run build` again.
 
-## Avvio
+## Usage (CLI)
 
-Agent Office mostra gli agenti di Claude Code della **cartella da cui viene avviato** (o di quella indicata con `--cwd`). Avvialo in un secondo terminale, accanto a Claude Code, nella stessa cartella del progetto.
-
-### In generale (con `npm link`)
+By default Agent Office shows the Claude Code agents of the **folder it is started from** (or the one given with `--cwd`). Run it in a second terminal next to Claude Code, in the same project folder:
 
 ```bash
-cd /percorso/del/progetto         # es. /Library/WebServer/Documents/olimpo-ui
-agent-office                      # avvia il server e apre il browser su http://127.0.0.1:4317
+cd /path/to/project
+agent-office                      # starts the server and opens http://127.0.0.1:4317
 ```
 
-### Senza `npm link`
+Without `npm link`:
 
 ```bash
-node /Library/WebServer/Documents/agent-office/bin/agent-office.mjs --cwd /percorso/del/progetto
+node /path/to/agent-office/bin/agent-office.mjs --cwd /path/to/project
 ```
 
-### Sulla cartella agent-office stessa
-
-```bash
-cd /Library/WebServer/Documents/agent-office
-node bin/agent-office.mjs         # oppure: agent-office (se hai fatto npm link)
-```
-
-### Opzioni
-
-| Opzione | Effetto | Default |
+| Option | Effect | Default |
 |---|---|---|
-| `--cwd DIR` | cartella da monitorare | cartella corrente |
-| `--port N` | porta del server (`0` = porta libera casuale) | `4317` |
-| `--no-open` | non apre il browser | apre il browser |
+| `--cwd DIR` | folder to monitor | current folder |
+| `--all` | all active Claude Code sessions, in any folder (what the menu bar app uses) | off |
+| `--port N` | server port (`0` = random free port) | `4317` |
+| `--no-open` | do not open the browser | opens the browser |
 
-Più progetti contemporaneamente: un'istanza per progetto, ciascuna con una `--port` diversa. Si arresta con `Ctrl+C`.
+| Command | Effect |
+|---|---|
+| `agent-office install-hooks` | installs the hooks for this project (`.claude/settings.local.json`) |
+| `agent-office install-hooks --global` | installs the hooks for every session (`~/.claude/settings.json`) |
+| `agent-office uninstall-hooks [--global]` | removes only Agent Office's entries |
 
-### Ufficio vuoto?
+`--cwd` accepts any folder: sessions started in a **parent folder** (e.g. `~/code`) that work inside the project are found automatically, so monitoring a parent folder also shows the active sessions of its subfolders. To watch several projects at once, start one server per project, each with a different `--port`, or a single one with `--all`. Stop it with `Ctrl+C`.
 
-- Claude Code non è ancora stato usato in quella cartella, oppure nessuna sessione è attiva negli ultimi 10 minuti.
-- Gli agenti terminati aspettano in area relax finché lavora un altro agente (attivo negli ultimi 10 minuti); quando hanno finito tutti escono dopo 30 secondi: è normale.
+### Empty office?
 
-Le sessioni di Claude Code avviate in una **cartella superiore** (es. `/Library/WebServer/Documents`) che lavorano nel progetto vengono trovate automaticamente. Di conseguenza, monitorando una cartella padre compaiono anche le sessioni attive nelle sue sottocartelle.
+- Claude Code has not been used in that folder yet, or no session has been active in the last 10 minutes (`activeWindowMinutes`, see [Settings](#settings)).
+- Finished agents wait in the lounge while another agent of the same instance is working (active in the last 10 minutes); once everyone is done they leave after 30 seconds. This is expected.
 
-### Hook (opzionale, consigliato)
+## Hooks
 
-Senza hook l'app legge solo i transcript (aggiornamento quasi in tempo reale). Con gli hook gli stati degli agenti (ingresso, lavoro, uscita) sono immediati:
+Without hooks Agent Office only reads the transcripts (near real time). With the hooks, agent states (entering, working, leaving) are instant and Agent Office knows when Claude is blocked on you (tool permission, question).
 
-```bash
-agent-office install-hooks     # scrive in .claude/settings.local.json del progetto
-agent-office uninstall-hooks   # rimuove solo le voci di agent-office
-```
+The hooks register these Claude Code events: `SessionStart`, `SessionEnd`, `SubagentStart`, `SubagentStop`, `PreToolUse`, `PostToolUse`, `Stop`, `UserPromptSubmit`, `Notification`, `PermissionRequest`. Each event is appended as one JSON line (event name, session and agent id, agent type, tool name, working folder, time) to `~/.agent-office/events/<folder>.jsonl`.
 
-L'installazione è idempotente e preserva le altre impostazioni. L'hook non scrive mai su stdout ed esce sempre con 0: non può bloccare Claude Code. Richiede `npm run build` (il binario usa `dist/`).
+- Installing is idempotent and keeps your other settings; uninstalling removes only Agent Office's entries.
+- The hook never writes to stdout and always exits with 0: it cannot block Claude Code. If Agent Office is removed without uninstalling the hooks, the hook command does nothing.
+- The hook runs with an absolute Node path (`AGENT_OFFICE_NODE` if set, otherwise the Node running the command; the app passes the one it uses). From source it needs `npm run build`.
+- **After updating, reinstall the hooks** (panel → "Installa", or `agent-office install-hooks [--global]`): older installs lack `PermissionRequest`, which is used to tell which subagent is waiting for a permission.
 
-## App per la menu bar (macOS)
+## Menu bar app (macOS)
 
-Icona nella topbar con un pallino: **verde** se Claude sta lavorando, **rosso** se aspetta un tuo input (permesso di un tool, domanda), **grigio** se non c'è attività. Al clic si apre una finestra con l'ufficio; in alto a destra si passa alla vista lista, da cui si sceglie quali sessioni mostrare nell'ufficio. Chiudere la finestra la nasconde: l'app resta nella menu bar (menu col tasto destro: apri, installa gli hook, esci).
+The menu bar icon (a desk) has a status dot: **green** when Claude is working, **red** when it is waiting for your input (tool permission, question, plan approval), **grey** when nothing is active. Clicking it opens a panel with:
 
-L'app avvia in background `agent-office --all` sulla porta 4318: tutte le sessioni attive di Claude Code, in qualunque cartella. Richiede Node ≥ 22 (Homebrew o shell di login).
+| Section | Content |
+|---|---|
+| Update banner | shown when a newer version exists; blue arrow, red "!" when 4 or more versions behind. Clicking it updates via Homebrew (the app quits and reopens); if the app was not installed with Homebrew it opens the release page |
+| Status | what Claude is doing (working, waiting for you, idle), how many instances are open, or why the server is unreachable |
+| "Impostazioni" (Settings) | "Apri ufficio" (Open office), "Avvia al login" (Launch at login), "Notifica quando Claude aspetta" / "Notifica quando Claude è pronto" (notify when Claude is waiting / done), "Hook di Claude Code" with "Installa" / "Rimuovi" (install / remove the global hooks), "Cerca aggiornamenti" (Check for updates) |
+| "Istanze aperte" (Open instances) | each active instance with project, branch and context used; below it, its agents with the tool in use. Clicking one opens the list view on that instance |
+| "Esci da Agent Office" | quits the app (and its server) |
 
-```bash
-npm run app:build    # crea src-tauri/target/release/bundle/macos/Agent Office.app (richiede Rust: brew install rustup)
-npm run app:dev      # sviluppo
-agent-office install-hooks --global   # hook per tutte le sessioni (servono per il pallino rosso)
-```
+Other behaviour:
 
-Release: la versione sta solo in `package.json` (`src-tauri/tauri.conf.json` la legge da lì, `Cargo.toml` resta a `0.0.0`).
+- **One copy at a time**: the most recently launched copy closes the others (e.g. an old version still open after an update, or a local build).
+- **Server supervisor**: the app runs `agent-office --all` on port **4318** (the CLI defaults to 4317, so both can run together) and restarts it if it exits, with increasing delays. Server output goes to `~/.agent-office/server.log` (overwritten at each start); the panel shows the last error. If another Agent Office server already answers on 4318 it is reused; if another program holds the port, the panel says so. The server stops when the app quits.
+- **Node lookup**: `AGENT_OFFICE_NODE`, then `/opt/homebrew/bin/node`, `/usr/local/bin/node`, then the login shell's `node` (nvm, fnm, asdf...). Version 22 or later is required.
+- **Notifications**: macOS notifications when a session gets blocked on you (on by default) and, optionally, when Claude finishes its turn.
+- **Office window**: closing it only hides it; the app stays in the menu bar.
+- **Detachable cards**: an agent card or an instance's details open in their own window (one window per card, reused if already open).
+- **Launch at login** uses a user LaunchAgent (`~/Library/LaunchAgents/app.agent-office.menubar.plist`).
+- **Updates** are checked shortly after launch, every 6 hours and from "Cerca aggiornamenti"; the output of `brew upgrade` goes to `~/.agent-office/upgrade.log`.
 
-```bash
-npm version minor --no-git-tag-version   # alza la versione (anche patch o major)
-npm run app:release -- --publish         # build universale, release nel tap e cask aggiornato
-```
+## What it shows
 
-## Impostazioni
+### Office ("Ufficio")
 
-Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quando cambi le notifiche):
+- A fixed floor plan: a corridor with the entrance on the west side, **5 instance rooms** (8 workstations and the boss's desk each) and a **lounge** with foosball table, arcade cabinet, vending machine, fridge, coffee machine and sofas. Instances beyond the fifth have no room: their agents work in the corridor.
+- Zoom with the buttons or ⌘/Ctrl + scroll wheel, fit to window, pan by dragging.
+- Every subagent gets a stable person name derived from its id (e.g. "Marta Commit"), shown with a role chip: backend, frontend, design, architect, QA, docs, devops, research, generalist. The role is inferred from the agent type, its description and the files it touches.
+- Screens at the workstations are animated with a theme that matches the role of whoever is working there; agents resting in the lounge may be playing foosball.
+- A red "!" marks who is blocked on you, subagents included: the instance inherits the wait of its subagents.
+- Clicking a character opens its **agent card**: name, task, issue, role, type, status, tool in use, duration, model, estimated cost, token breakdown, progress, and (for Claudio Code) project, branch, effort and context used.
+- The left panel lists the instances as an accordion (branch, uncommitted diff, context, agents with status and tool). Agent cards and instance details can be **detached** into separate windows.
+
+### List ("Lista")
+
+Switch views from the top-right toggle. One block per instance: status dot, project, branch, issues, session title, diff, model, effort, output tokens, estimated cost, age, status or tool, context bar, and its agents with role, status, tool, duration and progress. A filter bar searches project, branch or agent and offers "Solo in attesa" (only waiting) and "Nascondi terminati" (hide finished). The "Nell'ufficio" (In the office) checkbox picks which instances appear in the office. "Terminati oggi" (Finished today) lists the agents that finished today and have already left.
+
+### Data sources
+
+| Data | Source |
+|---|---|
+| Agents: name, type, role, status, tokens, tool in use | `~/.claude/projects/<folder>/<session>/subagents/agent-*.jsonl` + `.meta.json` |
+| Claudio Code (main session): status, title, model, effort, context, tokens | main session transcript + hooks |
+| Issues (e.g. #14) | numbers mentioned in the description or in the latest prompt (`#14`, `issue 14`); for Claudio Code, as a fallback, from the branch (`fix/14-...`). Only the number is exposed |
+| Progress % | the agent's todo list (`TodoWrite`/`TaskCreate`/`TaskUpdate`); no bar if it has none |
+| Context used | input tokens of the last request over the model's window (200k, or 1M, see [Known limitations](#known-limitations)) |
+| Tokens and estimated cost | input, output and cache (read and write) of the session and all its subagents; cost from the public Anthropic API price list (an estimate) |
+| Project, branch, lines +/- | `git` in each instance's working folder (uncommitted changes) |
+| Instant agent states | hook events in `~/.agent-office/events/<folder>.jsonl` |
+| Waiting for your input | unanswered question in the transcript (`AskUserQuestion`, `ExitPlanMode`) + `Notification` hook, attributed to the subagent through `PermissionRequest`/`PreToolUse`. Never the text of the question |
+
+## Settings
+
+Optional, in `~/.agent-office/config.json` (the app creates it when you change a notification setting):
 
 ```json
 {
@@ -99,71 +152,84 @@ Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quan
 }
 ```
 
-- `activeWindowMinutes`: dopo quanti minuti senza attività una sessione non è più considerata aperta
-  (sparisce da ufficio, lista e menu). Letto all'avvio del server.
-- `notifyWaiting` / `notifyDone`: notifiche di macOS quando Claude aspetta un tuo input o finisce il lavoro;
-  si cambiano anche dal menu dell'icona, in Impostazioni.
+| Key | Read by | Meaning |
+|---|---|---|
+| `activeWindowMinutes` | server, at startup | minutes without activity after which a session is no longer considered open (it disappears from office, list and panel); 1 to 1440 |
+| `notifyWaiting` | app | notify when Claude is waiting for your input; also in the panel |
+| `notifyDone` | app | notify when Claude finishes its turn; also in the panel |
 
-## Cosa mostra
+Environment variables: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_DATA_DIR` (data folder read by the server, default `~/.agent-office`), `AGENT_OFFICE_NODE` (Node used by the app and by the hooks).
 
-| Dato | Fonte |
-|---|---|
-| Agenti: nome, tipo, area, stato, token | `~/.claude/projects/<cwd>/<sessione>/subagents/agent-*.jsonl` + `.meta.json` |
-| Issue (es. #14) | numeri citati nella descrizione o nell'ultimo prompt (`#14`, `issue 14`); per Claudio Code, in mancanza, dal branch (`fix/14-...`). Si espone solo il numero |
-| Claudio Code (sessione principale) | transcript della sessione principale + hook `UserPromptSubmit`/`Stop` |
-| Avanzamento % | todo list dell'agente (`TodoWrite`/`TaskCreate`/`TaskUpdate`); barra indeterminata se assente |
-| Modello, effort, contesto, token usati/rimanenti | transcript della sessione principale |
-| Progetto, branch, righe +/- | `git` nella cartella monitorata |
-| Stato immediato degli agenti | eventi hook in `~/.agent-office/events/<cwd>.jsonl` |
-| Attesa di un tuo input ("!" rosso) | domanda senza risposta nel transcript (`AskUserQuestion`, `ExitPlanMode`) + hook `Notification`, attribuito al subagente con `PermissionRequest`/`PreToolUse`; la sessione eredita l'attesa dei suoi subagenti. Mai il testo della domanda |
+## Privacy and security
 
-**Area di lavoro** (backend, frontend, architecture, test, docs, devops, research, other): dedotta da tipo di agente, descrizione e file toccati.
+- The server listens only on `127.0.0.1` and rejects requests with a different `Host` header (DNS rebinding protection).
+- It exposes metadata and numbers only: never the text of prompts, responses or tool inputs. For the tool in use it shows the tool name plus just the file name (no folder) for file tools, or the host for `WebFetch`.
+- **Text derived from prompts:** the session title (written by Claude Code) and the agents' names and descriptions (written by Claude when it starts them) summarise the requested work and are shown as they are. Working folder and branch are exposed too. The API has no authentication: any process on the same Mac, even another user's, can read them from `127.0.0.1`. Keep this in mind on a shared Mac.
+- The hooks record event names, ids, agent type, tool name and working folder: no prompt or tool input.
+- The server makes no outbound network calls. The menu bar app queries GitHub (`api.github.com`, releases of the `mccasor/homebrew-agent-office` tap) to look for updates: shortly after launch, every 6 hours and when you click "Cerca aggiornamenti".
 
-**Token usati** comprende input, output e cache (lettura e creazione) della sessione e di tutti i subagenti.
+## Known limitations
 
-## Privacy e sicurezza
+- Claude Code's transcript format is undocumented: verified on Claude Code 2.1.306; reading it is isolated in `src/server/transcript`.
+- The 1M context window is recognised from the `[1m]` suffix (model id or "model" attachment) or once usage goes over 200k: on Claude Code 2.1.306 there is no reliable signal to detect it earlier.
+- The menu bar app is macOS only (11 or later).
 
-- Il server ascolta solo su `127.0.0.1` e rifiuta richieste con header `Host` diverso (anti DNS rebinding).
-- Espone solo metadati e numeri: mai il testo di prompt, risposte o input dei tool.
-- **Testi derivati dai prompt:** il titolo della sessione (scritto da Claude Code) e il nome o la descrizione degli
-  agenti (scritti da Claude quando li avvia) riassumono il lavoro richiesto, e vengono mostrati così come sono.
-  Anche cartella di lavoro e branch sono esposti. L'API non ha autenticazione: qualunque processo dello stesso Mac,
-  anche di un altro utente, può leggerli da `127.0.0.1`. Su un Mac condiviso tienilo presente.
-- Il server non fa chiamate di rete verso l'esterno. L'app per la menu bar interroga GitHub
-  (`api.github.com`, release del tap `mccasor/homebrew-agent-office`) per cercare gli aggiornamenti: poco dopo
-  l'avvio, ogni 6 ore e quando clicchi "Aggiornamenti".
-
-## Limiti noti
-
-- Il formato dei transcript di Claude Code non è documentato: verificato su Claude Code 2.1.306; la lettura è isolata in `src/server/transcript`.
-- La finestra di contesto da 1M è riconosciuta dal suffisso `[1m]` (model id o attachment "model") o quando l'uso supera 200k: su Claude Code 2.1.306 non esiste un dato affidabile per riconoscerla prima.
-
-## Architettura
+## Architecture
 
 ```
-~/.claude/projects/<cwd>/*.jsonl ─┐
-~/.agent-office/events/*.jsonl  ──┼─> server Node (127.0.0.1) ──SSE──> React + canvas 2D
-git (branch, diff --shortstat) ───┘
+~/.claude/projects/<folder>/*.jsonl ─┐
+~/.agent-office/events/*.jsonl  ─────┼─> Node server (127.0.0.1) ──SSE──> React + 2D canvas
+git (branch, diff --shortstat) ──────┘            ▲
+                                                  └── menu bar app (Tauri): starts it, reads /api/snapshot
 ```
 
-| Modulo | Responsabilità |
+| Module | Responsibility |
 |---|---|
-| `src/shared` | contratto dati (`Snapshot`) |
-| `src/server/transcript` | parsing incrementale dei transcript, classificazione area |
-| `src/server/hooks` | hook Claude Code → eventi JSONL, install/uninstall, watcher |
-| `src/server/git` | progetto, branch, righe +/- |
-| `src/server/state` | aggregazione in `Snapshot` |
-| `src/server/http` | API + SSE + statici |
-| `src/cli.ts` | comando `agent-office` |
-| `src/web/pixel` | ufficio 2D in pixel art: pianta, posti, pathfinding A*, movimento, sprite |
-| `src/web/hud` | pannelli, scheda agente e vista lista |
-| `src/web/store` | stato client + stream SSE |
+| `src/shared` | data contract (`Snapshot`, `types.ts`), person names (`nickname.ts`), price list (`pricing.ts`) |
+| `src/server/transcript` | transcripts: `watcher` (files and changes), `discovery` (sessions from other folders), `cwdscan`, `reader` (incremental reads), `parser`, `aggregate` (sessions and agents), `classify` (role), `models` (context window), `paths`, `encode` |
+| `src/server/hooks` | hook → JSONL events (`events`), install/uninstall (`install`), watcher |
+| `src/server/git` | project, branch, lines +/- per working folder (`poller`) |
+| `src/server/state` | aggregation into the `Snapshot`: statuses, waits, lounge, finished today |
+| `src/server/http` | API (`/api/snapshot`, `/api/status`, `/api/events` SSE) + static files |
+| `src/server/config.ts` | `config.json` settings |
+| `src/cli.ts` | `agent-office` command |
+| `src/web/pixel` | pixel-art office: floor plan, seats, A* pathfinding, motion, sprites, animated screens, camera and zoom |
+| `src/web/hud` | panels, agent card, instance list, list view, detachable cards |
+| `src/web/CardWindow.tsx` | page of a detached card (`?card=agent\|session&id=...`) |
+| `src/web/store` | client state + SSE stream |
+| `src-tauri/src` | menu bar app: `main` (icon, polling, actions), `panel` (panel under the icon, content in `src-tauri/splash/panel.html`), `server` (Node lookup and supervisor), `instance` (single copy), `notify` (notifications and preferences), `updates` (GitHub releases, `brew upgrade`), `cards` (card windows) |
+| `scripts` | `release.mjs` (release), `prepare-tauri.mjs` (app resources), `make-icons.py` (icons), `pixel-preview.ts` (sprite preview PNG) |
+| `packaging/homebrew` | cask template |
+| `test` | end-to-end test and fixtures |
 
-## Sviluppo
+## Development
 
 ```bash
-npm run dev     # server (tsx watch, porta 4317) + vite con proxy /api
+npm run dev     # server (tsx watch, port 4317) + Vite with /api proxy
 npm run check   # lint + typecheck + build + test
+cargo test --manifest-path src-tauri/Cargo.toml   # Rust tests of the app
+npx tsx scripts/pixel-preview.ts preview.png 2 pianta   # PNG preview of sprites ("pianta": whole floor plan)
+python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png   # regenerate icons (needs Pillow)
 ```
 
-Variabili d'ambiente: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_DATA_DIR` (default `~/.agent-office`).
+### Menu bar app
+
+Requires Rust (`brew install rustup`; for the universal build also `rustup target add x86_64-apple-darwin`).
+
+```bash
+npm run app:dev      # development
+npm run app:build    # src-tauri/target/release/bundle/macos/Agent Office.app
+```
+
+Both run `npm run build` and `scripts/prepare-tauri.mjs` first, which copies `bin/`, `dist/` and the server's runtime dependencies into the app's resources.
+
+### Release
+
+The version lives only in `package.json` (`src-tauri/tauri.conf.json` reads it from there; `Cargo.toml` stays at `0.0.0`).
+
+```bash
+npm version minor --no-git-tag-version   # bump the version (or patch / major)
+npm run app:release -- --publish         # universal build, .dmg released on the tap, cask updated
+```
+
+Without `--publish` it only builds the `.dmg` and the cask in `release/`. With `--publish` (needs `gh` authenticated with access to the tap) it creates a draft release on `mccasor/homebrew-agent-office`, pushes the updated cask, then publishes the release, so the app never offers a version that Homebrew cannot find yet.
