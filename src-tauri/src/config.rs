@@ -5,6 +5,7 @@
 //! Schema (chiavi mancanti o non valide valgono il default, lato app e lato server):
 //! - `notifyWaiting`, `notifyDone`: notifiche dell'app (notify.rs)
 //! - `activeWindowMinutes`: minuti dopo cui una sessione non è più attiva (server)
+//! - `staleAgentMinutes`, `loopRepeats`: soglie degli avvisi "fermo" e "in loop" sui subagenti (server, #97)
 //! - `language`: "system" | "it" | "en" | "es" (#93)
 //! - `show`: `{ "<voce>": bool }`, voci del catalogo in src/shared/settings.ts
 
@@ -16,6 +17,10 @@ use serde_json::{Map, Value};
 pub const LANGUAGES: [&str; 4] = ["system", "it", "en", "es"];
 /// minuti accettati per `activeWindowMinutes`, come in src/server/config.ts
 pub const ACTIVE_WINDOW_MINUTES: std::ops::RangeInclusive<u64> = 1..=24 * 60;
+/// minuti senza attività dopo cui un subagente ha l'avviso "fermo", come in src/server/config.ts
+pub const STALE_AGENT_MINUTES: std::ops::RangeInclusive<u64> = 1..=24 * 60;
+/// chiamate uguali di fila da cui un subagente ha l'avviso "in loop", come in src/server/config.ts
+pub const LOOP_REPEATS: std::ops::RangeInclusive<u64> = 2..=100;
 const MAX_ITEM_KEY: usize = 64;
 
 pub fn path() -> Option<PathBuf> {
@@ -75,6 +80,12 @@ pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(
         }
         "activeWindowMinutes" => {
             value.as_u64().filter(|m| ACTIVE_WINDOW_MINUTES.contains(m)).ok_or_else(invalid)?;
+        }
+        "staleAgentMinutes" => {
+            value.as_u64().filter(|m| STALE_AGENT_MINUTES.contains(m)).ok_or_else(invalid)?;
+        }
+        "loopRepeats" => {
+            value.as_u64().filter(|n| LOOP_REPEATS.contains(n)).ok_or_else(invalid)?;
         }
         "language" => {
             value.as_str().filter(|l| LANGUAGES.contains(l)).ok_or_else(invalid)?;
@@ -169,7 +180,7 @@ mod tests {
         assert!(set(&mut c, "language", json!("es")).is_ok());
         assert!(set(&mut c, "language", json!("fr")).is_err());
         assert!(set(&mut c, "show.list.finishedToday", json!(false)).is_ok());
-        for bad in ["show.", "show.diff", "show.a b.c", "show.__proto__.x", "staleAgentMinutes", "show"] {
+        for bad in ["show.", "show.diff", "show.a b.c", "show.__proto__.x", "staleAgent", "show"] {
             assert!(set(&mut c, bad, json!(false)).is_err(), "{bad}");
         }
         assert!(set(&mut c, "show.session.diff", json!(1)).is_err());
@@ -182,5 +193,30 @@ mod tests {
         c.insert("show".into(), json!(true));
         set(&mut c, "show.session.diff", json!(false)).unwrap();
         assert_eq!(c["show"], json!({ "session.diff": false }));
+    }
+
+    #[test]
+    fn soglie_degli_avvisi() {
+        // interi negli stessi limiti del server (src/server/config.ts)
+        let mut c = Map::new();
+        assert!(set(&mut c, "staleAgentMinutes", json!(120)).is_ok());
+        for bad in [json!(0), json!(1441), json!(-1), json!(30.5), json!("60"), json!(true)] {
+            assert!(set(&mut c, "staleAgentMinutes", bad.clone()).is_err(), "{bad}");
+        }
+        assert!(set(&mut c, "loopRepeats", json!(2)).is_ok());
+        assert!(set(&mut c, "loopRepeats", json!(10)).is_ok());
+        for bad in [json!(1), json!(0), json!(101), json!(5.5), json!("5")] {
+            assert!(set(&mut c, "loopRepeats", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(Value::Object(c), json!({ "staleAgentMinutes": 120, "loopRepeats": 10 }));
+        // scritte nel file accanto alle altre chiavi
+        let dir = temp_dir("alerts");
+        let file = dir.join("config.json");
+        std::fs::write(&file, "{\"activeWindowMinutes\":30}").unwrap();
+        update_at(&file, |c| set(c, "staleAgentMinutes", json!(15))).unwrap();
+        update_at(&file, |c| set(c, "loopRepeats", json!(3))).unwrap();
+        assert!(update_at(&file, |c| set(c, "loopRepeats", json!(1))).is_err());
+        assert_eq!(read_json(&file), json!({ "activeWindowMinutes": 30, "staleAgentMinutes": 15, "loopRepeats": 3 }));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

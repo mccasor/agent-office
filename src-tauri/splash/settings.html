@@ -50,7 +50,9 @@
       user-select: none;
       -webkit-user-select: none;
       cursor: default;
-      overflow: hidden;
+      /* finestra a misura del contenuto, al più l'85% dello schermo: oltre (scheda Agenti su uno schermo basso) si scorre */
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     button, select { font: inherit; color: inherit; }
     svg { flex: none; }
@@ -135,6 +137,12 @@
       version: (v) => `Agent Office ${v}`,
       checkUpdates: 'Cerca aggiornamenti',
       upgrade: (v) => `Aggiorna alla ${v}`,
+      alerts: 'Avvisi',
+      staleAgent: 'Avviso agente fermo dopo',
+      staleAgentSub: 'Un subagente senza attività per più di così ha il "!" giallo',
+      loopRepeats: 'Avviso loop dopo',
+      loopRepeatsSub: 'Chiamate di fila allo stesso tool con lo stesso input',
+      calls: (n) => `${n} chiamate uguali`,
       showNote: 'Le modifiche valgono subito in ufficio, nella lista, nelle schede e nel menu.',
       showGroup: {
         claude: 'Claude, la sessione principale',
@@ -146,8 +154,13 @@
     };
     /** minuti proposti per activeWindowMinutes (1-1440 nel file); un valore diverso scritto a mano compare in più */
     const ACTIVE_WINDOW_CHOICES = [5, 10, 15, 30, 60, 120, 240];
+    /** soglie degli avvisi sui subagenti (#97): minuti per "fermo" (1-1440) e chiamate uguali per "in loop" (2-100) */
+    const STALE_AGENT_CHOICES = [15, 30, 60, 120, 240];
+    const LOOP_REPEATS_CHOICES = [3, 5, 10];
+    /** chiavi numeriche di config.json: interi ammessi, come in src/server/config.ts e config.rs */
+    const RANGES = { activeWindowMinutes: [1, 1440], staleAgentMinutes: [1, 1440], loopRepeats: [2, 100] };
     /** default delle chiavi di config.json, come in src/server/config.ts e notify.rs */
-    const DEFAULTS = { notifyWaiting: true, notifyDone: false, activeWindowMinutes: 10, language: 'system' };
+    const DEFAULTS = { notifyWaiting: true, notifyDone: false, activeWindowMinutes: 10, staleAgentMinutes: 60, loopRepeats: 5, language: 'system' };
 
     // icone a tratto nello spirito di SF Symbols, una per scheda
     const ICONS = {
@@ -180,7 +193,16 @@
     const config = (key) => {
       const v = state.config[key];
       if (typeof v !== typeof DEFAULTS[key]) return DEFAULTS[key];
-      return key === 'activeWindowMinutes' && !(Number.isInteger(v) && v >= 1 && v <= 1440) ? DEFAULTS[key] : v;
+      const range = RANGES[key];
+      return range && !(Number.isInteger(v) && v >= range[0] && v <= range[1]) ? DEFAULTS[key] : v;
+    };
+    /** menu di una chiave numerica: le scelte proposte, più il valore attuale se scritto a mano con un altro numero */
+    const menu = (key, label, choices, text) => {
+      const value = config(key);
+      const all = choices.includes(value) ? choices : [...choices, value].sort((a, b) => a - b);
+      return `<select data-key="${key}" aria-label="${esc(label)}">${all
+        .map((v) => `<option value="${v}" ${v === value ? 'selected' : ''}>${esc(text(v))}</option>`)
+        .join('')}</select>`;
     };
     const shownItem = (item) => {
       const show = state.config.show;
@@ -195,8 +217,6 @@
       `<section class="group">${title ? `<h2 class="group__title">${title}</h2>` : ''}<div class="group__box">${rows.join('')}</div>${note ? `<p class="group__note">${note}</p>` : ''}</section>`;
 
     function general() {
-      const minutes = config('activeWindowMinutes');
-      const choices = ACTIVE_WINDOW_CHOICES.includes(minutes) ? ACTIVE_WINDOW_CHOICES : [...ACTIVE_WINDOW_CHOICES, minutes].sort((a, b) => a - b);
       const hooks = state.hooks in TEXT.hooksStatus ? state.hooks : 'unknown';
       const hooksClass = hooks === 'installed' ? ' row__sub--ok' : hooks === 'outdated' ? ' row__sub--warn' : '';
       const u = state.update;
@@ -211,10 +231,7 @@
           row(TEXT.notifyDone, TEXT.notifyDoneSub, sw(config('notifyDone'), 'data-key="notifyDone"')),
         ]),
         group(TEXT.sessions, [
-          row(TEXT.activeWindow, TEXT.activeWindowSub,
-            `<select data-key="activeWindowMinutes" aria-label="${TEXT.activeWindow}">${choices
-              .map((m) => `<option value="${m}" ${m === minutes ? 'selected' : ''}>${TEXT.minutes(m)}</option>`)
-              .join('')}</select>`),
+          row(TEXT.activeWindow, TEXT.activeWindowSub, menu('activeWindowMinutes', TEXT.activeWindow, ACTIVE_WINDOW_CHOICES, TEXT.minutes)),
         ]),
         // Lingua (#93): qui un menu "Lingua" (Sistema, Italiano, English, Español) che salva la chiave `language`
         // con settings_set; i valori ammessi sono CATALOG.languages.
@@ -227,12 +244,19 @@
       ].join('');
     }
 
+    /** soglie degli avvisi sui subagenti (#97), in cima alla scheda Agenti */
+    const alerts = () =>
+      group(TEXT.alerts, [
+        row(TEXT.staleAgent, esc(TEXT.staleAgentSub), menu('staleAgentMinutes', TEXT.staleAgent, STALE_AGENT_CHOICES, TEXT.minutes)),
+        row(TEXT.loopRepeats, TEXT.loopRepeatsSub, menu('loopRepeats', TEXT.loopRepeats, LOOP_REPEATS_CHOICES, TEXT.calls)),
+      ]);
+
     /** schede delle voci: un interruttore per voce del catalogo, con i posti in cui compare */
     function items(tabId) {
       const rows = CATALOG.items
         .filter((i) => i.tab === tabId)
         .map((i) => row(esc(i.label), i.places.map((p) => CATALOG.places[p]).join(' · '), sw(shownItem(i), `data-key="show.${esc(i.key)}" aria-label="${esc(i.label)}"`)));
-      return group(TEXT.showGroup[tabId], rows, TEXT.showNote);
+      return (tabId === 'agents' ? alerts() : '') + group(TEXT.showGroup[tabId], rows, TEXT.showNote);
     }
 
     function render() {
@@ -295,9 +319,10 @@
       else invoke('settings_action', { action: el.dataset.action }).then(refresh, refresh);
     });
     document.addEventListener('change', (e) => {
-      if (e.target.dataset.key === 'activeWindowMinutes') {
+      const key = e.target.dataset.key;
+      if (key in RANGES) {
         e.target.blur();
-        save('activeWindowMinutes', Number(e.target.value));
+        save(key, Number(e.target.value));
       }
     });
     document.addEventListener('keydown', (e) => {
