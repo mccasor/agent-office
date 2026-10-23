@@ -158,7 +158,7 @@ Optional, in `~/.agent-office/config.json` (the app creates it when you change a
 | `notifyWaiting` | app | notify when Claude is waiting for your input; also in the panel |
 | `notifyDone` | app | notify when Claude finishes its turn; also in the panel |
 
-Environment variables: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_DATA_DIR` (data folder read by the server, default `~/.agent-office`), `AGENT_OFFICE_NODE` (Node used by the app and by the hooks).
+Environment variables: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_DATA_DIR` (data folder: hook events are written and read there, default `~/.agent-office`; set it for Claude Code too), `AGENT_OFFICE_NODE` (Node used by the app and by the hooks).
 
 ## Privacy and security
 
