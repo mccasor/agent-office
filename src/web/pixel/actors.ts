@@ -1,3 +1,4 @@
+import type { AnimClock } from './clock';
 import { planFrom } from './path';
 import { advanceAlongPath, WALK_SPEED, type StartQueue } from './motion';
 import type { Cell, Facing, PixelActor, PixelPlan, Pose, Spot } from './types';
@@ -112,7 +113,7 @@ export function poseOf(actor: PixelActor, m: ActorMotion): Pose {
 /** fotogrammi al secondo delle animazioni: passo e digitazione svelti, respiro lento */
 export const POSE_FPS: Record<Pose, number> = { walk: 8, type: 7, stand: 1.5, sit: 1.2, play: 5 };
 
-/** fotogramma all'istante `t` (s); `seed` sfasa i personaggi tra loro */
-export function frameAt(pose: Pose, t: number, seed: number): number {
-  return Math.floor(t * POSE_FPS[pose] + (seed % 97) / 13);
+/** fotogramma all'istante dell'orologio delle animazioni; `seed` sfasa i personaggi tra loro */
+export function frameAt(pose: Pose, clock: AnimClock, seed: number): number {
+  return clock.frame(POSE_FPS[pose], (seed % 97) / 13);
 }

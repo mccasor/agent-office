@@ -207,6 +207,11 @@ export class RoomLights {
     });
   }
 
+  /** qualche zona sta ancora sfumando o sfarfallando all'istante `now`: il loop di disegno non può dormire */
+  busy(now: number): boolean {
+    return this.switches?.some((sw) => now - sw.at < (sw.on ? FLICKER_END : FADE_OFF)) ?? false;
+  }
+
   /** buio di ogni zona in questo fotogramma (per capire se il fotogramma è cambiato) */
   get levels(): readonly number[] {
     return this.dark;

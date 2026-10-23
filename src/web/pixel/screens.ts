@@ -1,3 +1,4 @@
+import type { AnimClock } from './clock';
 import { FOOSBALL_FRAMES, SCREEN_FRAMES, SCREEN_THEMES, type ScreenTheme } from './sprites';
 import type { Furniture } from './types';
 
@@ -42,20 +43,20 @@ export interface FurnitureUse {
 const phase = (x: number, z: number): number => ((x * 7 + z * 13) >>> 0) % SCREEN_FRAMES;
 
 /**
- * Fotogramma e variante di un arredo all'istante `now` (s). Monitor: spento (-1) se nessuno ci lavora, acceso con
+ * Fotogramma e variante di un arredo all'istante dell'orologio delle animazioni. Monitor: spento (-1) se nessuno ci lavora, acceso con
  * il tema del ruolo se si vede, acceso generico se è di spalle (il retro non cambia). Biliardino: fermo (-1) senza
  * giocatori. Il resto: fermo, con la sua variante.
  */
-export function furnitureLook(f: Furniture, use: FurnitureUse, now: number): { frame: number; variant: number } {
+export function furnitureLook(f: Furniture, use: FurnitureUse, clock: AnimClock): { frame: number; variant: number } {
   if (f.kind === 'monitor') {
     const area = use.screens.get(`${f.cell.x},${f.cell.z}`);
     if (area === undefined) return { frame: -1, variant: 0 };
     if (!screenVisible(f)) return { frame: 0, variant: 0 };
-    const frame = (Math.floor(now * SCREEN_FPS) + phase(f.cell.x, f.cell.z)) % SCREEN_FRAMES;
+    const frame = (clock.frame(SCREEN_FPS) + phase(f.cell.x, f.cell.z)) % SCREEN_FRAMES;
     return { frame, variant: SCREEN_THEMES.indexOf(screenTheme(area)) };
   }
   if (f.kind === 'foosball') {
-    return { frame: use.players > 0 ? Math.floor(now * FOOSBALL_FPS) % FOOSBALL_FRAMES : -1, variant: f.variant ?? 0 };
+    return { frame: use.players > 0 ? clock.frame(FOOSBALL_FPS) % FOOSBALL_FRAMES : -1, variant: f.variant ?? 0 };
   }
   return { frame: 0, variant: f.variant ?? 0 };
 }

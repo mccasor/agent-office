@@ -103,6 +103,19 @@ describe('RoomLights', () => {
     expect(l.isOn(idx('room-1'))).toBe(true);
   });
 
+  it('occupata finché sfuma o sfarfalla, poi ferma: il loop di disegno può dormire', () => {
+    const l = new RoomLights(plan);
+    expect(l.busy(0)).toBe(false);
+    l.update(new Set(['room-0']), 0);
+    expect(l.busy(0)).toBe(false);
+    l.update(new Set(), 1);
+    expect(l.busy(1 + FADE_OFF / 2)).toBe(true);
+    expect(l.busy(1 + FADE_OFF + 0.01)).toBe(false);
+    l.update(new Set(['room-0']), 2);
+    expect(l.busy(2 + FLICKER_END / 2)).toBe(true);
+    expect(l.busy(2 + FLICKER_END + 0.01)).toBe(false);
+  });
+
   it('spegne gli schermi delle stanze spente', () => {
     const l = new RoomLights(plan);
     l.update(new Set(['room-1']), 0);
