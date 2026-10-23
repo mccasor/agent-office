@@ -343,6 +343,10 @@ export function createAccumulator(): Accumulator {
     } else if (att.type === 'structured_output') {
       state.finished = 'confirmed';
       structuredOutputPending = true;
+    } else if (att.type === 'queued_command' && typeof att.prompt === 'string') {
+      // nei subagenti le notifiche di fine dei task in background arrivano così, senza una riga utente
+      for (const m of att.prompt.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+      state.backgroundTasks = background.size;
     }
   };
 
