@@ -35,10 +35,20 @@ async function readText(file: string): Promise<string | null> {
   }
 }
 
+/**
+ * File di impostazioni che non è un oggetto JSON. Il testo lo mette la CLI nella sua lingua (#103): qui niente
+ * testi tradotti, perché il binario hook importa questo modulo a ogni evento.
+ */
+export class NotAnObjectError extends Error {
+  constructor(readonly file: string) {
+    super(file);
+  }
+}
+
 function parseSettings(file: string, text: string | null): Json | null {
   if (text === null) return null;
   const parsed: unknown = JSON.parse(text);
-  if (!isObj(parsed)) throw new Error(`${file}: atteso un oggetto JSON`);
+  if (!isObj(parsed)) throw new NotAnObjectError(file);
   return parsed;
 }
 

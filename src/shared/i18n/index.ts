@@ -83,8 +83,8 @@ export const PAGE_PREFIXES = [
   'format.', 'dur.', 'status.', 'waiting.', 'activity.', 'instances.', 'tray.', 'update.', 'panel.', 'settings.', 'tab.', 'place.',
   'setting.', 'splash.',
 ] as const;
-/** Testi usati dall'app della menu bar in Rust (icona, notifiche, aggiornamenti, hook, server). */
-export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.'] as const;
+/** Testi usati dall'app della menu bar in Rust (icona, notifiche, aggiornamenti, hook, server, errori dei comandi). */
+export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.', 'error.'] as const;
 
 /** Testi delle chiavi con uno dei prefissi, per lingua. Pura. */
 export function pick(prefixes: readonly string[]): Record<Locale, Record<string, string>> {

@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
+use crate::i18n::{t, tf};
+
 pub const LANGUAGES: [&str; 4] = ["system", "it", "en", "es"];
 /// minuti accettati per `activeWindowMinutes`, come in src/server/config.ts
 pub const ACTIVE_WINDOW_MINUTES: std::ops::RangeInclusive<u64> = 1..=24 * 60;
@@ -36,7 +38,7 @@ pub fn read_at(path: &Path) -> io::Result<Map<String, Value>> {
     };
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(map)) => Ok(map),
-        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "config.json non è un oggetto JSON valido")),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, t("error.configInvalid"))),
     }
 }
 
@@ -63,7 +65,7 @@ pub fn update_at(path: &Path, change: impl FnOnce(&mut Map<String, Value>) -> Re
 }
 
 pub fn update(change: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>) -> Result<(), String> {
-    update_at(&path().ok_or("cartella home sconosciuta")?, change)
+    update_at(&path().ok_or_else(|| t("error.noHome"))?, change)
 }
 
 /// Chiave di una voce di `show`: lettere, cifre e punti (es. `session.diff`), come nel catalogo.
@@ -73,7 +75,8 @@ fn valid_item(key: &str) -> bool {
 
 /// Imposta `key` a `value` se sono una chiave e un valore ammessi (`show.<voce>` per gli interruttori). Pura.
 pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(), String> {
-    let invalid = || format!("valore non valido per {key}");
+    // nella lingua dell'app: la finestra Impostazioni li mostra dopo "Impostazione non salvata" (#103)
+    let invalid = || tf("error.invalidValue", &[("key", key)]);
     match key {
         "notifyWaiting" | "notifyDone" => {
             value.as_bool().ok_or_else(invalid)?;
@@ -91,7 +94,7 @@ pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(
             value.as_str().filter(|l| LANGUAGES.contains(l)).ok_or_else(invalid)?;
         }
         _ => {
-            let item = key.strip_prefix("show.").filter(|k| valid_item(k)).ok_or_else(|| format!("impostazione sconosciuta: {key}"))?;
+            let item = key.strip_prefix("show.").filter(|k| valid_item(k)).ok_or_else(|| tf("error.unknownSetting", &[("key", key)]))?;
             value.as_bool().ok_or_else(invalid)?;
             let show = config.entry("show").or_insert_with(|| Value::Object(Map::new()));
             if !show.is_object() {
@@ -193,6 +196,24 @@ mod tests {
         c.insert("show".into(), json!(true));
         set(&mut c, "show.session.diff", json!(false)).unwrap();
         assert_eq!(c["show"], json!({ "session.diff": false }));
+    }
+
+    #[test]
+    fn errori_nella_lingua_scelta() {
+        use crate::i18n::{with_locale, Locale};
+        let mut c = Map::new();
+        assert_eq!(with_locale(Locale::En, || set(&mut c, "loopRepeats", json!(1))), Err("invalid value for loopRepeats".into()));
+        assert_eq!(with_locale(Locale::Es, || set(&mut c, "show.x", json!(true))), Err("ajuste desconocido: show.x".into()));
+        assert_eq!(with_locale(Locale::It, || set(&mut c, "language", json!("fr"))), Err("valore non valido per language".into()));
+        // file rotto: l'errore arriva alla pagina così com'è
+        let dir = temp_dir("lang");
+        let file = dir.join("config.json");
+        std::fs::write(&file, "[1]").unwrap();
+        let err = with_locale(Locale::En, || update_at(&file, |c| set(c, "notifyDone", json!(true))));
+        assert_eq!(err, Err("config.json is not a valid JSON object".into()));
+        let err = with_locale(Locale::Es, || update_at(&file, |c| set(c, "notifyDone", json!(true))));
+        assert_eq!(err, Err("config.json no es un objeto JSON válido".into()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
