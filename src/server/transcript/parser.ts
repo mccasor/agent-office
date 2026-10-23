@@ -35,6 +35,11 @@ export interface FileSummary {
   /** comandi o agenti avviati in background e non ancora terminati (l'agente riprenderà alla loro notifica) */
   backgroundTasks: number;
   /**
+   * file di output dei comandi in background aperti (#104), dal tool_result che li avvia: solo per leggerne l'mtime
+   * (da quanto non scrivono), mai il contenuto; non esce dal server
+   */
+  backgroundOutputs: string[];
+  /**
    * risposta finale dell'agente: 'confirmed' (stop_reason end_turn o structured_output),
    * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
    */
@@ -152,6 +157,8 @@ function userTexts(row: Json, results?: ReadonlySet<string>): string[] {
 
 /** avvio di un comando o di un agente in background, cercato solo nel tool_result del Bash o dell'Agent che lo lancia */
 const BACKGROUND_STARTED_RE = /(?:running in background with ID|agentId): ([\w-]+)/g;
+/** file di output di un comando in background, nello stesso tool_result: "... with ID: <id>. Output is being written to: <path>" */
+const BACKGROUND_OUTPUT_RE = /running in background with ID: ([\w-]+)\. Output is being written to: (\/\S+?\.output)\b/g;
 /** riga scritta da Claude Code quando il turno viene interrotto ("... by user" o "... by user for tool use") */
 const INTERRUPTED = '[Request interrupted by user';
 /** notifica di fine di un task in background */
@@ -221,6 +228,7 @@ export function createAccumulator(): Accumulator {
     awaitingSince: null,
     tool: null,
     backgroundTasks: 0,
+    backgroundOutputs: [],
     finished: false,
     lastPromptAt: null,
     lastTurnMs: null,
@@ -247,6 +255,13 @@ export function createAccumulator(): Accumulator {
   };
   /** id dei task in background ancora aperti (solo gli id, mai il testo dei messaggi) */
   const background = new Set<string>();
+  /** file di output dei task in background aperti, per id (solo percorsi che finiscono in tasks/<id>.output) */
+  const outputs = new Map<string, string>();
+  const updateBackground = () => {
+    for (const id of outputs.keys()) if (!background.has(id)) outputs.delete(id);
+    state.backgroundTasks = background.size;
+    state.backgroundOutputs = [...outputs.values()];
+  };
   /**
    * tool_use che possono avviare un task in background (Bash con run_in_background, Agent), in attesa del risultato:
    * l'id si cerca solo lì, non nel testo di un file letto che contiene per caso "agentId: string"
@@ -438,7 +453,7 @@ export function createAccumulator(): Accumulator {
     } else if (att.type === 'queued_command' && typeof att.prompt === 'string') {
       // nei subagenti le notifiche di fine dei task in background arrivano così, senza una riga utente
       onTaskText(att.prompt);
-      state.backgroundTasks = background.size;
+      updateBackground();
     }
   };
 
@@ -498,11 +513,14 @@ export function createAccumulator(): Accumulator {
         }
         updateAwaiting();
         updateTool();
-        for (const text of userTexts(row, launches)) for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
+        for (const text of userTexts(row, launches)) {
+          for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
+          for (const m of text.matchAll(BACKGROUND_OUTPUT_RE)) if (m[2]!.endsWith(`/tasks/${m[1]}.output`)) outputs.set(m[1]!, m[2]!);
+        }
         for (const text of userTexts(row)) onTaskText(text);
         onToolErrors(row, Number.isFinite(at) ? at : null);
         for (const id of toolResultIds(row)) launches.delete(id);
-        state.backgroundTasks = background.size;
+        updateBackground();
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) {
           state.finished = false;
@@ -525,7 +543,7 @@ export function createAccumulator(): Accumulator {
       case 'queue-operation':
         // notifiche di fine messe in coda mentre Claude lavora: arrivano qui anche senza una riga utente
         if (typeof row.content === 'string') onTaskText(row.content);
-        state.backgroundTasks = background.size;
+        updateBackground();
         break;
     }
   };

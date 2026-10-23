@@ -63,7 +63,7 @@ describe('lingua dell\'interfaccia (#93)', () => {
     speak('es');
     expect(stateCounts(agents)).toBe('1 trabajando · 1 inactivo · 2 terminados');
     expect(stateCounts([agent({ status: 'idle' }), agent({ status: 'idle' })])).toBe('2 inactivos');
-    expect(alertText({ kind: 'stale', since: 0 }, now)).toBe('Sin actividad desde hace 1 h 12 min: puede que haya terminado sin que la oficina lo notara');
+    expect(alertText({ kind: 'stale', since: 0 }, now)).toBe('Sin actividad desde hace 1 h 12 min: puede que haya terminado sin que la oficina lo notara. Usa «Comprobar estado» para saberlo');
     expect(todayItems({ since: 0, cost: 3.4, costLastHour: 0.25, launched: 1, finished: 3, failed: 2, waitingMs: 0 }).map((i) => i.label))
       .toEqual(['coste', 'última hora', 'lanzado', 'terminados', 'fallidos', 'esperando']);
   });

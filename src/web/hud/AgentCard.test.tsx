@@ -169,29 +169,36 @@ describe('AgentCard', () => {
     expect(onPopOut).toHaveBeenCalledTimes(1);
     unmount();
     render(<AgentCard agent={agent()} />);
-    expect(screen.queryByRole('button')).toBeNull();
+    // solo "Controlla stato" (#104), che c'è sempre per un subagente non terminato
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Controlla stato']);
     fireEvent.keyDown(window, { key: 'Escape' });
   });
 });
 
 describe('AgentCard: cruscotto (#97)', () => {
-  it('fermo: avviso con da quanto e "Fallo uscire"; senza onDismiss niente pulsante', () => {
+  it('fermo: l\'avviso invita a usare "Controlla stato"; niente più "Fallo uscire" (#104)', () => {
     const t = Date.now();
     const stale = agent({ status: 'idle', updatedAt: t - 72 * 60_000, alert: { kind: 'stale', since: t - 72 * 60_000 } });
-    const onDismiss = vi.fn();
-    const { unmount } = render(<AgentCard agent={stale} onDismiss={onDismiss} />);
-    expect(screen.getByText('Nessuna attività da 1 h 12 min: potrebbe aver finito senza che l\'ufficio se ne accorgesse')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-    unmount();
-    render(<AgentCard agent={stale} />);
+    render(<AgentCard agent={stale} onMarkDone={() => {}} />);
+    expect(
+      screen.getByText('Nessuna attività da 1 h 12 min: potrebbe aver finito senza che l\'ufficio se ne accorgesse. Usa «Controlla stato» per saperlo'),
+    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Controlla stato' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
   });
 
-  it('in loop: testo diverso e nessun pulsante', () => {
-    render(<AgentCard agent={agent({ alert: { kind: 'loop', tool: 'Bash', count: 6 } })} onDismiss={() => {}} />);
+  it('in loop: testo diverso, e "Controlla stato" come per tutti i subagenti al lavoro', () => {
+    render(<AgentCard agent={agent({ alert: { kind: 'loop', tool: 'Bash', count: 6 } })} />);
     expect(screen.getByText('Ha chiamato Bash con lo stesso input 6 volte di fila: potrebbe essere in un loop')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Controlla stato' })).toBeTruthy();
+  });
+
+  it('niente "Controlla stato" per un terminato né per Claude stesso', () => {
+    const { unmount } = render(<AgentCard agent={agent({ status: 'done', outcome: 'ok' })} />);
+    expect(screen.queryByRole('button', { name: 'Controlla stato' })).toBeNull();
+    unmount();
+    render(<AgentCard agent={agent({ id: 'boss:s1' })} session={session()} />);
+    expect(screen.queryByRole('button', { name: 'Controlla stato' })).toBeNull();
   });
 
   it('terminato: esito ed errori dei tool (nome e ora, mai il testo)', () => {

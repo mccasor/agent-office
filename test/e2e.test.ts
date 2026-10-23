@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,31 @@ describe('e2e: CLI -> API', () => {
     expect(snap.agents.map((a) => a.id)).toEqual(['a0000000000000002']);
     expect(snap.agents.find((a) => a.id === 'a0000000000000002')!.progress).toEqual({ completed: 1, total: 3 });
     expect(JSON.stringify(snap)).not.toMatch(/"content"|"text"|"prompt"/);
+  });
+
+  it('"Controlla stato" (#104): senza file di sessione sconosciuto; con il processo terminato l\'agente è chiuso', async () => {
+    let snap = (await (await fetch(`${office.url}/api/snapshot`)).json()) as Snapshot;
+    expect(snap.sessions[0]!.process).toBe('unknown');
+    let res = await fetch(`${office.url}/api/agents/a0000000000000002/status`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ kind: 'unknown', claude: null });
+    expect((await fetch(`${office.url}/api/agents/nessuno/status`)).status).toBe(404);
+    // Claude Code ha lasciato il file di sessione di un processo che non c'è più (pid oltre il massimo di macOS e Linux)
+    const sessions = join(dataDir, 'claude', 'sessions');
+    mkdirSync(sessions);
+    writeFileSync(join(sessions, '4194399.json'), JSON.stringify({ pid: 4194399, sessionId: snap.sessions[0]!.id, procStart: 'Wed Oct 21 11:21:15 2026', status: 'busy' }));
+    writeFileSync(join(sessions, '4194399.0123abcd.key'), 'token-segreto');
+    res = await fetch(`${office.url}/api/agents/a0000000000000002/status`);
+    const body = await res.text();
+    expect(JSON.parse(body)).toEqual({ kind: 'closed', checkedAt: expect.any(Number) });
+    expect(body).not.toMatch(/token-segreto|sessions|4194399/);
+    await vi.waitFor(async () => {
+      snap = (await (await fetch(`${office.url}/api/snapshot`)).json()) as Snapshot;
+      expect(snap.sessions[0]!.process).toBe('gone');
+    });
+    // esce dall'ufficio come gli altri terminati, con esito "interrotto"
+    expect(snap.agents.find((a) => a.id === 'a0000000000000002')).toMatchObject({ status: 'done', outcome: 'interrupted' });
+    expect(JSON.stringify(snap)).not.toMatch(/token-segreto|4194399/);
   });
 
   it('config.json cambiato: preferenze nuove su /api/config senza riavvio (#94)', async () => {

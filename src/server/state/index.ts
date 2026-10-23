@@ -12,6 +12,7 @@ import type {
   WaitingKind,
 } from '../../shared/types.js';
 import { nicknameOf } from '../../shared/nickname.js';
+import type { SessionProcessInfo } from '../sessions/index.js';
 
 /** un agente è "entering" (cammina dalla porta) nei primi ms dopo startedAt */
 export const ENTERING_MS = 5_000;
@@ -164,6 +165,7 @@ function resolveSessions(
   agents: AgentState[],
   repoAt: ((cwd: string) => RepoState | null) | undefined,
   now: number,
+  gone: (sessionId: string) => boolean,
 ): TranscriptSession[] {
   const endedAt = new Map<string, number>();
   const mainHook = new Map<string, HookEvent>();
@@ -179,7 +181,8 @@ function resolveSessions(
   return sessions
     .map((s) => {
       const end = endedAt.get(s.id);
-      const ended = s.active && end !== undefined && end > s.updatedAt;
+      // chiusa: SessionEnd dopo l'ultima riga, o processo di Claude Code terminato (#104)
+      const ended = (s.active && end !== undefined && end > s.updatedAt) || gone(s.id);
       const hook = mainHook.get(s.id);
       const status = ended ? 'done' : hook && hook.timestamp > s.updatedAt ? hookMainStatus(hook, now) : s.status;
       // stato git della cartella della sessione: branch di riserva per la issue e diff (solo se attiva)
@@ -216,15 +219,15 @@ function hookMainStatus(hook: HookEvent, now: number): AgentStatus {
  * Aspettano solo i terminati dello stesso "turno": quelli ancora in ufficio quando è entrato uno degli agenti al
  * lavoro (a catena), non quelli usciti in precedenza, che altrimenti tornerebbero a ogni nuovo agente.
  */
-function keepFinished(agents: AgentState[], now: number): AgentState[] {
+function keepFinished(agents: AgentState[], now: number, endOf: (a: AgentState) => number = (a) => a.updatedAt): AgentState[] {
   const keep = new Set<string>();
   for (const sessionId of new Set(agents.map((a) => a.sessionId))) {
     const group = agents.filter((a) => a.sessionId === sessionId);
     const done = group.filter((a) => a.status === 'done');
     let seeds = group.filter((a) => a.status !== 'done' && now - a.updatedAt <= LOUNGE_WAIT_MS);
     if (seeds.length === 0) {
-      const last = done.reduce<AgentState | null>((m, a) => (!m || a.updatedAt > m.updatedAt ? a : m), null);
-      if (!last || now - last.updatedAt > DONE_LINGER_MS) continue;
+      const last = done.reduce<AgentState | null>((m, a) => (!m || endOf(a) > endOf(m) ? a : m), null);
+      if (!last || now - endOf(last) > DONE_LINGER_MS) continue;
       seeds = [last];
     }
     // inizio del turno: si allarga a ritroso con chi era ancora in ufficio (finito da meno di DONE_LINGER_MS)
@@ -232,7 +235,7 @@ function keepFinished(agents: AgentState[], now: number): AgentState[] {
     for (let grew = true; grew; ) {
       grew = false;
       for (const a of done) {
-        if (keep.has(a.id) || a.updatedAt < from - DONE_LINGER_MS) continue;
+        if (keep.has(a.id) || endOf(a) < from - DONE_LINGER_MS) continue;
         keep.add(a.id);
         from = Math.min(from, a.startedAt);
         grew = true;
@@ -268,6 +271,15 @@ export function withAlert(agent: AgentState, now: number, opts: AlertOptions): A
     else if (agent.repeat && agent.repeat.count >= opts.loopRepeats) alert = { kind: 'loop', tool: agent.repeat.tool, count: agent.repeat.count };
   }
   return alert ? { ...rest, alert } : rest;
+}
+
+/**
+ * Subagente di una sessione il cui processo di Claude Code è terminato (#104): se non aveva finito, risulta terminato
+ * con esito "interrotto", senza tool in uso né attese. Gli altri restano come sono.
+ */
+export function closedBy(agent: AgentState, info: SessionProcessInfo | undefined): AgentState {
+  if (info?.process !== 'gone' || agent.status === 'done') return agent;
+  return { ...agent, status: 'done', outcome: 'interrupted', tool: null, waiting: false, waitingKind: null, waitingSince: null };
 }
 
 /** quanti agenti terminati oggi restano nello snapshot al massimo */
@@ -310,19 +322,30 @@ export function buildSnapshot(input: {
   repoAt?: (cwd: string) => RepoState | null;
   /** soglie degli avvisi; assenti = default */
   alerts?: AlertOptions;
+  /** processi di Claude Code per sessione (#104, ~/.claude/sessions); assente = nessun dato, campo `process` omesso */
+  processes?: ReadonlyMap<string, SessionProcessInfo>;
   now: number;
 }): Snapshot {
-  const { transcript, hookEvents, now } = input;
+  const { transcript, hookEvents, now, processes } = input;
   const hooks = latestAgentHooks(hookEvents);
   const asks = collectAsks(hookEvents);
+  const gone = (sessionId: string) => processes?.get(sessionId)?.process === 'gone';
+  // chiusi dalla fine del processo prima dell'avviso: un agente terminato non è "fermo" (né notificato, #100)
   const resolved = transcript.agents.map((a) => ({
-    ...withAlert(resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks), now, input.alerts ?? DEFAULT_ALERTS),
+    ...withAlert(closedBy(resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks), processes?.get(a.sessionId)), now, input.alerts ?? DEFAULT_ALERTS),
     nickname: nicknameOf(a.id),
   }));
-  const agents = keepFinished(resolved, now);
+  // chi è stato chiuso dalla fine del processo esce dall'ufficio da quando ce ne siamo accorti, non dall'ultima riga
+  const closedAt = (a: AgentState) => (gone(a.sessionId) ? Math.max(a.updatedAt, processes?.get(a.sessionId)?.goneAt ?? -Infinity) : a.updatedAt);
+  const agents = keepFinished(resolved, now, closedAt);
   // attesa su due livelli: la sessione eredita quella dei subagenti (pallino rosso, status 'waiting', menu bar)
-  const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, input.repoAt, now).map(
-    (s): SessionState => ({ ...s, dot: sessionDot(s, agents), project: projectOf(s.cwd) }),
+  const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, input.repoAt, now, gone).map(
+    (s): SessionState => ({
+      ...s,
+      dot: sessionDot(s, agents),
+      project: projectOf(s.cwd),
+      ...(processes ? { process: processes.get(s.id)?.process ?? 'unknown' } : {}),
+    }),
   );
   return { status: officeStatus(sessions), sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }
