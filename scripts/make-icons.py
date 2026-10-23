@@ -1,65 +1,153 @@
-"""Genera l'icona dell'app (src-tauri/icons/app-icon.png, 1024 px), l'icona della menu bar (scrivania a linee con il
-pallino di stato in basso a destra, nera per la barra chiara e bianca per quella scura).
+"""Genera l'icona dell'app (src-tauri/icons/app-icon.png, 1024 px) e quelle della menu bar (src-tauri/icons/tray), in
+pixel art come l'ufficio.
+- App: l'arte 24x24 di scripts/icons/app-art.png (parete, monitor con il codice, scrivania; palette degli sprite)
+  ingrandita a scala intera dentro lo squircle di macOS, con bordo scuro e ombra.
+- Menu bar: silhouette piena 22x22 (monitor con il codice in negativo, scrivania) raddoppiata a 44x44, nera per la
+  barra chiara e bianca per quella scura, con il pallino di stato a pixel in basso a destra.
 Uso: python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png"""
+
 from pathlib import Path
-from PIL import Image, ImageDraw
 
-ROOT = Path(__file__).resolve().parent.parent / 'src-tauri' / 'icons'
+import numpy as np
+from PIL import Image, ImageFilter
 
-
-def app_icon(size=1024):
-    s = 4  # supersampling per bordi morbidi
-    img = Image.new('RGBA', (size * s, size * s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    pad, r = 100 * s, 220 * s
-    d.rounded_rectangle([pad, pad, size * s - pad, size * s - pad], r, fill=(207, 169, 121, 255))
-    # doghe di rovere
-    for i in range(8):
-        x = pad + 60 * s + i * 96 * s
-        d.rectangle([x, pad + 150 * s, x + 14 * s, size * s - pad - 150 * s], fill=(156, 116, 73, 255))
-    # scrivania nera con monitor e pallino di stato
-    d.rounded_rectangle([250 * s, 560 * s, 774 * s, 640 * s], 20 * s, fill=(35, 35, 37, 255))
-    d.rounded_rectangle([360 * s, 330 * s, 664 * s, 530 * s], 24 * s, fill=(35, 35, 37, 255))
-    d.rounded_rectangle([380 * s, 350 * s, 644 * s, 510 * s], 14 * s, fill=(61, 110, 153, 255))
-    d.ellipse([640 * s, 230 * s, 800 * s, 390 * s], fill=(46, 157, 87, 255), outline=(255, 255, 255, 255), width=18 * s)
-    return img.resize((size, size), Image.LANCZOS)
+REPO = Path(__file__).resolve().parent.parent
+ICONS = REPO / "src-tauri" / "icons"
+ART = REPO / "scripts" / "icons" / "app-art.png"
+# contorno scuro della palette degli sprite (PALETTE.outline)
+OUTLINE = (42, 26, 38)
 
 
-def tray_icon(glyph, color, px=44):
-    """Scrivania con monitor e sedia, tratto spesso; pallino di stato in basso a destra con un bordo trasparente."""
-    s = 8
-    W = px * s
-    img = Image.new('RGBA', (W, W), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    u = W / 44  # unità: la griglia di disegno è 44 x 44
-    t = round(3.2 * u)  # spessore del tratto
-    box = lambda x0, y0, x1, y1: [x0 * u, y0 * u, x1 * u, y1 * u]
-    # sedia a sinistra: schienale arrotondato, seduta, piede e base
-    d.rounded_rectangle(box(3, 8, 14, 24), radius=5.5 * u, outline=glyph, width=t)
-    d.rectangle(box(1, 23, 16, 26.2), fill=glyph)
-    d.rectangle(box(7, 26, 10.2, 32), fill=glyph)
-    d.rectangle(box(3, 32, 14, 35.2), fill=glyph)
-    # scrivania a destra: piano, gamba sinistra, cassettiera con un cassetto
-    d.rectangle(box(17, 19, 43, 22.2), fill=glyph)
-    d.rectangle(box(18, 22, 21.2, 39), fill=glyph)
-    d.rectangle(box(30, 22, 43, 39), outline=glyph, width=t)
-    d.rectangle(box(30, 28.4, 43, 31.6), fill=glyph)
-    # monitor sul piano, con piede
-    d.rounded_rectangle(box(24, 4, 41, 15), radius=1.5 * u, outline=glyph, width=t)
-    d.rectangle(box(31.4, 15, 33.6, 19), fill=glyph)
-    # pallino: prima si scava un anello trasparente, poi si disegna il colore
-    cx, cy, r, ring = 36 * u, 36 * u, 7.5 * u, 2.4 * u
-    hole = Image.new('L', (W, W), 0)
-    ImageDraw.Draw(hole).ellipse([cx - r - ring, cy - r - ring, cx + r + ring, cy + r + ring], fill=255)
-    img.putalpha(Image.composite(Image.new('L', (W, W), 0), img.getchannel('A'), hole))
-    d = ImageDraw.Draw(img)
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=color)
-    return img.resize((px, px), Image.LANCZOS)
+def squircle_mask(size, box, n=5.0, ss=4):
+    """Superellisse |x|^n + |y|^n <= 1 (la forma continua delle icone macOS), antialias per supersampling."""
+    S = size * ss
+    c = (S - 1) / 2
+    r = box * ss / 2
+    y, x = np.mgrid[0:S, 0:S]
+    v = np.abs((x - c) / r) ** n + np.abs((y - c) / r) ** n
+    return Image.fromarray(((v <= 1) * 255).astype(np.uint8)).resize(
+        (size, size), Image.LANCZOS
+    )
 
 
-if __name__ == '__main__':
-    app_icon().save(ROOT / 'app-icon.png')
-    colors = {'working': (46, 197, 94, 255), 'waiting': (235, 64, 52, 255), 'idle': (150, 156, 164, 255)}
-    for name, color in colors.items():
-        tray_icon((0, 0, 0, 255), color).save(ROOT / 'tray' / f'light-{name}.png')
-        tray_icon((255, 255, 255, 255), color).save(ROOT / 'tray' / f'dark-{name}.png')
+def app_icon(art, size=1024):
+    """Arte ingrandita a scala intera (nearest) nello squircle: ~816 px su 1024, come la griglia delle icone Apple."""
+    scale = 824 // art.width
+    box = art.width * scale
+    layer = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    off = (size - box) // 2
+    layer.paste(art.convert("RGBA").resize((box, box), Image.NEAREST), (off, off))
+    mask = squircle_mask(size, box)
+    # bordo interno sottile nel colore di contorno, come gli sprite
+    inner = squircle_mask(size, box - 2 * max(4, scale // 3))
+    ring = np.clip(
+        np.asarray(mask, np.int16) - np.asarray(inner, np.int16), 0, 255
+    ).astype(np.uint8)
+    border = Image.new("RGBA", (size, size), OUTLINE + (255,))
+    border.putalpha(Image.fromarray(ring).point(lambda a: a * 150 // 255))
+    body = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    body.paste(layer, (0, 0), mask)
+    body.alpha_composite(border)
+    # ombra morbida sotto
+    shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    shadow.paste(
+        (0, 0, 0, 255),
+        (0, 10, size, size),
+        mask.filter(ImageFilter.GaussianBlur(14))
+        .point(lambda a: a * 90 // 255)
+        .crop((0, 0, size, size - 10)),
+    )
+    out = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    out.alpha_composite(shadow)
+    out.alpha_composite(body)
+    return out
+
+
+STATUS = {"working": (46, 197, 94), "waiting": (235, 64, 52), "idle": (150, 156, 164)}
+# pallino di stato: 8x8 pixel d'arte in basso a destra, con un anello trasparente attorno
+DOT = [
+    "..####..",
+    ".######.",
+    "########",
+    "########",
+    "########",
+    "########",
+    ".######.",
+    "..####..",
+]
+DOT_X, DOT_Y = 14, 14
+
+
+class Grid:
+    """Griglia 22x22 di colori (None = trasparente)."""
+
+    def __init__(self, n=22):
+        self.n = n
+        self.c = [[None] * n for _ in range(n)]
+
+    def px(self, x, y, col):
+        if 0 <= x < self.n and 0 <= y < self.n:
+            self.c[y][x] = col
+
+    def rect(self, x, y, w, h, col):
+        for j in range(y, y + h):
+            for i in range(x, x + w):
+                self.px(i, j, col)
+
+    def dot(self, col):
+        """Scava l'anello trasparente e disegna il pallino, con bordo più scuro e un punto di luce."""
+        inside = lambda i, j: 0 <= i < 8 and 0 <= j < 8 and DOT[j][i] == "#"
+        for j in range(-1, 9):
+            for i in range(-1, 9):
+                if any(
+                    inside(i + di, j + dj)
+                    for di, dj in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]
+                ):
+                    self.px(DOT_X + i, DOT_Y + j, None)
+        dark = tuple(int(v * 0.72) for v in col)
+        light = tuple(min(255, int(v + (255 - v) * 0.55)) for v in col)
+        for j in range(8):
+            for i in range(8):
+                if inside(i, j):
+                    edge = not all(
+                        inside(i + di, j + dj)
+                        for di, dj in [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    )
+                    self.px(DOT_X + i, DOT_Y + j, dark if edge else col)
+        self.px(DOT_X + 2, DOT_Y + 2, light)
+
+    def image(self, scale=2):
+        img = Image.new("RGBA", (self.n, self.n), (0, 0, 0, 0))
+        for y in range(self.n):
+            for x in range(self.n):
+                if self.c[y][x] is not None:
+                    img.putpixel((x, y), self.c[y][x] + (255,))
+        return img.resize((self.n * scale, self.n * scale), Image.NEAREST)
+
+
+def tray_icon(ink, color):
+    """Monitor pieno con le righe di codice in negativo, piede, scrivania con due gambe; pallino di stato."""
+    g = Grid()
+    g.rect(2, 1, 18, 12, ink)
+    for y, segs in [
+        (3, [(4, 3), (8, 5)]),
+        (5, [(6, 2), (9, 6)]),
+        (7, [(6, 7)]),
+        (9, [(4, 2), (7, 4)]),
+    ]:
+        for x, w in segs:
+            g.rect(x, y, w, 1, None)
+    g.rect(9, 13, 4, 2, ink)
+    g.rect(6, 14, 10, 1, ink)
+    g.rect(0, 16, 22, 2, ink)
+    g.rect(1, 18, 3, 4, ink)
+    g.rect(18, 18, 3, 4, ink)
+    g.dot(color)
+    return g.image(2)
+
+
+if __name__ == "__main__":
+    app_icon(Image.open(ART)).save(ICONS / "app-icon.png")
+    for name, color in STATUS.items():
+        tray_icon((0, 0, 0), color).save(ICONS / "tray" / f"light-{name}.png")
+        tray_icon((255, 255, 255), color).save(ICONS / "tray" / f"dark-{name}.png")
