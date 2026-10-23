@@ -108,6 +108,7 @@ Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quan
 | Modello, effort, contesto, token usati/rimanenti | transcript della sessione principale |
 | Progetto, branch, righe +/- | `git` nella cartella monitorata |
 | Stato immediato degli agenti | eventi hook in `~/.agent-office/events/<cwd>.jsonl` |
+| Attesa di un tuo input ("!" rosso) | domanda senza risposta nel transcript (`AskUserQuestion`, `ExitPlanMode`) + hook `Notification`, attribuito al subagente con `PermissionRequest`/`PreToolUse`; la sessione eredita l'attesa dei suoi subagenti. Mai il testo della domanda |
 
 **Area di lavoro** (backend, frontend, architecture, test, docs, devops, research, other): dedotta da tipo di agente, descrizione e file toccati.
 

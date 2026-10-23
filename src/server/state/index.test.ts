@@ -357,6 +357,66 @@ describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
     expect(build([session({ status: 'working', waiting: true, active: false })]).status).toBe('idle');
   });
 
+  describe('subagente bloccato', () => {
+    const permission = (t: number, agentId: string | null) => hook('Notification', t, { agentId, notification: 'permission' });
+    const pre = (t: number, agentId: string | null, toolName = 'Bash') => hook('PreToolUse', t, { agentId, toolName });
+    const a1 = agent({ id: 'a1', updatedAt: NOW - 10_000 });
+    const a2 = agent({ id: 'a2', updatedAt: NOW - 10_000 });
+    const main = session({ updatedAt: NOW - 10_000 });
+
+    it('notifica con agentId: attesa sul subagente, la sessione la eredita con il motivo', () => {
+      const snap = build([main], [permission(NOW - 8_000, 'a1')], [a1, a2]);
+      expect(snap.agents.find((a) => a.id === 'a1')).toMatchObject({ waiting: true, waitingKind: 'permission', waitingSince: NOW - 8_000 });
+      expect(snap.agents.find((a) => a.id === 'a2')!.waiting).toBeUndefined();
+      expect(snap.sessions[0]).toMatchObject({ waiting: true, waitingKind: 'permission', waitingSince: NOW - 8_000, waitingAgentId: 'a1' });
+      expect(snap.status).toBe('waiting');
+    });
+
+    it('l\'attività del subagente chiude l\'attesa, quella di un altro no', () => {
+      const other = build([main], [permission(NOW - 8_000, 'a1'), hook('PostToolUse', NOW - 1_000, { agentId: 'a2' })], [a1, a2]);
+      expect(other.sessions[0]).toMatchObject({ waiting: true, waitingAgentId: 'a1' });
+      const own = build([main], [permission(NOW - 8_000, 'a1'), hook('PostToolUse', NOW - 1_000)], [a1, a2]);
+      expect(own.agents.every((a) => !a.waiting)).toBe(true);
+      expect(own.sessions[0]).toMatchObject({ waiting: false, waitingAgentId: null });
+    });
+
+    it('permesso senza agentId: attribuito alla richiesta di permesso aperta', () => {
+      const events = [pre(NOW - 9_500, 'a2'), pre(NOW - 9_000, 'a1'), hook('PermissionRequest', NOW - 9_000, { agentId: 'a1' }), permission(NOW - 3_000, null)];
+      const snap = build([main], events, [a1, a2]);
+      expect(snap.agents.find((a) => a.id === 'a1')!.waiting).toBe(true);
+      expect(snap.agents.find((a) => a.id === 'a2')!.waiting).toBeUndefined();
+      expect(snap.sessions[0]!.waitingAgentId).toBe('a1');
+    });
+
+    it('permesso senza agentId: attribuito all\'unico tool avviato senza risultato, se non è di Claude', () => {
+      // Claude aspetta il subagente (Agent), il subagente aspetta il permesso per il suo Bash
+      const unique = build([main], [pre(NOW - 9_500, null, 'Agent'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(unique.sessions[0]!.waitingAgentId).toBe('a1');
+      // ambiguo (due tool aperti) o Claude con un tool suo: il blocco resta della sessione, nessun subagente segnato
+      const twice = build([main], [pre(NOW - 9_500, 'a2'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(twice.agents.some((a) => a.waiting)).toBe(false);
+      expect(twice.sessions[0]).toMatchObject({ waiting: true, waitingKind: 'permission', waitingAgentId: null });
+      const mainTool = build([main], [pre(NOW - 9_500, null, 'Edit'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(mainTool.agents.some((a) => a.waiting)).toBe(false);
+      // un tool lungo in esecuzione senza notifica non è un'attesa
+      expect(build([main], [pre(NOW - 9_000, 'a1')], [a1]).agents[0]!.waiting).toBeUndefined();
+    });
+
+    it('domanda nel transcript del subagente; un subagente terminato non aspetta', () => {
+      const asking = agent({ waiting: true, waitingKind: 'question', waitingSince: NOW - 4_000 });
+      expect(build([main], [], [asking]).sessions[0]).toMatchObject({ waiting: true, waitingKind: 'question', waitingAgentId: 'a1' });
+      const done = build([main], [permission(NOW - 8_000, 'a1')], [agent({ status: 'done', updatedAt: NOW - 10_000 })]);
+      expect(done.agents[0]!.waiting).toBeFalsy();
+      expect(done.sessions[0]!.waiting).toBe(false);
+    });
+
+    it('se Claude stesso è bloccato il motivo è il suo', () => {
+      const asking = agent({ waiting: true, waitingKind: 'question', waitingSince: NOW - 4_000 });
+      const snap = build([session({ waiting: true, waitingKind: 'plan', waitingSince: NOW - 9_000 })], [], [asking]);
+      expect(snap.sessions[0]).toMatchObject({ waitingKind: 'plan', waitingAgentId: null });
+    });
+  });
+
   it('area relax per sessione: i terminati di una sessione non aspettano gli agenti di un\'altra', () => {
     const done = agent({ id: 'd', sessionId: 's2', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 });
     expect(build([], [], [done, agent({ id: 'w', sessionId: 's1' })]).agents.map((a) => a.id)).toEqual(['w']);

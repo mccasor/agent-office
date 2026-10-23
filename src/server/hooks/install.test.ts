@@ -41,6 +41,8 @@ describe('installHooks / uninstallHooks', () => {
     expect(Object.keys(s.hooks).sort()).toEqual([...HOOK_EVENTS].sort());
     expect(s.hooks.PreToolUse).toEqual([{ matcher: '*', hooks: [{ type: 'command', command: CMD }] }]);
     expect(s.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: CMD }] }]);
+    // richieste di permesso: per attribuire l'attesa al subagente che la fa
+    expect(s.hooks.PermissionRequest).toEqual([{ matcher: '*', hooks: [{ type: 'command', command: CMD }] }]);
     expect(HOOK_EVENTS).toEqual(
       expect.arrayContaining(['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop']),
     );
