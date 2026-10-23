@@ -1,4 +1,5 @@
-import type { Cell, OfficeLayout } from './layout';
+/** cella della griglia: x verso est, z verso sud (verso il basso dello schermo); frazionaria a metà passo */
+export interface Cell { x: number; z: number }
 
 const DIRS: readonly Cell[] = [
   { x: 0, z: -1 },
@@ -7,10 +8,10 @@ const DIRS: readonly Cell[] = [
   { x: -1, z: 0 },
 ];
 
-/** quanto serve ai percorsi: anche la pianta della vista 2D (PixelPlan) */
-type Grid = Pick<OfficeLayout, 'width' | 'walkable'>;
+/** quanto serve ai percorsi della pianta (PixelPlan): larghezza e walkable[z][x] */
+export interface Grid { width: number; walkable: boolean[][] }
 
-export function isWalkable(layout: Grid, c: Cell): boolean {
+function isWalkable(layout: Grid, c: Cell): boolean {
   return Number.isInteger(c.x) && Number.isInteger(c.z) && layout.walkable[c.z]?.[c.x] === true;
 }
 

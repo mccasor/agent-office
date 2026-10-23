@@ -1,6 +1,6 @@
 # Agent Office
 
-Ufficio 3D, visto a 3/4 come uno spaccato, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta con una tazza di caffè fumante, la posano sulla scrivania e mostrano nome, issue, area di lavoro, avanzamento e token. Sulla parete nord tre board (to do, in progress, in review) con un post-it per task (titolo e issue dell'agente): entrando l'agente sposta il proprio da "to do" a "in progress", andando via da "in progress" a "in review". Chi finisce riprende la tazza e aspetta in area relax, dietro il separè, tra poltroncine e divanetti davanti alla parete di muschio; quando hanno finito tutti escono insieme. Claude stesso compare come **Claudio Code** nella stanza del boss, con gli stessi comportamenti.
+Ufficio 2D in pixel art che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente. Ogni istanza di Claude Code ha la sua stanza, dove Claude stesso siede alla scrivania del boss come **Claudio Code**: i suoi subagenti entrano dal corridoio, prendono una postazione e lavorano al computer; chi finisce aspetta in sala relax finché lavora un altro agente della stessa istanza, poi escono insieme. A sinistra l'elenco delle istanze (branch, diff, contesto, agenti), a destra la scheda dell'agente cliccato; in alto a destra si passa alla vista lista.
 
 ## Installazione (una volta sola)
 
@@ -135,7 +135,7 @@ Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quan
 
 ```
 ~/.claude/projects/<cwd>/*.jsonl ─┐
-~/.agent-office/events/*.jsonl  ──┼─> server Node (127.0.0.1) ──SSE──> React + react-three-fiber
+~/.agent-office/events/*.jsonl  ──┼─> server Node (127.0.0.1) ──SSE──> React + canvas 2D
 git (branch, diff --shortstat) ───┘
 ```
 
@@ -148,9 +148,8 @@ git (branch, diff --shortstat) ───┘
 | `src/server/state` | aggregazione in `Snapshot` |
 | `src/server/http` | API + SSE + statici |
 | `src/cli.ts` | comando `agent-office` |
-| `src/web/scene` | openspace, posti, pathfinding A*, movimento |
-| `src/web/characters` | personaggi procedurali da preset |
-| `src/web/hud` | pannelli ed etichette |
+| `src/web/pixel` | ufficio 2D in pixel art: pianta, posti, pathfinding A*, movimento, sprite |
+| `src/web/hud` | pannelli, scheda agente e vista lista |
 | `src/web/store` | stato client + stream SSE |
 
 ## Sviluppo

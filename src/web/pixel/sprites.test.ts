@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTER_PRESETS } from '../characters/presets';
+import { CHARACTER_PRESETS } from './presets';
 import {
   bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
   selectionImage, shadowImage, tileImage, type PixelImage,

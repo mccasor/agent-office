@@ -166,18 +166,18 @@ describe('ListView', () => {
 });
 
 describe('ViewToggle', () => {
-  it('tre viste (3D, 2D, lista): evidenzia quella corrente e notifica il cambio', () => {
+  it('due viste (ufficio, lista): evidenzia quella corrente e notifica il cambio', () => {
     const onChange = vi.fn();
-    const { rerender } = render(<ViewToggle view="office" onChange={onChange} />);
+    const { rerender } = render(<ViewToggle view="pixel" onChange={onChange} />);
     expect(screen.getByRole('group', { name: 'Vista' })).toBeTruthy();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['3D', '2D', 'Lista']);
-    expect(screen.getByRole('button', { name: '3D' }).getAttribute('aria-pressed')).toBe('true');
-    fireEvent.click(screen.getByRole('button', { name: '2D' }));
-    expect(onChange).toHaveBeenCalledWith('pixel');
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Ufficio', 'Lista']);
+    expect(screen.getByRole('button', { name: 'Ufficio' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Lista' }));
     expect(onChange).toHaveBeenCalledWith('list');
-    rerender(<ViewToggle view="pixel" onChange={onChange} />);
-    expect(screen.getByRole('button', { name: '2D' }).getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByRole('button', { name: '3D' }).getAttribute('aria-pressed')).toBe('false');
+    rerender(<ViewToggle view="list" onChange={onChange} />);
+    expect(screen.getByRole('button', { name: 'Lista' }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Ufficio' }).getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(screen.getByRole('button', { name: 'Ufficio' }));
+    expect(onChange).toHaveBeenCalledWith('pixel');
   });
 });

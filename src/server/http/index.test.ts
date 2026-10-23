@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Snapshot } from '../../shared/types.js';
 import { startServer, type OfficeServer } from './index.js';
 
-const snap = (generatedAt: number): Snapshot => ({ status: 'idle', repo: null, sessions: [], agents: [], generatedAt });
+const snap = (generatedAt: number): Snapshot => ({ status: 'idle', sessions: [], agents: [], generatedAt });
 
 /** Richiesta raw (path non normalizzato, Host arbitrario): fetch non permette né l'uno né l'altro. */
 function raw(

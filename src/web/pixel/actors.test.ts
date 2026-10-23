@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentState } from '../../shared/types';
-import { START_GAP, StartQueue, WALK_SPEED } from '../scene/motion';
+import { START_GAP, StartQueue, WALK_SPEED } from './motion';
 import { arrivedAt, facingOf, frameAt, isDeskSpot, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
 import { createPlan } from './plan';
 import type { PixelActor, Spot } from './types';

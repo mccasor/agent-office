@@ -327,13 +327,13 @@ fn set_autostart(enabled: bool) {
     let _ = std::fs::write(path, plist);
 }
 
-/// Mostra la finestra dell'ufficio sulla vista indicata ("office" o "list"), evidenziando la sessione `focus`;
+/// Mostra la finestra dell'ufficio sulla vista indicata ("pixel" o "list"), evidenziando la sessione `focus`;
 /// la crea alla prima apertura (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
     // solo id di sessione (lettere, cifre, trattini): nessun rischio di iniettare codice nell'eval
     let focus = focus.filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).unwrap_or("");
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
-        // cambio di vista senza ricaricare: la scena resta com'è (posizioni, post-it); ricarica solo se serve
+        // cambio di vista senza ricaricare: l'ufficio resta com'è (posizioni); ricarica solo se serve
         let _ = window.eval(format!(
             "window.agentOfficeFocus ? window.agentOfficeFocus('{view}', '{focus}') : location.assign('http://127.0.0.1:{PORT}/?view={view}&session={focus}')"
         ));
@@ -455,7 +455,7 @@ fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
     match action.as_str() {
         "open-office" => {
             hide();
-            show_office(&app, "office", None);
+            show_office(&app, "pixel", None);
         }
         "open-session" => {
             hide();

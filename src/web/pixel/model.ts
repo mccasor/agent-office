@@ -1,6 +1,6 @@
 import type { AgentState, SessionState, Snapshot } from '../../shared/types';
-import { BOSS_PREFIX, bossOf } from '../officeModel';
-import { assignSpots } from '../scene/seats';
+import { BOSS_PREFIX, bossOf } from './boss';
+import { assignSpots } from './seats';
 import { createPlan } from './plan';
 import { INSTANCE_ROOMS, type PixelActor, type PixelModel, type PixelSeating, type Spot } from './types';
 

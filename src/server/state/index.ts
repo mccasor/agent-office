@@ -160,7 +160,6 @@ function resolveSessions(
   events: HookEvent[],
   asks: Asks,
   agents: AgentState[],
-  repo: RepoState | null,
   repoAt: ((cwd: string) => RepoState | null) | undefined,
   now: number,
 ): TranscriptSession[] {
@@ -178,7 +177,9 @@ function resolveSessions(
       const ended = s.active && end !== undefined && end > s.updatedAt;
       const hook = mainHook.get(s.id);
       const status = ended ? 'done' : hook && hook.timestamp > s.updatedAt ? hookMainStatus(hook, now) : s.status;
-      const fromBranch = branchIssue(s.branch ?? repo?.branch ?? null);
+      // stato git della cartella della sessione: branch di riserva per la issue e diff (solo se attiva)
+      const r = s.cwd && repoAt ? repoAt(s.cwd) : null;
+      const fromBranch = branchIssue(s.branch ?? r?.branch ?? null);
       const issues = s.issues.length > 0 || fromBranch === null ? s.issues : [fromBranch];
       // Claude bloccato: domanda senza risposta nel transcript, o notifica non attribuita a un subagente
       const asked = asks.session.get(s.id);
@@ -191,8 +192,7 @@ function resolveSessions(
       const waitingSince = !waiting ? null : s.waiting ? (s.waitingSince ?? null) : blocked ? asked.at : (agent?.waitingSince ?? null);
       const waitingAgentId = agent?.id ?? null;
       const active = ended ? false : s.active;
-      const r = active && s.cwd && repoAt ? repoAt(s.cwd) : null;
-      const diff = r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
+      const diff = active && r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
       return { ...s, status, issues, waiting, waitingKind, waitingSince, waitingAgentId, active, diff };
     })
     .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
@@ -271,19 +271,18 @@ export function officeStatus(sessions: SessionState[]): OfficeStatus {
 export function buildSnapshot(input: {
   transcript: TranscriptSnapshot;
   hookEvents: HookEvent[];
-  repo: RepoState | null;
-  /** stato del repository di un cwd (diff per sessione); assente = nessun diff */
+  /** stato del repository di un cwd (diff per sessione, branch di riserva); assente = nessun dato git */
   repoAt?: (cwd: string) => RepoState | null;
   now: number;
 }): Snapshot {
-  const { transcript, hookEvents, repo, now } = input;
+  const { transcript, hookEvents, now } = input;
   const hooks = latestAgentHooks(hookEvents);
   const asks = collectAsks(hookEvents);
   const resolved = transcript.agents.map((a) => resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks));
   const agents = keepFinished(resolved, now);
   // attesa su due livelli: la sessione eredita quella dei subagenti (pallino rosso, status 'waiting', menu bar)
-  const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, repo, input.repoAt, now).map(
+  const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, input.repoAt, now).map(
     (s): SessionState => ({ ...s, dot: sessionDot(s, agents), project: projectOf(s.cwd) }),
   );
-  return { status: officeStatus(sessions), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
+  return { status: officeStatus(sessions), sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }

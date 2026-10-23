@@ -1,5 +1,5 @@
 // Prepara le risorse dell'app Tauri: server e pagina già compilati (dist), binari e le sole dipendenze di runtime del
-// server (chokidar e readdirp). React, three.js e il resto sono già dentro dist/web.
+// server (chokidar e readdirp). React e il resto sono già dentro dist/web.
 import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

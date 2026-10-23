@@ -4,7 +4,7 @@
  * dall'alto, arredi con il piano e il fronte, personaggi chibi (circa 16×24) con contorno scuro di 1 px.
  * Una sola palette (PALETTE): rampe a 3-4 toni, dal chiaro allo scuro, luce da nord-ovest.
  */
-import { bossPreset, pickPreset, type CharacterPreset } from '../characters/presets';
+import { bossPreset, pickPreset, type CharacterPreset } from './presets';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from './types';
 
 /** rampa di un colore: chiaro, base, ombra */

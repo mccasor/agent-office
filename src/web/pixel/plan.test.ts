@@ -1,4 +1,4 @@
-import { findPath } from '../scene/path';
+import { findPath } from './path';
 import { createPlan } from './plan';
 import { DESKS_PER_ROOM, INSTANCE_ROOMS, type Spot } from './types';
 

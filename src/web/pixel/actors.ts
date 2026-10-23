@@ -1,5 +1,5 @@
-import { planFrom } from '../scene/path';
-import { advanceAlongPath, WALK_SPEED, type StartQueue } from '../scene/motion';
+import { planFrom } from './path';
+import { advanceAlongPath, WALK_SPEED, type StartQueue } from './motion';
 import type { Cell, Facing, PixelActor, PixelPlan, Pose, Spot } from './types';
 
 /**

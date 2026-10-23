@@ -44,7 +44,6 @@ describe('e2e: CLI -> API', () => {
     // a0000000000000001 ha terminato da più di DONE_LINGER_MS: è già uscito dall'ufficio
     expect(snap.agents.map((a) => a.id)).toEqual(['a0000000000000002']);
     expect(snap.agents.find((a) => a.id === 'a0000000000000002')!.progress).toEqual({ completed: 1, total: 3 });
-    expect(snap.repo).toBeNull();
     expect(JSON.stringify(snap)).not.toMatch(/"content"|"text"|"prompt"/);
   });
 

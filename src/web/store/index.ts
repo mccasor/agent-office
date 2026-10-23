@@ -1,16 +1,22 @@
 import { create } from 'zustand';
 import type { Snapshot } from '../../shared/types';
 
-/** office = ufficio 3D, pixel = ufficio 2D in pixel art, list = lista delle sessioni */
-export type OfficeView = 'office' | 'pixel' | 'list';
+/** pixel = ufficio (2D in pixel art), list = lista delle sessioni */
+export type OfficeView = 'pixel' | 'list';
 
-const VIEWS: readonly string[] = ['office', 'pixel', 'list'] satisfies OfficeView[];
-const isView = (v: unknown): v is OfficeView => typeof v === 'string' && VIEWS.includes(v);
+/**
+ * Vista richiesta (preferenza salvata, ?view=, app della menu bar) -> vista valida; null se sconosciuta.
+ * 'office' era la vista 3D, rimossa: preferenze salvate e app della menu bar già installate aprono l'ufficio 2D.
+ */
+export function toView(v: unknown): OfficeView | null {
+  if (v === 'office' || v === 'pixel') return 'pixel';
+  return v === 'list' ? 'list' : null;
+}
 
 export interface OfficeStoreState {
   snapshot: Snapshot | null;
   connected: boolean;
-  /** vista mostrata: ufficio 3D, ufficio 2D o lista delle sessioni */
+  /** vista mostrata: ufficio o lista delle sessioni */
   view: OfficeView;
   /** sessioni escluse dall'ufficio (scelta nella vista lista); le nuove sono visibili */
   hiddenSessions: string[];
@@ -35,12 +41,11 @@ function loadPrefs(): Pick<OfficeStoreState, 'view' | 'hiddenSessions'> {
     const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
     const p = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const hidden = Array.isArray(p.hiddenSessions) ? p.hiddenSessions.filter((x): x is string => typeof x === 'string') : [];
-    // ?view=office|pixel|list (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
+    // ?view=pixel|list (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
     const asked = new URLSearchParams(globalThis.location?.search ?? '').get('view');
-    const view = isView(asked) ? asked : isView(p.view) ? p.view : 'office';
-    return { view, hiddenSessions: hidden };
+    return { view: toView(asked) ?? toView(p.view) ?? 'pixel', hiddenSessions: hidden };
   } catch {
-    return { view: 'office', hiddenSessions: [] };
+    return { view: 'pixel', hiddenSessions: [] };
   }
 }
 
