@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEFAULT_DISPLAY } from '../../shared/settings.js';
 import type { Snapshot } from '../../shared/types.js';
 import { startServer, type OfficeServer } from './index.js';
 
@@ -136,6 +137,29 @@ describe('startServer', () => {
     server.publish(snap(3));
     const next = await readEvents(body, 2);
     expect(next).toEqual([snap(2), snap(3)]);
+    ctrl.abort();
+  });
+
+  it('GET /api/config e evento SSE `config`: preferenze di visualizzazione, alla connessione e a ogni cambio', async () => {
+    let res = await fetch(`${server.url}/api/config`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(DEFAULT_DISPLAY);
+
+    const ctrl = new AbortController();
+    const events = await fetch(`${server.url}/api/events`, { signal: ctrl.signal });
+    const reader = events.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const configs = () => text.split('\n\n').filter((b) => b.startsWith('event: config\n')).map((b) => JSON.parse(b.slice(b.indexOf('data: ') + 6)));
+    while (configs().length < 1) text += decoder.decode((await reader.read()).value, { stream: true });
+    expect(configs()[0]).toEqual(DEFAULT_DISPLAY);
+
+    const hidden = { ...DEFAULT_DISPLAY, show: { ...DEFAULT_DISPLAY.show, 'session.diff': false } };
+    server.setSettings(hidden);
+    while (configs().length < 2) text += decoder.decode((await reader.read()).value, { stream: true });
+    expect(configs()[1]).toEqual(hidden);
+    res = await fetch(`${server.url}/api/config`);
+    expect(await res.json()).toEqual(hidden);
     ctrl.abort();
   });
 
