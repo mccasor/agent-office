@@ -2,9 +2,14 @@ name: CI
 on:
   push: { branches: [main] }
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  check:
-    runs-on: macos-latest
+  # lint, typecheck, build e test vitest: su Linux, che sul repo privato costa un decimo dei minuti macOS
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
