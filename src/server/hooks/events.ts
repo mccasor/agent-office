@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { HookEvent, WaitingKind } from '../../shared/types.js';
 
-/** default: ~/.agent-office */
+/** default: AGENT_OFFICE_DATA_DIR, altrimenti ~/.agent-office (come il server) */
 export interface HookPathsOptions {
   dataDir?: string;
 }
@@ -14,7 +14,7 @@ function encodePath(p: string): string {
 }
 
 export function eventsFilePath(cwd: string, opts?: HookPathsOptions): string {
-  const dataDir = opts?.dataDir ?? join(homedir(), '.agent-office');
+  const dataDir = opts?.dataDir ?? (str(process.env.AGENT_OFFICE_DATA_DIR) || join(homedir(), '.agent-office'));
   return join(dataDir, 'events', `${encodePath(cwd)}.jsonl`);
 }
 
