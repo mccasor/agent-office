@@ -26,6 +26,7 @@ const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
+mod instance;
 mod notify;
 mod panel;
 mod server;
@@ -491,6 +492,8 @@ fn refresh_panel(app: &AppHandle) {
 }
 
 fn main() {
+    // prima di tutto: il server sulla porta deve essere il nostro, non quello di una copia vecchia
+    instance::take_over();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![panel_state, panel_action, panel_resize])
