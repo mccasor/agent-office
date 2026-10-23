@@ -28,7 +28,7 @@ pub fn open(app: &AppHandle) {
         return;
     }
     let window = WebviewWindowBuilder::new(app, SETTINGS_ID, WebviewUrl::App("settings.html".into()))
-        .title("Impostazioni")
+        .title(crate::i18n::t("window.settings"))
         .inner_size(WIDTH, 420.0)
         .resizable(false)
         .maximizable(false)
