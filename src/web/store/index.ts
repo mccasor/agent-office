@@ -10,7 +10,11 @@ export interface OfficeStoreState {
   view: OfficeView;
   /** sessioni escluse dall'ufficio (scelta nella vista lista); le nuove sono visibili */
   hiddenSessions: string[];
+  /** sessione da evidenziare (aperta dal pannello della menu bar); null = nessuna */
+  focusSession: string | null;
   setSnapshot(snapshot: Snapshot): void;
+  /** mostra la vista e, se indicata, evidenzia la sessione */
+  focus(view: OfficeView, sessionId: string | null): void;
   setConnected(connected: boolean): void;
   setView(view: OfficeView): void;
   toggleSession(sessionId: string): void;
@@ -46,8 +50,14 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   snapshot: null,
   connected: false,
   ...loadPrefs(),
+  // ?session=<id> (dal pannello della menu bar alla prima apertura)
+  focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   setSnapshot: (snapshot) => set({ snapshot }),
   setConnected: (connected) => set({ connected }),
+  focus: (view, sessionId) => {
+    set({ view, focusSession: sessionId || null });
+    savePrefs({ view, hiddenSessions: get().hiddenSessions });
+  },
   setView: (view) => {
     set({ view });
     savePrefs({ view, hiddenSessions: get().hiddenSessions });

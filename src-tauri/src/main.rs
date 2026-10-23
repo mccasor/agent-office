@@ -1,6 +1,6 @@
 //! Agent Office nella menu bar di macOS: icona (scrivania) con il pallino di stato in basso a destra
-//! (verde: Claude lavora, rosso: aspetta un tuo input, grigio: niente di attivo). Al clic un menu a tendina con lo
-//! stato, l'apertura dell'ufficio, le impostazioni, le istanze di Claude Code e gli agenti attivi.
+//! (verde: Claude lavora, rosso: aspetta un tuo input, grigio: niente di attivo). Al clic un pannello con gli
+//! aggiornamenti, lo stato, le impostazioni, le istanze di Claude Code con i loro agenti e l'uscita (panel.rs).
 //! Il server Node di agent-office (`--all`) gira in background come processo figlio e chiude con l'app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -9,17 +9,14 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Sender};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::image::Image;
-use tauri::menu::{
-    CheckMenuItemBuilder, IconMenuItemBuilder, Menu, MenuBuilder, MenuItemBuilder, SubmenuBuilder,
-};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 
 /// Porta dedicata all'app, diversa dal default della CLI (4317) per non scontrarsi con un'istanza da terminale.
@@ -28,10 +25,9 @@ const TRAY_ID: &str = "status";
 const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
-/// voci al massimo in ciascun sottomenu delle istanze
-const MAX_ITEMS: usize = 20;
 
 mod notify;
+mod panel;
 mod server;
 mod updates;
 use notify::{Prefs, SessionFacts};
@@ -41,22 +37,17 @@ use updates::{Upgrade, UpdateState};
 /// Server Node: avviato, sorvegliato e terminato all'uscita.
 struct Server(Mutex<Supervisor>);
 
-/// Stato delle voci del menu che non vengono dal server, e segnale per ridisegnarlo subito quando cambia.
+/// Stato mostrato dal pannello oltre allo snapshot, e segnale per aggiornare subito icona e pannello.
 struct Ui {
     update: Mutex<UpdateState>,
-    /// esito di un'azione (es. installazione degli hook), mostrato nel menu per NOTICE_FOR
+    /// esito di un'azione (es. installazione degli hook), mostrato nel pannello per NOTICE_FOR
     notice: Mutex<Option<(String, Instant)>>,
     prefs: Mutex<Prefs>,
+    /// ultimo snapshot del server, per il pannello
+    snapshot: Mutex<Value>,
+    /// quando il pannello si è chiuso per perdita del focus (vedi panel::toggle)
+    panel_hidden_at: Mutex<Option<Instant>>,
     wake: Mutex<Sender<()>>,
-}
-
-/// Quanto mostra il menu oltre allo snapshot; il menu si ricostruisce quando cambia.
-#[derive(Clone, PartialEq, Debug)]
-struct Extras {
-    update: UpdateState,
-    notice: Option<String>,
-    server_error: Option<String>,
-    prefs: Prefs,
 }
 
 const NOTICE_FOR: Duration = Duration::from_secs(60);
@@ -95,14 +86,6 @@ impl Status {
         }
     }
 
-    fn dot(self) -> &'static [u8] {
-        match self {
-            Status::Working => include_bytes!("../icons/tray/dot-working.png"),
-            Status::Waiting => include_bytes!("../icons/tray/dot-waiting.png"),
-            Status::Idle | Status::Offline => include_bytes!("../icons/tray/dot-idle.png"),
-        }
-    }
-
     fn label(self) -> &'static str {
         match self {
             Status::Working => "Claude sta lavorando",
@@ -113,29 +96,18 @@ impl Status {
     }
 }
 
-/// Voce di un sottomenu: id dell'evento, testo e colore del pallino.
-#[derive(Clone, PartialEq, Debug)]
-struct Entry {
-    id: String,
-    label: String,
-    status: Status,
-}
-
-/// Quanto serve al menu, ricavato dallo snapshot; il menu si ricostruisce solo quando cambia.
+/// Quanto serve all'icona e alle notifiche, ricavato dallo snapshot (che il pannello legge per intero).
 #[derive(Clone, PartialEq, Debug)]
 struct Overview {
     status: Status,
-    /// sessioni di Claude Code attive (istanze aperte)
-    sessions: Vec<Entry>,
-    /// subagenti non terminati delle sessioni attive (agenti attivi)
-    agents: Vec<Entry>,
     /// stato delle sessioni attive per le notifiche
     facts: Vec<SessionFacts>,
+    snapshot: Value,
 }
 
 impl Overview {
     fn offline() -> Overview {
-        Overview { status: Status::Offline, sessions: vec![], agents: vec![], facts: vec![] }
+        Overview { status: Status::Offline, facts: vec![], snapshot: Value::Null }
     }
 }
 
@@ -178,29 +150,6 @@ fn http_get(path: &str, etag: Option<&str>) -> Fetched {
     fetch().unwrap_or(Fetched::Failed)
 }
 
-/// Pallini del menu decodificati una volta sola (il menu si ricostruisce a ogni cambio di stato).
-fn dot_image(status: Status) -> tauri::Result<Image<'static>> {
-    static DOTS: OnceLock<Vec<(Status, Image<'static>)>> = OnceLock::new();
-    let dots = DOTS.get_or_init(|| {
-        [Status::Working, Status::Waiting, Status::Idle]
-            .into_iter()
-            .filter_map(|s| Image::from_bytes(s.dot()).ok().map(|img| (s, img)))
-            .collect()
-    });
-    let key = if status == Status::Offline { Status::Idle } else { status };
-    match dots.iter().find(|(s, _)| *s == key) {
-        Some((_, img)) => Ok(img.clone()),
-        None => Image::from_bytes(status.dot()),
-    }
-}
-
-fn issues_text(v: &Value) -> String {
-    v.get("issues")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_u64).map(|n| format!(" #{n}")).collect())
-        .unwrap_or_default()
-}
-
 fn truncate(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_string()
@@ -209,58 +158,18 @@ fn truncate(s: &str, max: usize) -> String {
     }
 }
 
-/// Snapshot → stato del menu. Stessa regola del pallino della vista lista per ogni sessione.
+/// Snapshot → stato dell'icona e delle sessioni attive per le notifiche.
 fn overview_from(snapshot: &str) -> Overview {
     let Ok(v) = serde_json::from_str::<Value>(snapshot) else {
         return Overview::offline();
     };
     let str_of = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let empty = vec![];
-    let agents = v.get("agents").and_then(Value::as_array).unwrap_or(&empty);
-    let sessions: Vec<&Value> = v
+    let facts = v
         .get("sessions")
         .and_then(Value::as_array)
-        .unwrap_or(&empty)
-        .iter()
+        .into_iter()
+        .flatten()
         .filter(|s| s.get("active").and_then(Value::as_bool) == Some(true))
-        .collect();
-    let busy = |st: &str| st == "working" || st == "entering";
-
-    let session_entries = sessions
-        .iter()
-        .take(MAX_ITEMS)
-        .map(|s| {
-            let id = str_of(s, "id");
-            let own_busy = agents.iter().any(|a| str_of(a, "sessionId") == id && busy(&str_of(a, "status")));
-            let status = if s.get("waiting").and_then(Value::as_bool) == Some(true) {
-                Status::Waiting
-            } else if busy(&str_of(s, "status")) || own_busy {
-                Status::Working
-            } else {
-                Status::Idle
-            };
-            let cwd = str_of(s, "cwd");
-            let project = cwd.rsplit('/').find(|p| !p.is_empty()).map(str::to_string).unwrap_or_else(|| id.chars().take(8).collect());
-            let branch = str_of(s, "branch");
-            let label = if branch.is_empty() { project } else { format!("{project} · {branch}") };
-            Entry { id: format!("session:{id}"), label: truncate(&format!("{label}{}", issues_text(s)), 60), status }
-        })
-        .collect();
-
-    let active_ids: Vec<String> = sessions.iter().map(|s| str_of(s, "id")).collect();
-    let agent_entries = agents
-        .iter()
-        .filter(|a| active_ids.contains(&str_of(a, "sessionId")) && str_of(a, "status") != "done")
-        .take(MAX_ITEMS)
-        .map(|a| {
-            let state = str_of(a, "status");
-            let label = format!("{}{}", str_of(a, "name"), issues_text(a));
-            Entry { id: format!("agent:{}", str_of(a, "id")), label: truncate(&label, 60), status: Status::from_str(&state) }
-        })
-        .collect();
-
-    let facts = sessions
-        .iter()
         .map(|s| {
             let cwd = str_of(s, "cwd");
             let project = cwd.rsplit('/').find(|p| !p.is_empty()).map(str::to_string).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
@@ -275,10 +184,10 @@ fn overview_from(snapshot: &str) -> Overview {
             }
         })
         .collect();
-    Overview { status: Status::from_str(&str_of(&v, "status")), sessions: session_entries, agents: agent_entries, facts }
+    Overview { status: Status::from_str(&str_of(&v, "status")), facts, snapshot: v }
 }
 
-/// Stato del menu dal server; None se lo snapshot non è cambiato dall'ETag indicato (aggiornato in place).
+/// Stato dal server; None se lo snapshot non è cambiato dall'ETag indicato (aggiornato in place).
 fn fetch_overview(etag: &mut Option<String>) -> Option<Overview> {
     match http_get("/api/snapshot", etag.as_deref()) {
         Fetched::NotModified => None,
@@ -341,7 +250,7 @@ fn app_dir(app: &AppHandle) -> PathBuf {
 }
 
 /// Installa o rimuove gli hook globali di Claude Code (servono per il pallino rosso e per stati immediati).
-/// In un thread: la ricerca di Node e il comando non bloccano il menu; l'esito compare nel menu.
+/// In un thread: la ricerca di Node e il comando non bloccano il pannello; l'esito compare nel pannello.
 fn run_hooks(app: &AppHandle, command: &'static str) {
     let app = app.clone();
     thread::spawn(move || {
@@ -417,19 +326,21 @@ fn set_autostart(enabled: bool) {
     let _ = std::fs::write(path, plist);
 }
 
-/// Mostra la finestra dell'ufficio sulla vista indicata ("office" o "list"), creandola alla prima apertura
-/// (passa dallo splash finché il server non risponde).
-fn show_office(app: &AppHandle, view: &str) {
+/// Mostra la finestra dell'ufficio sulla vista indicata ("office" o "list"), evidenziando la sessione `focus`;
+/// la crea alla prima apertura (passa dallo splash finché il server non risponde).
+fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
+    // solo id di sessione (lettere, cifre, trattini): nessun rischio di iniettare codice nell'eval
+    let focus = focus.filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).unwrap_or("");
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
         // cambio di vista senza ricaricare: la scena resta com'è (posizioni, post-it); ricarica solo se serve
         let _ = window.eval(format!(
-            "window.agentOfficeSetView ? window.agentOfficeSetView('{view}') : location.assign('http://127.0.0.1:{PORT}/?view={view}')"
+            "window.agentOfficeFocus ? window.agentOfficeFocus('{view}', '{focus}') : location.assign('http://127.0.0.1:{PORT}/?view={view}&session={focus}')"
         ));
         let _ = window.show();
         let _ = window.set_focus();
         return;
     }
-    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}").into());
+    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}&session={focus}").into());
     let window = WebviewWindowBuilder::new(app, WINDOW_ID, url)
         .title("Agent Office")
         .inner_size(1200.0, 800.0)
@@ -472,16 +383,6 @@ fn send_notifications(app: &AppHandle, prev: &[SessionFacts], next: &[SessionFac
     }
 }
 
-fn extras(app: &AppHandle) -> Extras {
-    let notice = app.state::<Ui>().notice.lock().unwrap().clone();
-    Extras {
-        update: update_state(app),
-        notice: notice.filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text),
-        server_error: app.state::<Server>().0.lock().unwrap().error(),
-        prefs: *app.state::<Ui>().prefs.lock().unwrap(),
-    }
-}
-
 /// Cerca versioni più recenti (se non è già in corso una ricerca o un aggiornamento).
 fn check_updates(app: &AppHandle) {
     if !update_state(app).enabled() {
@@ -512,71 +413,87 @@ fn on_updates_click(app: &AppHandle) {
     });
 }
 
-/// Menu a tendina: stato, apri ufficio, impostazioni, aggiornamenti, istanze di Claude Code, agenti attivi, esci.
-fn build_menu(app: &AppHandle, o: &Overview, extras: &Extras) -> tauri::Result<Menu<Wry>> {
-    let update = &extras.update;
-    // server non disponibile: al posto di un generico "non raggiungibile" il motivo (Node mancante, porta occupata…)
-    let status_label = match (&extras.server_error, o.status) {
-        (Some(error), Status::Offline) => truncate(error, 90),
-        _ => o.status.label().to_string(),
+fn update_json(update: &UpdateState) -> Value {
+    let (kind, latest, behind) = match update {
+        UpdateState::Unknown => ("unknown", None, 0),
+        UpdateState::Checking => ("checking", None, 0),
+        UpdateState::UpToDate => ("uptodate", None, 0),
+        UpdateState::Available { latest, behind } => ("available", Some(latest.clone()), *behind),
+        UpdateState::Upgrading => ("upgrading", None, 0),
+        UpdateState::Failed => ("failed", None, 0),
+        UpdateState::UpgradeFailed => ("upgradefailed", None, 0),
     };
-    let status = IconMenuItemBuilder::with_id("status", status_label)
-        .icon(dot_image(o.status)?)
-        .enabled(false)
-        .build(app)?;
-    let notice = extras.notice.as_deref().map(|text| MenuItemBuilder::new(text).enabled(false).build(app)).transpose()?;
-    let open = MenuItemBuilder::with_id("open", "Apri ufficio").build(app)?;
+    json!({ "kind": kind, "label": update.label(VERSION), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
+}
 
-    let settings = SubmenuBuilder::new(app, "Impostazioni")
-        .item(&CheckMenuItemBuilder::with_id("autostart", "Avvia al login").checked(autostart_enabled()).build(app)?)
-        .separator()
-        .item(&CheckMenuItemBuilder::with_id("notify-waiting", "Notifica quando Claude aspetta").checked(extras.prefs.notify_waiting).build(app)?)
-        .item(&CheckMenuItemBuilder::with_id("notify-done", "Notifica quando Claude ha finito").checked(extras.prefs.notify_done).build(app)?)
-        .separator()
-        .item(&MenuItemBuilder::with_id("hooks-install", "Installa gli hook di Claude Code").build(app)?)
-        .item(&MenuItemBuilder::with_id("hooks-remove", "Rimuovi gli hook di Claude Code").build(app)?)
-        .build()?;
+/// Tutto quello che mostra il pannello: snapshot del server, aggiornamenti, avvisi, impostazioni.
+#[tauri::command]
+fn panel_state(app: AppHandle) -> Value {
+    let ui = app.state::<Ui>();
+    let prefs = *ui.prefs.lock().unwrap();
+    let notice = ui.notice.lock().unwrap().clone().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text);
+    json!({
+        "version": VERSION,
+        "snapshot": ui.snapshot.lock().unwrap().clone(),
+        "serverError": app.state::<Server>().0.lock().unwrap().error(),
+        "update": update_json(&ui.update.lock().unwrap()),
+        "notice": notice,
+        "prefs": { "notifyWaiting": prefs.notify_waiting, "notifyDone": prefs.notify_done },
+        "autostart": autostart_enabled(),
+    })
+}
 
-    let label = update.label(VERSION);
-    let updates: Box<dyn tauri::menu::IsMenuItem<Wry>> = match update.badge() {
-        Some(badge) => Box::new(
-            IconMenuItemBuilder::with_id("updates", label).icon(Image::from_bytes(badge.png())?).enabled(update.enabled()).build(app)?,
-        ),
-        None => Box::new(MenuItemBuilder::with_id("updates", label).enabled(update.enabled()).build(app)?),
-    };
-
-    let list = |title: String, entries: &[Entry], empty: &str| -> tauri::Result<_> {
-        let mut sub = SubmenuBuilder::new(app, title);
-        if entries.is_empty() {
-            sub = sub.item(&MenuItemBuilder::new(empty).enabled(false).build(app)?);
+/// Azioni del pannello; quelle che aprono qualcosa lo chiudono.
+#[tauri::command]
+fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
+    let hide = || {
+        if let Some(panel) = app.get_webview_window(panel::PANEL_ID) {
+            let _ = panel.hide();
         }
-        for e in entries {
-            sub = sub.item(&IconMenuItemBuilder::with_id(e.id.as_str(), e.label.as_str()).icon(dot_image(e.status)?).build(app)?);
-        }
-        sub.build()
     };
-    let sessions = list(format!("Istanze aperte ({})", o.sessions.len()), &o.sessions, "Nessuna sessione di Claude Code attiva")?;
-    let agents = list(format!("Agenti attivi ({})", o.agents.len()), &o.agents, "Nessun agente al lavoro")?;
-
-    let mut menu = MenuBuilder::new(app).item(&status);
-    if let Some(notice) = &notice {
-        menu = menu.item(notice);
+    match action.as_str() {
+        "open-office" => {
+            hide();
+            show_office(&app, "office", None);
+        }
+        "open-session" => {
+            hide();
+            show_office(&app, "list", arg.as_deref());
+        }
+        "autostart" => set_autostart(!autostart_enabled()),
+        "notify-waiting" => toggle_pref(&app, |p| p.notify_waiting = !p.notify_waiting),
+        "notify-done" => toggle_pref(&app, |p| p.notify_done = !p.notify_done),
+        "hooks-install" => run_hooks(&app, "install-hooks"),
+        "hooks-remove" => run_hooks(&app, "uninstall-hooks"),
+        "update" => on_updates_click(&app),
+        "close" => hide(),
+        "quit" => app.exit(0),
+        _ => {}
     }
-    menu.separator()
-        .item(&open)
-        .item(&settings)
-        .item(updates.as_ref())
-        .separator()
-        .item(&sessions)
-        .item(&agents)
-        .separator()
-        .item(&MenuItemBuilder::with_id("quit", "Esci").build(app)?)
-        .build()
+    refresh_panel(&app);
+}
+
+/// Il contenuto del pannello chiede l'altezza che gli serve.
+#[tauri::command]
+fn panel_resize(app: AppHandle, height: f64) {
+    if let Some(panel) = app.get_webview_window(panel::PANEL_ID) {
+        panel::resize(&panel, height);
+    }
+}
+
+/// Il pannello rilegge lo stato (se è aperto).
+fn refresh_panel(app: &AppHandle) {
+    if let Some(panel) = app.get_webview_window(panel::PANEL_ID) {
+        if panel.is_visible().unwrap_or(false) {
+            let _ = panel.eval("window.agentPanelRefresh?.()");
+        }
+    }
 }
 
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![panel_state, panel_action, panel_resize])
         .manage(Server(Mutex::new(Supervisor::default())))
         .setup(|app| {
             // solo menu bar: niente icona nel Dock
@@ -595,26 +512,25 @@ fn main() {
                 update: Mutex::new(UpdateState::Unknown),
                 notice: Mutex::new(None),
                 prefs: Mutex::new(notify::load()),
+                snapshot: Mutex::new(Value::Null),
+                panel_hidden_at: Mutex::new(None),
                 wake: Mutex::new(wake),
             });
+            panel::create(&handle)?;
 
             let initial = Overview::offline();
             TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(initial.status.tray_icon(system_is_dark()))?)
                 .icon_as_template(false)
                 .tooltip("Agent Office")
-                .menu(&build_menu(&handle, &initial, &extras(&handle))?)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => show_office(app, "office"),
-                    "autostart" => set_autostart(!autostart_enabled()),
-                    "hooks-install" => run_hooks(app, "install-hooks"),
-                    "hooks-remove" => run_hooks(app, "uninstall-hooks"),
-                    "updates" => on_updates_click(app),
-                    "notify-waiting" => toggle_pref(app, |p| p.notify_waiting = !p.notify_waiting),
-                    "notify-done" => toggle_pref(app, |p| p.notify_done = !p.notify_done),
-                    "quit" => app.exit(0),
-                    id if id.starts_with("session:") || id.starts_with("agent:") => show_office(app, "list"),
-                    _ => {}
+                // niente menu nativo: il clic apre il pannello
+                .show_menu_on_left_click(false)
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { rect, button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+                        let app = tray.app_handle();
+                        let hidden_at = *app.state::<Ui>().panel_hidden_at.lock().unwrap();
+                        panel::toggle(app, rect, hidden_at);
+                    }
                 })
                 .build(app)?;
 
@@ -628,11 +544,11 @@ fn main() {
                 }
             });
 
-            // ogni POLL (o subito, quando cambia lo stato di aggiornamenti o avvisi): server sorvegliato, poi icona
-            // e menu ricostruiti solo se cambia qualcosa
+            // ogni POLL (o subito, quando cambia lo stato di aggiornamenti o avvisi): server sorvegliato, notifiche,
+            // icona aggiornata solo se cambia e pannello aggiornato se aperto
             let dir = app_dir(&handle);
             thread::spawn(move || {
-                let mut last: Option<(Overview, bool, Extras)> = None;
+                let mut last: Option<(Overview, bool)> = None;
                 let mut etag: Option<String> = None;
                 // stato delle sessioni al giro precedente: al primo snapshot nessuna notifica (non è un cambiamento)
                 let mut seen: Option<Vec<SessionFacts>> = None;
@@ -644,7 +560,6 @@ fn main() {
                     };
                     handle.state::<Server>().0.lock().unwrap().tick(&dir, PORT, status);
                     let dark = dark_menu_bar(&handle);
-                    let extra = extras(&handle);
                     let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, ..)| o.clone())) else {
                         let _ = woken.recv_timeout(POLL);
                         continue;
@@ -655,7 +570,7 @@ fn main() {
                         }
                         seen = Some(overview.facts.clone());
                     }
-                    let changed = last.as_ref().is_none_or(|(o, d, x)| *o != overview || *d != dark || *x != extra);
+                    let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
                     if changed {
                         if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                             if let Ok(icon) = Image::from_bytes(overview.status.tray_icon(dark)) {
@@ -663,23 +578,29 @@ fn main() {
                                 let _ = tray.set_icon_as_template(false);
                             }
                             let _ = tray.set_tooltip(Some(format!("Agent Office: {}", overview.status.label())));
-                            if let Ok(menu) = build_menu(&handle, &overview, &extra) {
-                                let _ = tray.set_menu(Some(menu));
-                            }
                         }
-                        last = Some((overview, dark, extra));
+                        *handle.state::<Ui>().snapshot.lock().unwrap() = overview.snapshot.clone();
+                        last = Some((overview, dark));
                     }
+                    // il pannello aperto rilegge lo stato: cambia anche senza un nuovo snapshot (avvisi, aggiornamenti)
+                    refresh_panel(&handle);
                     let _ = woken.recv_timeout(POLL);
                 }
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
+        .on_window_event(|window, event| match event {
             // chiudere la finestra la nasconde: l'app resta nella menu bar
-            if let WindowEvent::CloseRequested { api, .. } = event {
+            WindowEvent::CloseRequested { api, .. } => {
                 api.prevent_close();
                 let _ = window.hide();
             }
+            // il pannello si chiude al clic fuori, come un menu
+            WindowEvent::Focused(false) if window.label() == panel::PANEL_ID => {
+                let _ = window.hide();
+                *window.app_handle().state::<Ui>().panel_hidden_at.lock().unwrap() = Some(Instant::now());
+            }
+            _ => {}
         })
         .build(tauri::generate_context!())
         .expect("avvio di Agent Office");
@@ -698,36 +619,31 @@ mod tests {
     const SNAPSHOT: &str = r#"{
       "status": "waiting",
       "sessions": [
-        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "branch": "feat/board", "status": "done", "waiting": true, "issues": [14]},
-        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "branch": null, "status": "done", "waiting": false, "issues": []},
-        {"id": "s3", "active": false, "cwd": "/old", "branch": "main", "status": "done", "waiting": false, "issues": []}
+        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "branch": "feat/board", "status": "working", "waiting": true, "waitingKind": "permission"},
+        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "branch": null, "status": "done", "waiting": false},
+        {"id": "s3", "active": false, "cwd": "/old", "branch": "main", "status": "done", "waiting": false}
       ],
-      "agents": [
-        {"id": "a1", "sessionId": "s2", "name": "Build HUD panel", "status": "working", "issues": [22]},
-        {"id": "a2", "sessionId": "s2", "name": "Survey", "status": "done", "issues": []},
-        {"id": "a3", "sessionId": "s3", "name": "Vecchio", "status": "working", "issues": []}
-      ]
+      "agents": []
     }"#;
 
     #[test]
-    fn menu_dallo_snapshot() {
+    fn stato_e_sessioni_attive_dallo_snapshot() {
         let o = overview_from(SNAPSHOT);
         assert_eq!(o.status, Status::Waiting);
         assert_eq!(
-            o.sessions,
+            o.facts,
             vec![
-                Entry { id: "session:s1".into(), label: "agent-office · feat/board #14".into(), status: Status::Waiting },
-                Entry { id: "session:s2".into(), label: "olimpo-ui".into(), status: Status::Working },
+                SessionFacts { id: "s1".into(), place: "agent-office · feat/board".into(), status: "working".into(), waiting: Some("permission".into()) },
+                SessionFacts { id: "s2".into(), place: "olimpo-ui".into(), status: "done".into(), waiting: None },
             ]
         );
-        assert_eq!(o.agents, vec![Entry { id: "agent:a1".into(), label: "Build HUD panel #22".into(), status: Status::Working }]);
     }
 
     #[test]
     fn snapshot_non_valido_o_vuoto() {
         assert_eq!(overview_from("non json"), Overview::offline());
         let o = overview_from(r#"{"status":"idle","sessions":[],"agents":[]}"#);
-        assert_eq!((o.status, o.sessions.len(), o.agents.len()), (Status::Idle, 0, 0));
+        assert_eq!((o.status, o.facts.len()), (Status::Idle, 0));
     }
 
     #[test]

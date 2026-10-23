@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Office</title>
+  <style>
+    /* Pannello della menu bar: sfondo trasparente (Liquid Glass / popover di macOS dietro), testo di sistema. */
+    :root {
+      color-scheme: light dark;
+      --fg: rgb(0 0 0 / 0.86);
+      --muted: rgb(0 0 0 / 0.5);
+      --hover: rgb(0 0 0 / 0.07);
+      --divider: rgb(0 0 0 / 0.1);
+      --accent: #007aff;
+      --ok: #28a745;
+      --danger: #e5383b;
+      --idle: #9aa1a9;
+      --switch-off: rgb(0 0 0 / 0.14);
+      --pill: rgb(0 0 0 / 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --fg: rgb(255 255 255 / 0.9);
+        --muted: rgb(255 255 255 / 0.5);
+        --hover: rgb(255 255 255 / 0.1);
+        --divider: rgb(255 255 255 / 0.12);
+        --accent: #0a84ff;
+        --ok: #32d74b;
+        --danger: #ff453a;
+        --idle: #8e8e93;
+        --switch-off: rgb(255 255 255 / 0.2);
+        --pill: rgb(255 255 255 / 0.1);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: transparent; }
+    body {
+      font: 13px/1.35 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      color: var(--fg);
+      padding: 6px;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: default;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; text-align: left; }
+    svg { flex: none; }
+
+    /* aggiornamento: banner blu, testo bianco, angoli arrotondati */
+    .banner {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      margin: 0 0 6px; padding: 9px 11px; border-radius: 10px;
+      background: var(--accent); color: #fff;
+    }
+    .banner:hover { filter: brightness(1.08); }
+    .banner__icon { width: 24px; height: 24px; }
+    .banner__text { display: grid; gap: 1px; min-width: 0; }
+    .banner__title { font-weight: 600; }
+    .banner__sub { font-size: 11px; opacity: 0.85; }
+
+    .status { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; }
+    .status__text { display: grid; gap: 2px; min-width: 0; }
+    .status__title { font-weight: 600; font-size: 13.5px; }
+    .status__sub { color: var(--muted); font-size: 12px; }
+    .status__sub--error { color: var(--danger); }
+
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--idle); flex: none; margin-top: 4px; }
+    .dot--big { width: 12px; height: 12px; margin-top: 3px; }
+    .dot--working { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+    .dot--waiting { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent); }
+
+    hr { border: 0; border-top: 1px solid var(--divider); margin: 5px 10px; }
+    .section { padding: 6px 10px 3px; font-size: 11px; font-weight: 600; color: var(--muted); }
+
+    .row {
+      display: flex; align-items: center; gap: 10px; width: 100%;
+      min-height: 30px; padding: 5px 10px; border-radius: 8px;
+    }
+    .row:hover { background: var(--hover); }
+    .row__icon { width: 17px; height: 17px; color: var(--muted); }
+    .row__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row__hint { color: var(--muted); font-size: 12px; }
+
+    /* interruttore stile macOS */
+    .switch { position: relative; width: 30px; height: 18px; border-radius: 9px; background: var(--switch-off); transition: background 120ms; flex: none; }
+    .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 120ms; }
+    .switch--on { background: var(--accent); }
+    .switch--on::after { transform: translateX(12px); }
+
+    .mini { padding: 2px 8px; border-radius: 6px; background: var(--pill); font-size: 12px; }
+    .mini:hover { background: var(--hover); filter: brightness(0.95); }
+    .notice { margin: 2px 10px 4px 37px; font-size: 12px; color: var(--muted); }
+
+    .session { display: grid; gap: 1px; width: 100%; padding: 6px 10px; border-radius: 8px; }
+    .session:hover { background: var(--hover); }
+    .session__head { display: flex; align-items: flex-start; gap: 9px; min-width: 0; }
+    .session__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .session__name b { font-weight: 600; }
+    .session__name span { color: var(--muted); }
+    .session__sub { margin-left: 18px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .session__sub--waiting { color: var(--danger); }
+    .pill { padding: 0 6px; border-radius: 6px; background: var(--pill); color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+    .pill--warn { color: #c77c00; }
+    .pill--danger { color: var(--danger); }
+
+    .agent { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 10px 3px 28px; border-radius: 8px; font-size: 12px; }
+    .agent:hover { background: var(--hover); }
+    .agent .dot { width: 7px; height: 7px; margin-top: 0; box-shadow: none; }
+    .agent__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .agent__tool { color: var(--muted); white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
+
+    .empty { padding: 4px 10px 8px; color: var(--muted); }
+    .footer { padding: 2px 10px 4px; font-size: 11px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    'use strict';
+    const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+
+    // icone semplici a tratto, nello spirito di SF Symbols
+    const ICONS = {
+      office: '<path d="M3 20.5h18M5 20.5V5.5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v15M15 9.5h3a1 1 0 0 1 1 1v10M8 8h4M8 11.5h4M8 15h4"/>',
+      power: '<path d="M12 3.5v8M7.05 6.4a7.5 7.5 0 1 0 9.9 0"/>',
+      bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/>',
+      check: '<path d="M6 16.5V11a6 6 0 0 1 9-5.2M18 11v5.5l1.5 2h-15M10 20.5a2 2 0 0 0 4 0M14.5 7.5l2 2 4-4"/>',
+      link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
+      refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>',
+      quit: '<path d="M14 4.5h4a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 16l4-4-4-4M14 12H4.5"/>',
+    };
+    const icon = (name, cls = 'row__icon') =>
+      `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+    // banner: cerchio bianco con freccia blu, oppure con "!" rosso se si è indietro di molte versioni
+    const bannerIcon = (outdated) =>
+      `<svg class="banner__icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#fff"/>` +
+      (outdated
+        ? '<path d="M12 6.5v7" stroke="#e5383b" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="17.3" r="1.4" fill="#e5383b"/>'
+        : '<path d="M12 6.5v9M8 12l4 4 4-4" fill="none" stroke="#0a84ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>') +
+      '</svg>';
+
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+    const project = (s) => (s.cwd || '').split('/').filter(Boolean).pop() || s.id.slice(0, 8);
+    const busy = (st) => st === 'working' || st === 'entering';
+    const minutes = (ms) => {
+      const m = Math.floor(ms / 60000);
+      if (m < 1) return '<1 min';
+      if (m < 60) return `${m} min`;
+      const h = Math.floor(m / 60), r = m % 60;
+      return r ? `${h} h ${String(r).padStart(2, '0')}` : `${h} h`;
+    };
+    const WAITING = { permission: 'aspetta un tuo permesso', question: 'ti ha fatto una domanda', plan: "aspetta l'ok al piano", input: 'aspetta un tuo input' };
+    const waitingText = (s) => (WAITING[s.waitingKind] || WAITING.input) + (s.waitingSince ? ` · da ${minutes(Date.now() - s.waitingSince)}` : '');
+    const toolText = (t) => (t ? (t.target ? `${t.name} ${t.target}` : t.name) : '');
+    // stessa regola del pallino dell'icona e della vista lista
+    const dotOf = (s, agents) => (s.waiting ? 'waiting' : busy(s.status) || agents.some((a) => busy(a.status)) ? 'working' : 'idle');
+    const SESSION_STATUS = { working: 'al lavoro', entering: 'al lavoro', idle: 'inattiva', done: 'pronta' };
+
+    let state = null;
+
+    function render() {
+      if (!state) return;
+      const snap = state.snapshot || { sessions: [], agents: [] };
+      const sessions = (snap.sessions || []).filter((s) => s.active);
+      const agents = snap.agents || [];
+      const working = agents.filter((a) => busy(a.status)).length;
+      const waitingOnes = sessions.filter((s) => s.waiting);
+      const u = state.update;
+      let html = '';
+
+      if (['available', 'upgrading', 'upgradefailed'].includes(u.kind)) {
+        const sub = u.kind === 'upgrading' ? 'Aggiornamento in corso…'
+          : u.kind === 'upgradefailed' ? 'Non riuscito: riprova (dettagli in ~/.agent-office/upgrade.log)'
+          : u.behind > 1 ? `Sei indietro di ${u.behind} versioni` : `Hai la ${esc(state.version)}`;
+        const title = u.latest ? `Aggiorna alla versione ${esc(u.latest)}` : 'Aggiornamento';
+        html += `<button class="banner" data-action="update" ${u.kind === 'upgrading' ? 'disabled' : ''}>${bannerIcon(u.outdated)}
+          <span class="banner__text"><span class="banner__title">${title}</span><span class="banner__sub">${sub}</span></span></button>`;
+      }
+
+      // stato dell'IA
+      let dot = 'idle', title = 'Nessuna attività', sub = sessions.length ? `${sessions.length} ${sessions.length === 1 ? 'istanza aperta' : 'istanze aperte'}` : 'Nessuna istanza di Claude Code aperta';
+      let subClass = '';
+      if (!state.snapshot) {
+        title = 'Server non raggiungibile';
+        sub = state.serverError || 'Avvio in corso…';
+        subClass = state.serverError ? ' status__sub--error' : '';
+      } else if (waitingOnes.length) {
+        dot = 'waiting';
+        title = waitingOnes.length === 1 ? 'Claude è bloccato' : `${waitingOnes.length} istanze bloccate`;
+        sub = waitingOnes.map((s) => `${esc(project(s))}: ${waitingText(s)}`).join(' · ');
+      } else if (snap.status === 'working') {
+        dot = 'working';
+        title = 'Claude sta lavorando';
+        sub = working ? `${working} ${working === 1 ? 'agente al lavoro' : 'agenti al lavoro'}` : sub;
+      }
+      html += `<div class="status"><span class="dot dot--big dot--${dot}"></span><div class="status__text">
+        <span class="status__title">${title}</span><span class="status__sub${subClass}">${sub}</span></div></div>`;
+
+      // impostazioni
+      const sw = (on) => `<span class="switch${on ? ' switch--on' : ''}"></span>`;
+      const showCheck = !['available', 'upgrading', 'upgradefailed'].includes(u.kind);
+      html += `<hr><div class="section">Impostazioni</div>
+        <button class="row" data-action="open-office">${icon('office')}<span class="row__label">Apri ufficio</span></button>
+        <button class="row" data-action="autostart">${icon('power')}<span class="row__label">Avvia al login</span>${sw(state.autostart)}</button>
+        <button class="row" data-action="notify-waiting">${icon('bell')}<span class="row__label">Notifica quando Claude aspetta</span>${sw(state.prefs.notifyWaiting)}</button>
+        <button class="row" data-action="notify-done">${icon('check')}<span class="row__label">Notifica a fine lavoro</span>${sw(state.prefs.notifyDone)}</button>
+        <div class="row">${icon('link')}<span class="row__label">Hook di Claude Code</span>
+          <button class="mini" data-action="hooks-install">Installa</button><button class="mini" data-action="hooks-remove">Rimuovi</button></div>
+        ${showCheck ? `<button class="row" data-action="update" ${u.kind === 'checking' ? 'disabled' : ''}>${icon('refresh')}<span class="row__label">${esc(u.kind === 'unknown' ? 'Cerca aggiornamenti' : u.label)}</span></button>` : ''}
+        ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}`;
+
+      // istanze e agenti
+      html += `<hr><div class="section">Istanze e agenti</div>`;
+      if (!sessions.length) html += `<div class="empty">Nessuna istanza di Claude Code aperta</div>`;
+      for (const s of sessions) {
+        const own = agents.filter((a) => a.sessionId === s.id && a.status !== 'done');
+        const d = dotOf(s, own);
+        const ctx = s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
+        const ctxClass = ctx > 90 ? ' pill--danger' : ctx > 70 ? ' pill--warn' : '';
+        const line = s.waiting ? waitingText(s) : s.tool ? toolText(s.tool) : SESSION_STATUS[s.status] || '';
+        html += `<button class="session" data-action="open-session" data-arg="${esc(s.id)}">
+          <span class="session__head"><span class="dot dot--${d}"></span>
+            <span class="session__name"><b>${esc(project(s))}</b>${s.branch ? ` <span>${esc(s.branch)}</span>` : ''}</span>
+            ${ctx !== null ? `<span class="pill${ctxClass}" title="Contesto usato">${ctx}%</span>` : ''}</span>
+          <span class="session__sub${s.waiting ? ' session__sub--waiting' : ''}">${esc(line)}</span></button>`;
+        for (const a of own) {
+          const ad = busy(a.status) ? 'working' : 'idle';
+          html += `<button class="agent" data-action="open-session" data-arg="${esc(s.id)}"><span class="dot dot--${ad}"></span>
+            <span class="agent__name" title="${esc(a.name)}">${esc(a.name)}</span><span class="agent__tool">${esc(toolText(a.tool) || (a.status === 'idle' ? 'inattivo' : ''))}</span></button>`;
+        }
+      }
+
+      html += `<hr><button class="row" data-action="quit">${icon('quit')}<span class="row__label">Esci da Agent Office</span></button>
+        <div class="footer">Agent Office ${esc(state.version)}</div>`;
+
+      document.getElementById('root').innerHTML = html;
+      invoke('panel_resize', { height: Math.ceil(document.documentElement.scrollHeight) });
+    }
+
+    async function refresh() {
+      try {
+        state = await invoke('panel_state');
+        render();
+      } catch {
+        // app in chiusura: niente da mostrare
+      }
+    }
+    window.agentPanelRefresh = refresh;
+
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-action]');
+      if (!el || el.disabled) return;
+      invoke('panel_action', { action: el.dataset.action, arg: el.dataset.arg || null }).then(refresh);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') invoke('panel_action', { action: 'close', arg: null });
+    });
+    // tempi ("da 3 min") aggiornati anche senza nuovi snapshot, solo a pannello visibile
+    setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+    refresh();
+  </script>
+</body>
+</html>

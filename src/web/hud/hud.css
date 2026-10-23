@@ -298,3 +298,4 @@
   border-radius: 8px;
 }
 .list-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--hud-muted); }
+.list-session--focus { box-shadow: 0 0 0 2px var(--hud-accent), var(--hud-shadow); }
