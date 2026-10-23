@@ -1,11 +1,13 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { AgentState, SessionState } from '../../shared/types';
+import type { AgentState, FinishedAgent, SessionState } from '../../shared/types';
 import type { OfficeView } from '../store';
 import { byUrgency, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { StateCounts } from './InstancesPanel';
 import {
   agentName, agentTask, doneGroupLabel, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, statusText, turnText,
 } from './labels';
+import { CLOSED_FINISHED_TITLE } from './historyLabels';
+import { finishedAsAgent } from './HistoryView';
 import { ContextGauge, DiffStat, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
@@ -86,12 +88,12 @@ function bySession(agents: readonly AgentState[]): Map<string, AgentState[]> {
 
 const NONE: AgentState[] = [];
 
-/** Agenti della sessione terminati oggi: nome, durata, costo. Chiusa di default. */
-const FinishedToday = memo(function FinishedToday({ agents }: { agents: AgentState[] }) {
+/** Agenti della sessione (o delle istanze chiuse, `title`) terminati oggi: nome, durata, costo. Chiusa di default. */
+const FinishedToday = memo(function FinishedToday({ agents, title = 'Terminati oggi' }: { agents: AgentState[]; title?: string }) {
   if (agents.length === 0) return null;
   return (
     <details className="list-finished">
-      <summary>{`Terminati oggi (${agents.length})`}</summary>
+      <summary>{`${title} (${agents.length})`}</summary>
       <ul className="list-agents">
         {agents.map((a) => (
           <li key={a.id} className="list-agent list-agent--done">
@@ -202,9 +204,10 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
 const VIEW_LABEL: [OfficeView, string, string][] = [
   ['pixel', 'Ufficio', 'Ufficio in pixel art'],
   ['list', 'Lista', 'Lista delle istanze'],
+  ['history', 'Analisi', 'Analisi della giornata'],
 ];
 
-/** Selettore a due segmenti in alto a destra: ufficio o lista delle istanze. */
+/** Selettore in alto a destra: ufficio, lista delle istanze o analisi della giornata. */
 export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
     <div className="hud-toggle" role="group" aria-label="Vista">
@@ -221,11 +224,13 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
  * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
-export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
+export function ListView({ sessions, agents, finished = [], closedFinished, hidden, onToggle, focus = null }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** terminati oggi e già usciti dall'ufficio */
   finished?: AgentState[];
+  /** terminati oggi delle istanze già chiuse (dallo storico del server) */
+  closedFinished?: FinishedAgent[];
   hidden: readonly string[];
   onToggle: (sessionId: string) => void;
   /** sessione da evidenziare e portare in vista */
@@ -247,6 +252,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
   const active = useMemo(() => sessions.filter((s) => s.active), [sessions]);
   const agentsBy = useMemo(() => bySession(agents), [agents]);
   const finishedBy = useMemo(() => bySession(finished), [finished]);
+  const closed = useMemo(() => closedFinished?.map(finishedAsAgent) ?? NONE, [closedFinished]);
   const shown = useMemo(
     () => active
       .map((s) => ({ s, all: agentsBy.get(s.id) ?? NONE }))
@@ -290,6 +296,11 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
           onToggle={onToggle}
         />
       ))}
+      {closed.length > 0 && (
+        <section className="list-session list-closed" aria-label={CLOSED_FINISHED_TITLE}>
+          <FinishedToday agents={closed} title={CLOSED_FINISHED_TITLE} />
+        </section>
+      )}
     </main>
   );
 }

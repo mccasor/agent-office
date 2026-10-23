@@ -182,11 +182,11 @@ describe('ListView', () => {
 });
 
 describe('ViewToggle', () => {
-  it('due viste (ufficio, lista): evidenzia quella corrente e notifica il cambio', () => {
+  it('tre viste (ufficio, lista, analisi): evidenzia quella corrente e notifica il cambio', () => {
     const onChange = vi.fn();
     const { rerender } = render(<ViewToggle view="pixel" onChange={onChange} />);
     expect(screen.getByRole('group', { name: 'Vista' })).toBeTruthy();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Ufficio', 'Lista']);
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Ufficio', 'Lista', 'Analisi']);
     expect(screen.getByRole('button', { name: 'Ufficio' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Lista' }));
     expect(onChange).toHaveBeenCalledWith('list');
