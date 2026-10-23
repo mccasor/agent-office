@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Pixel-art 2D office that shows your Claude Code agents at work in real time, in the browser or from the macOS menu bar",
   "type": "module",
   "license": "MIT",
