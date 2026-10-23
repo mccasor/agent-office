@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText } from './labels';
-import { DiffStat, projectName, Row, SessionAlert } from './panels';
+import { agentName, agentTask, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText } from './labels';
+import { DiffStat, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
 import { useNow } from './useNow';
@@ -29,16 +29,19 @@ function SessionContext({ session }: { session: SessionState }) {
 /**
  * Scheda di un agente, a destra, aperta al clic sul personaggio o nell'elenco delle istanze: nome, descrizione,
  * tipo, stato, tool in uso, durata, modello, avanzamento, issue, costo e token. Per Claude stesso (`session`)
- * anche progetto, branch, motivo del blocco e contesto. Si chiude con il pulsante o con Esc.
+ * anche progetto, branch, motivo del blocco e contesto. Si chiude con il pulsante o con Esc; `onPopOut` la apre
+ * in una finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante.
  */
-export function AgentCard({ agent, session = null, onClose }: {
+export function AgentCard({ agent, session = null, onClose, onPopOut }: {
   agent: AgentState;
   /** sessione di cui l'agente è Claude stesso (il boss); null per i subagenti */
   session?: SessionState | null;
-  onClose: () => void;
+  onClose?: () => void;
+  onPopOut?: () => void;
 }) {
   const now = useNow();
   useEffect(() => {
+    if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -53,20 +56,30 @@ export function AgentCard({ agent, session = null, onClose }: {
   // Claude stesso: il tool è quello della sessione e a fine turno non ha "terminato", è pronto
   const tool = session ? session.tool : agent.tool;
   const duration = session ? `da ${formatDuration(now - session.startedAt)}` : `${done ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`;
+  const name = agentName(agent);
+  const task = agentTask(agent);
   return (
-    <section className="hud-panel hud-card" aria-label={`Scheda di ${agent.name}`}>
+    <section className="hud-panel hud-card" aria-label={`Scheda di ${name}`}>
       <header className="hud-card__head">
-        <span className="hud-title" title={agent.name}>{agent.name}</span>
-        <button type="button" className="hud-card__close" aria-label="Chiudi la scheda" title="Chiudi (Esc)" onClick={onClose}>
-          ×
-        </button>
+        <span className="hud-card__names">
+          <span className="hud-title" title={name}>{name}</span>
+          {task && <span className="hud-card__task hud-muted">{task}</span>}
+        </span>
+        {onPopOut && <PopOutButton label="Apri la scheda in una finestra" onClick={onPopOut} />}
+        {onClose && (
+          <button type="button" className="hud-card__close" aria-label="Chiudi la scheda" title="Chiudi (Esc)" onClick={onClose}>
+            ×
+          </button>
+        )}
       </header>
       <div className="hud-card__chips">
-        <span className={`hud-chip hud-chip--${agent.area}`} data-area={agent.area}>{agent.area}</span>
+        <RoleChip area={agent.area} />
         {agent.issues.length > 0 && <span className="hud-label__issue">{agent.issues.map((n) => `#${n}`).join(' ')}</span>}
       </div>
       {agent.description && agent.description !== agent.name && <p className="hud-card__desc">{agent.description}</p>}
-      {session?.waiting && <SessionAlert session={session} />}
+      {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
+      {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? 'Un subagente' : null} />}
+      {!session && agent.waiting && !done && <SessionAlert session={agent} />}
       {session && (
         <dl>
           <Row label="Progetto">{projectName(session)}</Row>
@@ -92,7 +105,7 @@ export function AgentCard({ agent, session = null, onClose }: {
             <span className="hud-muted">Avanzamento</span>
             <span className="hud-context__pct">{`${progress.completed}/${progress.total} · ${pct}%`}</span>
           </div>
-          <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} />
+          <ProgressBar value={pct} label={`Avanzamento ${name}`} />
         </div>
       )}
       <div className="hud-card__section hud-muted">Token</div>

@@ -10,7 +10,7 @@ const tokens = { input: 0, output: 2_345, cacheRead: 0, cacheCreation: 0, total:
 const session = (over: Partial<SessionState> = {}): SessionState => ({
   id: 's1', title: null, model: 'claude-opus-5-5', effort: 'high', context: { used: 50_000, window: 200_000 },
   tokensUsed: tokens, startedAt: 0, updatedAt: 10, active: true, status: 'working', issues: [14],
-  cwd: '/Users/x/agent-office', branch: 'feat/board', waiting: false, ...over,
+  cwd: '/Users/x/agent-office', branch: 'feat/board', waiting: false, dot: 'working', project: 'agent-office', ...over,
 });
 const agent = (over: Partial<AgentState> = {}): AgentState => ({
   id: 'a1', sessionId: 's1', name: 'Build HUD panel', agentType: 'Explore', description: '', area: 'frontend',
@@ -18,7 +18,7 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
 });
 const boss = (sessionId: string): AgentState => agent({ id: `boss:${sessionId}`, sessionId, name: 'Claudio Code', agentType: 'main' });
 
-const sessions = [session(), session({ id: 's2', cwd: '/x/olimpo-ui', branch: 'main', updatedAt: 99, issues: [] }), session({ id: 'old', active: false, cwd: '/x/vecchia' })];
+const sessions = [session(), session({ id: 's2', cwd: '/x/olimpo-ui', project: 'olimpo-ui', branch: 'main', updatedAt: 99, issues: [] }), session({ id: 'old', active: false, cwd: '/x/vecchia', project: 'vecchia' })];
 const head = (name: RegExp) => screen.getByRole('button', { name });
 
 describe('InstancesPanel', () => {
@@ -30,6 +30,14 @@ describe('InstancesPanel', () => {
     expect(screen.getByText('feat/board')).toBeTruthy();
     expect(screen.getByText('#14')).toBeTruthy();
     expect(within(head(/agent-office/)).getByRole('img', { name: 'al lavoro' })).toBeTruthy();
+  });
+
+  it('subagente: nome di persona, ruolo e compito; Claudio Code senza ruolo (#88)', () => {
+    render(<InstancesPanel sessions={[session()]} agents={[agent({ nickname: 'Dario Merge', area: 'test' })]} bosses={[boss('s1')]} onSelect={() => {}} />);
+    const row = screen.getByRole('button', { name: /Dario Merge/ });
+    expect(within(row).getByText('QA').getAttribute('data-area')).toBe('test');
+    expect(within(row).getByText('Build HUD panel')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /Claudio Code/ })).queryByText('architect')).toBeNull();
   });
 
   it('apri e chiudi: dati della sessione e agenti', () => {
@@ -69,15 +77,35 @@ describe('InstancesPanel', () => {
     const t = Date.now();
     render(
       <InstancesPanel
-        sessions={[session({ waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000 })]}
+        sessions={[session({ dot: 'waiting', waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000 })]}
         agents={[]}
         bosses={[boss('s1')]}
         onSelect={() => {}}
       />,
     );
-    expect(within(head(/agent-office/)).getByRole('img', { name: /in attesa/ })).toBeTruthy();
+    expect(within(head(/agent-office/)).getByRole('img', { name: 'aspetta un tuo input' })).toBeTruthy();
     expect(screen.getByText('Ti ha fatto una domanda · da 2 min')).toBeTruthy();
     expect(screen.getByText('ti ha fatto una domanda · da 2 min')).toBeTruthy();
+  });
+
+  it('subagente bloccato: motivo sulla sua riga, in rosso, e avviso col suo nome; Claude resta col suo stato', () => {
+    const t = Date.now();
+    render(
+      <InstancesPanel
+        sessions={[session({ dot: 'waiting', waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000, waitingAgentId: 'a1' })]}
+        agents={[agent({ waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 })]}
+        bosses={[boss('s1')]}
+        onSelect={() => {}}
+      />,
+    );
+    expect(within(head(/agent-office/)).getByRole('img', { name: /aspetta un tuo input/ })).toBeTruthy();
+    expect(screen.getByText('Build HUD panel aspetta un tuo permesso · da 3 min')).toBeTruthy();
+    const row = screen.getByRole('button', { name: /Build HUD panel/ });
+    expect(row.className).toContain('hud-instance__agent--waiting');
+    expect(within(row).getByText('aspetta un tuo permesso · da 3 min')).toBeTruthy();
+    const claude = screen.getByRole('button', { name: /Claudio Code/ });
+    expect(claude.className).not.toContain('--waiting');
+    expect(within(claude).getByText('al lavoro')).toBeTruthy();
   });
 
   it('sessione in evidenza aperta (anche se arriva dopo)', () => {
@@ -90,8 +118,15 @@ describe('InstancesPanel', () => {
     expect(head(/agent-office/).getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('nessuna sessione attiva: messaggio', () => {
+  it('nessuna istanza aperta: messaggio', () => {
     render(<InstancesPanel sessions={[]} agents={[]} bosses={[]} onSelect={() => {}} />);
-    expect(screen.getByText('Nessuna sessione attiva')).toBeTruthy();
+    expect(screen.getByText('Nessuna istanza di Claude Code aperta')).toBeTruthy();
+  });
+
+  it('istanza aperta: pulsante per aprirla in una finestra (#92)', () => {
+    const onPopOut = vi.fn();
+    render(<InstancesPanel sessions={[session()]} agents={[]} bosses={[boss('s1')]} onSelect={() => {}} onPopOut={onPopOut} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Apri agent-office in una finestra' }));
+    expect(onPopOut).toHaveBeenCalledWith('s1');
   });
 });

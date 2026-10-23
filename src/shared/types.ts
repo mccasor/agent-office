@@ -3,6 +3,7 @@
 export type WorkArea =
   | 'backend'
   | 'frontend'
+  | 'design'
   | 'architecture'
   | 'test'
   | 'docs'
@@ -37,7 +38,7 @@ export interface ToolInUse {
   since: number;
 }
 
-/** Perché una sessione è bloccata: permesso di un tool, domanda (AskUserQuestion), piano (ExitPlanMode), altro input. */
+/** Perché una sessione o un subagente è bloccato: permesso di un tool, domanda (AskUserQuestion), piano (ExitPlanMode), altro input. */
 export type WaitingKind = 'permission' | 'question' | 'plan' | 'input';
 
 export interface AgentState {
@@ -46,6 +47,8 @@ export interface AgentState {
   sessionId: string;
   /** nome visualizzato: description del meta.json, altrimenti agentType */
   name: string;
+  /** nome di persona stabile dall'id (es. "Marta Commit"), calcolato dal server; assente nei client vecchi e per Claude stesso */
+  nickname?: string;
   agentType: string;
   description: string;
   area: WorkArea;
@@ -63,6 +66,10 @@ export interface AgentState {
   tool?: ToolInUse | null;
   /** costo stimato in dollari (listino dell'API); null se il modello non è nel listino */
   cost?: number | null;
+  /** bloccato in attesa dell'utente (permesso, domanda), con motivo e inizio come per la sessione */
+  waiting?: boolean;
+  waitingKind?: WaitingKind | null;
+  waitingSince?: number | null;
 }
 
 export interface ContextState {
@@ -97,13 +104,22 @@ export interface SessionState {
   /** con `waiting`: perché e da quando (epoch ms) */
   waitingKind?: WaitingKind | null;
   waitingSince?: number | null;
+  /** con `waiting`: id del subagente bloccato da cui la sessione eredita l'attesa; null o assente = Claude stesso */
+  waitingAgentId?: string | null;
   /** tool in uso adesso dalla sessione principale */
   tool?: ToolInUse | null;
   /** costo stimato in dollari della sessione e dei suoi subagenti; null se nessun modello è nel listino */
   cost?: number | null;
   /** modifiche non committate nel repository del cwd (solo sessioni attive); null o assente se non disponibili */
   diff?: RepoDiff | null;
+  /** pallino di stato della sessione (stessa regola dell'icona nella menu bar), calcolato dal server */
+  dot: OfficeStatus;
+  /** nome del progetto: ultima cartella del cwd; null senza cwd */
+  project: string | null;
 }
+
+/** Sessione letta dal transcript, prima dei campi che il server deriva nello Snapshot. */
+export type TranscriptSession = Omit<SessionState, 'dot' | 'project'>;
 
 /** Stato complessivo per l'icona nella menu bar: rosso, verde, grigio. */
 export type OfficeStatus = 'waiting' | 'working' | 'idle';
@@ -122,7 +138,6 @@ export interface RepoState extends RepoDiff {
 export interface Snapshot {
   /** priorità: waiting (una sessione aspetta l'utente) > working > idle */
   status: OfficeStatus;
-  repo: RepoState | null;
   sessions: SessionState[];
   agents: AgentState[];
   /** agenti terminati oggi e già usciti dall'ufficio, dal più recente (cronologia); assente nei client vecchi */
@@ -132,7 +147,7 @@ export interface Snapshot {
 
 /** Evento scritto dall'hook di Claude Code (una riga JSON per evento). */
 export interface HookEvent {
-  /** hook_event_name: SubagentStart, SubagentStop, PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, ... */
+  /** hook_event_name: SubagentStart, SubagentStop, PreToolUse, PostToolUse, Stop, SessionStart, SessionEnd, PermissionRequest, ... */
   event: string;
   sessionId: string;
   agentId: string | null;
@@ -154,6 +169,6 @@ export interface Watcher<T> {
 }
 
 export interface TranscriptSnapshot {
-  sessions: SessionState[];
+  sessions: TranscriptSession[];
   agents: AgentState[];
 }

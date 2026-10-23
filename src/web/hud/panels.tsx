@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
-import { DOT_LABEL, waitingText } from './labels';
+import type { OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import { AREA_LABEL, DOT_LABEL, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -21,6 +21,15 @@ export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; 
   return createPortal(<div className={`hud-overlay hud-overlay--${side}`}>{children}</div>, hudStack());
 }
 
+/** Etichetta colorata del ruolo (#88): stesso colore dell'area nel 2D, nella scheda, nell'accordion e nella lista. */
+export function RoleChip({ area }: { area: WorkArea }) {
+  return (
+    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={`Ruolo: ${AREA_LABEL[area]}`}>
+      {AREA_LABEL[area]}
+    </span>
+  );
+}
+
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="hud-row">
@@ -29,9 +38,6 @@ export function Row({ label, children }: { label: string; children: ReactNode })
     </div>
   );
 }
-
-/** Nome del progetto: ultima cartella del cwd, altrimenti l'inizio dell'id. */
-export const projectName = (s: SessionState): string => s.cwd?.split('/').filter(Boolean).at(-1) ?? s.id.slice(0, 8);
 
 /** Righe aggiunte e tolte, file modificati (modifiche non committate). */
 export function DiffStat({ diff }: { diff: RepoDiff }) {
@@ -44,11 +50,17 @@ export function DiffStat({ diff }: { diff: RepoDiff }) {
   );
 }
 
-/** Avviso della sessione bloccata: motivo e da quanto ("Aspetta un tuo permesso · da 3 min"). */
-export function SessionAlert({ session }: { session: SessionState }) {
+/**
+ * Avviso della sessione (o del subagente) bloccato: motivo e da quanto ("Aspetta un tuo permesso · da 3 min");
+ * con `who`, chi è bloccato ("Explore aspetta un tuo permesso · da 3 min").
+ */
+export function SessionAlert({ session, who = null }: {
+  session: Pick<SessionState, 'waitingKind' | 'waitingSince'>;
+  who?: string | null;
+}) {
   const now = useNow();
   const text = waitingText(session.waitingKind, session.waitingSince, now);
-  return <p className="hud-session__alert">{text.charAt(0).toUpperCase() + text.slice(1)}</p>;
+  return <p className="hud-session__alert">{who ? `${who} ${text}` : text.charAt(0).toUpperCase() + text.slice(1)}</p>;
 }
 
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
@@ -56,20 +68,14 @@ export function StatusDot({ status }: { status: OfficeStatus }) {
   return <span className={`list-dot list-dot--${status}`} role="img" aria-label={DOT_LABEL[status]} title={DOT_LABEL[status]} />;
 }
 
-/** Pannello overlay: progetto, branch, +righe / -righe, file modificati. */
-export function RepoPanel({ repo }: { repo: RepoState | null }) {
-  if (!repo) {
-    return (
-      <section className="hud-panel hud-panel--empty" aria-label="Repository">
-        Nessun repository git
-      </section>
-    );
-  }
+/** Pulsante "apri in una finestra" (#92): una finestra con la freccia verso l'esterno. */
+export function PopOutButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <section className="hud-panel" aria-label="Repository">
-      <div className="hud-title">{repo.project}</div>
-      <div className="hud-branch">{repo.branch ?? '(detached)'}</div>
-      <DiffStat diff={repo} />
-    </section>
+    <button type="button" className="hud-popout" aria-label={label} title={label} onClick={onClick}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" />
+        <path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5" />
+      </svg>
+    </button>
   );
 }

@@ -15,7 +15,7 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
 const session = (over: Partial<SessionState> = {}): SessionState => ({
   id: 's1', title: 'Vista 2D', model: 'claude-opus-5-5', effort: 'high', context: { used: 150_000, window: 200_000 },
   tokensUsed: tokens, startedAt: 0, updatedAt: 0, active: true, status: 'working', issues: [71],
-  cwd: '/Users/x/agent-office', branch: 'feat/vista-2d', waiting: false, cost: 3.5, ...over,
+  cwd: '/Users/x/agent-office', branch: 'feat/vista-2d', waiting: false, cost: 3.5, dot: 'working', project: 'agent-office', ...over,
 });
 
 describe('AgentCard', () => {
@@ -40,6 +40,13 @@ describe('AgentCard', () => {
     expect(screen.getByTestId('tokens-cacheRead').textContent).toBe('17.7M');
     // niente dati di sessione per un subagente
     expect(screen.queryByText('Progetto')).toBeNull();
+  });
+
+  it('nome di persona come titolo, il compito sotto, il ruolo nella chip (#88)', () => {
+    render(<AgentCard agent={agent({ nickname: 'Marta Commit', area: 'architecture' })} onClose={() => {}} />);
+    expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();
+    expect(screen.getByText('Implementa HUD')).toBeTruthy();
+    expect(screen.getByText('architect').getAttribute('data-area')).toBe('architecture');
   });
 
   it('terminato: quanto ha lavorato, niente tool né barra senza todo list', () => {
@@ -70,11 +77,29 @@ describe('AgentCard', () => {
     expect(screen.getByText('agent-office')).toBeTruthy();
     expect(screen.getByText('feat/vista-2d')).toBeTruthy();
     expect(screen.getByText('Aspetta un tuo permesso · da 3 min')).toBeTruthy();
-    expect(screen.getByText('pronta')).toBeTruthy();
+    expect(screen.getByText('pronto')).toBeTruthy();
     expect(screen.getByText('75%')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Contesto usato' }).getAttribute('data-level')).toBe('warn');
     expect(screen.getByText('+12')).toBeTruthy();
     expect(screen.getByTestId('agent-cost').textContent).toBe('≈ $3,50');
+  });
+
+  it('subagente bloccato: motivo del blocco; Claude bloccato da un subagente lo dice', () => {
+    const t = Date.now();
+    const { unmount } = render(
+      <AgentCard agent={agent({ waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000 })} onClose={() => {}} />,
+    );
+    expect(screen.getByText('Ti ha fatto una domanda · da 2 min')).toBeTruthy();
+    unmount();
+    const boss = agent({ id: 'boss:s1', name: 'Claudio Code', agentType: 'main', description: '', progress: null });
+    render(
+      <AgentCard
+        agent={boss}
+        session={session({ waiting: true, waitingKind: 'permission', waitingSince: t - 60_000, waitingAgentId: 'a1' })}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText('Un subagente aspetta un tuo permesso · da 1 min')).toBeTruthy();
   });
 
   it('si chiude con il pulsante e con Esc', () => {
@@ -84,5 +109,18 @@ describe('AgentCard', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it('pulsante "apri in una finestra" (#92); senza onClose e onPopOut niente pulsanti né Esc', () => {
+    const onPopOut = vi.fn();
+    const { unmount } = render(<AgentCard agent={agent()} onClose={() => {}} onPopOut={onPopOut} />);
+    const btn = screen.getByRole('button', { name: 'Apri la scheda in una finestra' });
+    expect(btn.getAttribute('title')).toBe('Apri la scheda in una finestra');
+    fireEvent.click(btn);
+    expect(onPopOut).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<AgentCard agent={agent()} />);
+    expect(screen.queryByRole('button')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
   });
 });

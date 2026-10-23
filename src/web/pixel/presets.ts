@@ -1,6 +1,6 @@
 export interface CharacterPreset {
   id: string;
-  /** incarnato "clay": naso, labbra e palpebre inferiori ne derivano una tinta più calda */
+  /** incarnato: gli sprite ne prendono la tinta più vicina della palette (con luce e ombra) */
   skin: string;
   hair: string;
   hairStyle: 'short' | 'long' | 'bun' | 'bald' | 'cap';
@@ -11,7 +11,7 @@ export interface CharacterPreset {
   accessory: 'none' | 'glasses' | 'headphones' | 'tie';
 }
 
-/** Palette da giocattolo in plastilina: incarnati caldi e saturi, capi opachi in toni pastello con pochi accenti. */
+/** Personaggi degli agenti: incarnati, capelli e capi che gli sprite riducono alla palette in pixel art. */
 export const CHARACTER_PRESETS: readonly CharacterPreset[] = [
   { id: 'ada', skin: '#f7b9a4', hair: '#3b2a20', hairStyle: 'bun', beard: null, shirt: '#5b8bc4', pants: '#2f3542', accessory: 'glasses' },
   { id: 'bruno', skin: '#d99a72', hair: '#2a1d1a', hairStyle: 'short', beard: '#3a2230', shirt: '#e8826a', pants: '#3d405b', accessory: 'none' },

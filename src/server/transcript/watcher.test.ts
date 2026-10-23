@@ -182,6 +182,19 @@ describe('createTranscriptWatcher – aggiornamenti incrementali', () => {
     await vi.waitFor(() => expect(w.current().agents[2]).toMatchObject({ name: 'Write usage guide', agentType: 'gsd-doc-writer', area: 'docs' }), { timeout: 3000, interval: 20 });
   });
 
+  it('domanda del subagente senza risposta: attesa sull’agente, senza il testo della domanda', async () => {
+    const w = await startWatcher();
+    const file = join(subDir(), 'workflows', 'wf_fixture', 'agent-a0000000000000002.jsonl');
+    const at = '2026-01-01T10:05:00.000Z';
+    const ask = { type: 'tool_use', id: 'q1', name: 'AskUserQuestion', input: { questions: [{ question: 'segreto?' }] } };
+    await appendFile(file, JSON.stringify({ type: 'assistant', timestamp: at, message: { id: 'msg_q', model: 'claude-sonnet-4-5', content: [ask] } }) + '\n');
+    await vi.waitFor(() => expect(w.current().agents[1]).toMatchObject({ waiting: true, waitingKind: 'question', waitingSince: ts(at) }), { timeout: 3000, interval: 20 });
+    expect(JSON.stringify(w.current())).not.toContain('segreto');
+    const answer = { type: 'user', timestamp: '2026-01-01T10:06:00.000Z', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'q1', content: 'ok' }] } };
+    await appendFile(file, JSON.stringify(answer) + '\n');
+    await vi.waitFor(() => expect(w.current().agents[1]?.waiting).toBeUndefined(), { timeout: 3000, interval: 20 });
+  });
+
   it('nuova sessione in un progetto creato dopo l’avvio', async () => {
     await rm(projectDir(), { recursive: true });
     const w = await startWatcher();

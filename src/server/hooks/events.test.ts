@@ -46,6 +46,20 @@ describe('toHookEvent', () => {
     });
   });
 
+  it('PermissionRequest e Notification di un subagente: agentId e tipo, mai input, messaggio o titolo', () => {
+    const permission = toHookEvent(
+      { session_id: 's1', hook_event_name: 'PermissionRequest', tool_name: 'Bash', tool_input: { command: 'secret' }, agent_id: 'a1' },
+      NOW,
+    );
+    expect(permission).toMatchObject({ event: 'PermissionRequest', agentId: 'a1', toolName: 'Bash' });
+    const notification = toHookEvent(
+      { session_id: 's1', hook_event_name: 'Notification', message: 'secret', title: 'secret', notification_type: 'permission_prompt', agent_id: 'a1' },
+      NOW,
+    );
+    expect(notification).toMatchObject({ event: 'Notification', agentId: 'a1', notification: 'permission' });
+    expect(JSON.stringify([permission, notification])).not.toContain('secret');
+  });
+
   it('agent_id con prefisso "agent-" normalizzato come negli id dei transcript', () => {
     expect(
       toHookEvent({ session_id: 's1', hook_event_name: 'SubagentStart', agent_id: 'agent-abc123' }, NOW)?.agentId,

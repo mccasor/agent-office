@@ -1,20 +1,14 @@
 import { useEffect, useState } from 'react';
-import type { AgentState, AgentStatus, OfficeStatus, SessionState } from '../../shared/types';
+import type { AgentState, SessionState } from '../../shared/types';
 import type { OfficeView } from '../store';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, projectName, StatusDot } from './panels';
+import {
+  agentName, agentTask, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText,
+} from './labels';
+import { DiffStat, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
-
-/** Colore del pallino di una sessione, con la stessa regola dell'icona nella menu bar. */
-export function sessionDot(session: SessionState, agents: AgentState[]): OfficeStatus {
-  if (!session.active) return 'idle';
-  if (session.waiting) return 'waiting';
-  const busy = (s: AgentStatus) => s === 'working' || s === 'entering';
-  return busy(session.status) || agents.some((a) => busy(a.status)) ? 'working' : 'idle';
-}
 
 const issueText = (issues: number[]): string => issues.map((n) => `#${n}`).join(' ');
 
@@ -45,11 +39,22 @@ function saveFilter(filter: ListFilter): void {
   }
 }
 
+/** Nome di persona in grassetto e compito accanto, in grigio. */
+function AgentName({ agent }: { agent: AgentState }) {
+  const task = agentTask(agent);
+  return (
+    <>
+      <strong>{agentName(agent)}</strong>
+      {task && <span className="list-agent__task">{task}</span>}
+    </>
+  );
+}
+
 /** La sessione corrisponde alla ricerca: progetto, branch, titolo o nome di un suo agente (senza maiuscole). */
 function matches(query: string, s: SessionState, agents: AgentState[]): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [projectName(s), s.branch ?? '', s.title ?? '', ...agents.map((a) => a.name)].some((text) => text.toLowerCase().includes(q));
+  return [projectName(s), s.branch ?? '', s.title ?? '', ...agents.flatMap((a) => [a.name, a.nickname ?? ''])].some((text) => text.toLowerCase().includes(q));
 }
 
 /** Agenti della sessione terminati oggi: nome, durata, costo. Chiusa di default. */
@@ -61,8 +66,8 @@ function FinishedToday({ agents }: { agents: AgentState[] }) {
       <ul className="list-agents">
         {agents.map((a) => (
           <li key={a.id} className="list-agent list-agent--done">
-            <span className="list-agent__name" title={a.name}>{a.name}</span>
-            <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
+            <span className="list-agent__name" title={a.name}><AgentName agent={a} /></span>
+            <RoleChip area={a.area} />
             <span className="list-agent__status hud-muted">
               {[`in ${formatDuration(a.updatedAt - a.startedAt)}`, `${formatTokens(a.tokens.output)} token`, a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null]
                 .filter(Boolean)
@@ -88,13 +93,13 @@ function ContextBar({ session }: { session: SessionState }) {
   );
 }
 
+// "Ufficio" e non "2D": c'è una sola vista dell'ufficio, e il nome è lo stesso di "Apri ufficio" (menu bar) e "Nell'ufficio"
 const VIEW_LABEL: [OfficeView, string, string][] = [
-  ['office', '3D', 'Ufficio 3D'],
-  ['pixel', '2D', 'Ufficio 2D in pixel art'],
-  ['list', 'Lista', 'Lista delle sessioni'],
+  ['pixel', 'Ufficio', 'Ufficio in pixel art'],
+  ['list', 'Lista', 'Lista delle istanze'],
 ];
 
-/** Selettore a tre segmenti in alto a destra: ufficio 3D, ufficio 2D o lista delle sessioni. */
+/** Selettore a due segmenti in alto a destra: ufficio o lista delle istanze. */
 export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
     <div className="hud-toggle" role="group" aria-label="Vista">
@@ -108,8 +113,8 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
 }
 
 /**
- * Vista lista: una scheda per sessione (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
- * la casella "Nell'ufficio" sceglie quali sessioni mostrare nella scena 3D.
+ * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
+ * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
 export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
   sessions: SessionState[];
@@ -138,12 +143,12 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
   const shown = active
     .map((s) => {
       const all = agents.filter((a) => a.sessionId === s.id);
-      return { s, all, own: filter.hideDone ? all.filter((a) => a.status !== 'done') : all, dot: sessionDot(s, all) };
+      return { s, all, own: filter.hideDone ? all.filter((a) => a.status !== 'done') : all };
     })
-    .filter(({ s, all, dot }) => (!filter.waitingOnly || dot === 'waiting') && matches(filter.query, s, all));
+    .filter(({ s, all }) => (!filter.waitingOnly || s.dot === 'waiting') && matches(filter.query, s, all));
   return (
-    <main className="list-view" aria-label="Sessioni">
-      <h1 className="list-view__title">Sessioni attive</h1>
+    <main className="list-view" aria-label="Istanze">
+      <h1 className="list-view__title">{INSTANCES_TITLE}</h1>
       {active.length > 0 && (
         <div className="list-filter" role="search">
           <input
@@ -163,9 +168,9 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
           </label>
         </div>
       )}
-      {active.length === 0 && <p className="list-view__empty">Nessuna sessione di Claude Code attiva.</p>}
-      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">Nessuna sessione corrisponde al filtro.</p>}
-      {shown.map(({ s, own, dot }) => {
+      {active.length === 0 && <p className="list-view__empty">{NO_INSTANCES}</p>}
+      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">{NO_MATCH}</p>}
+      {shown.map(({ s, own }) => {
         return (
           <section
             key={s.id}
@@ -174,7 +179,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
             data-session={s.id}
           >
             <header className="list-session__head">
-              <StatusDot status={dot} />
+              <StatusDot status={s.dot} />
               <div className="list-session__name">
                 <strong>{projectName(s)}</strong>
                 {s.branch && <span className="hud-muted">{s.branch}</span>}
@@ -193,7 +198,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                 s.effort,
                 `${formatTokens(s.tokensUsed.output)} token generati`,
                 s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null,
-                `attiva da ${formatDuration(now - s.startedAt)}`,
+                `aperta da ${formatDuration(now - s.startedAt)}`,
                 s.waiting ? waitingText(s.waitingKind, s.waitingSince, now) : SESSION_STATUS_LABEL[s.status],
                 s.tool && !s.waiting ? toolText(s.tool) : null,
               ]
@@ -206,22 +211,23 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                 {own.map((a) => {
                   const pct = a.progress ? percent(a.progress.completed, a.progress.total) : null;
                   return (
-                    <li key={a.id} className={`list-agent list-agent--${a.status}`}>
+                    <li key={a.id} className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}`}>
                       <span className="list-agent__name" title={a.name}>
-                        {a.name}
+                        <AgentName agent={a} />
                         {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
                       </span>
-                      <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
+                      <RoleChip area={a.area} />
                       <span className="list-agent__status hud-muted">
                         {[
-                          STATUS_LABEL[a.status],
-                          a.tool && a.status !== 'done' ? toolText(a.tool) : null,
+                          // bloccato: il motivo al posto dello stato e del tool
+                          a.waiting ? waitingText(a.waitingKind, a.waitingSince, now) : STATUS_LABEL[a.status],
+                          a.tool && a.status !== 'done' && !a.waiting ? toolText(a.tool) : null,
                           `${a.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`,
                         ]
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
-                      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${a.name}`} className="hud-bar--small" />}
+                      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />}
                     </li>
                   );
                 })}

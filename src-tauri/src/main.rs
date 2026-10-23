@@ -26,6 +26,8 @@ const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
+mod cards;
+mod instance;
 mod notify;
 mod panel;
 mod server;
@@ -52,8 +54,6 @@ struct Ui {
 
 const NOTICE_FOR: Duration = Duration::from_secs(60);
 
-/// versione dell'app (Cargo.toml, allineata a package.json e tauri.conf.json da scripts/release.mjs)
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// ricerca automatica degli aggiornamenti: poco dopo l'avvio e poi a questo intervallo
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
@@ -90,7 +90,7 @@ impl Status {
         match self {
             Status::Working => "Claude sta lavorando",
             Status::Waiting => "Claude aspetta un tuo input",
-            Status::Idle => "Nessuna attività",
+            Status::Idle => "Claude è inattivo",
             Status::Offline => "Server non raggiungibile",
         }
     }
@@ -171,8 +171,8 @@ fn overview_from(snapshot: &str) -> Overview {
         .flatten()
         .filter(|s| s.get("active").and_then(Value::as_bool) == Some(true))
         .map(|s| {
-            let cwd = str_of(s, "cwd");
-            let project = cwd.rsplit('/').find(|p| !p.is_empty()).map(str::to_string).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
+            // progetto calcolato dal server; senza (cwd assente o server vecchio) l'inizio dell'id
+            let project = Some(str_of(s, "project")).filter(|p| !p.is_empty()).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
             let branch = str_of(s, "branch");
             let waiting = (s.get("waiting").and_then(Value::as_bool) == Some(true))
                 .then(|| s.get("waitingKind").and_then(Value::as_str).unwrap_or("input").to_string());
@@ -326,13 +326,13 @@ fn set_autostart(enabled: bool) {
     let _ = std::fs::write(path, plist);
 }
 
-/// Mostra la finestra dell'ufficio sulla vista indicata ("office" o "list"), evidenziando la sessione `focus`;
+/// Mostra la finestra dell'ufficio sulla vista indicata ("pixel" o "list"), evidenziando la sessione `focus`;
 /// la crea alla prima apertura (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
     // solo id di sessione (lettere, cifre, trattini): nessun rischio di iniettare codice nell'eval
     let focus = focus.filter(|id| id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).unwrap_or("");
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
-        // cambio di vista senza ricaricare: la scena resta com'è (posizioni, post-it); ricarica solo se serve
+        // cambio di vista senza ricaricare: l'ufficio resta com'è (posizioni); ricarica solo se serve
         let _ = window.eval(format!(
             "window.agentOfficeFocus ? window.agentOfficeFocus('{view}', '{focus}') : location.assign('http://127.0.0.1:{PORT}/?view={view}&session={focus}')"
         ));
@@ -345,6 +345,8 @@ fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
         .title("Agent Office")
         .inner_size(1200.0, 800.0)
         .min_inner_size(480.0, 360.0)
+        // schede staccabili (#92): window.open della pagina apre una finestra Tauri dedicata
+        .on_new_window(cards::on_new_window(app.clone(), PORT))
         .build();
     if let Ok(window) = window {
         let _ = window.set_focus();
@@ -383,6 +385,11 @@ fn send_notifications(app: &AppHandle, prev: &[SessionFacts], next: &[SessionFac
     }
 }
 
+/// Versione dell'app: quella di package.json, letta da tauri.conf.json in compilazione (Cargo.toml resta fisso).
+fn version(app: &AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 /// Cerca versioni più recenti (se non è già in corso una ricerca o un aggiornamento).
 fn check_updates(app: &AppHandle) {
     if !update_state(app).enabled() {
@@ -390,7 +397,7 @@ fn check_updates(app: &AppHandle) {
     }
     set_update_state(app, UpdateState::Checking);
     let app = app.clone();
-    thread::spawn(move || set_update_state(&app, updates::check(VERSION)));
+    thread::spawn(move || set_update_state(&app, updates::check(&version(&app))));
 }
 
 /// Clic su "Aggiornamenti": con una versione nuova la installa, altrimenti cerca.
@@ -405,7 +412,7 @@ fn on_updates_click(app: &AppHandle) {
     thread::spawn(move || match updates::upgrade() {
         // se riesce brew chiude l'app prima di finire; se l'app è ancora qui l'aggiornamento non è avvenuto
         Upgrade::Brew(mut child) => match child.wait() {
-            Ok(status) if status.success() => set_update_state(&app, updates::check(VERSION)),
+            Ok(status) if status.success() => set_update_state(&app, updates::check(&version(&app))),
             _ => set_update_state(&app, UpdateState::UpgradeFailed),
         },
         Upgrade::Page => set_update_state(&app, state),
@@ -413,7 +420,7 @@ fn on_updates_click(app: &AppHandle) {
     });
 }
 
-fn update_json(update: &UpdateState) -> Value {
+fn update_json(update: &UpdateState, current: &str) -> Value {
     let (kind, latest, behind) = match update {
         UpdateState::Unknown => ("unknown", None, 0),
         UpdateState::Checking => ("checking", None, 0),
@@ -423,7 +430,7 @@ fn update_json(update: &UpdateState) -> Value {
         UpdateState::Failed => ("failed", None, 0),
         UpdateState::UpgradeFailed => ("upgradefailed", None, 0),
     };
-    json!({ "kind": kind, "label": update.label(VERSION), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
+    json!({ "kind": kind, "label": update.label(current), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
 }
 
 /// Tutto quello che mostra il pannello: snapshot del server, aggiornamenti, avvisi, impostazioni.
@@ -433,10 +440,10 @@ fn panel_state(app: AppHandle) -> Value {
     let prefs = *ui.prefs.lock().unwrap();
     let notice = ui.notice.lock().unwrap().clone().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text);
     json!({
-        "version": VERSION,
+        "version": version(&app),
         "snapshot": ui.snapshot.lock().unwrap().clone(),
         "serverError": app.state::<Server>().0.lock().unwrap().error(),
-        "update": update_json(&ui.update.lock().unwrap()),
+        "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": notice,
         "prefs": { "notifyWaiting": prefs.notify_waiting, "notifyDone": prefs.notify_done },
         "autostart": autostart_enabled(),
@@ -454,7 +461,7 @@ fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
     match action.as_str() {
         "open-office" => {
             hide();
-            show_office(&app, "office", None);
+            show_office(&app, "pixel", None);
         }
         "open-session" => {
             hide();
@@ -491,6 +498,8 @@ fn refresh_panel(app: &AppHandle) {
 }
 
 fn main() {
+    // prima di tutto: il server sulla porta deve essere il nostro, non quello di una copia vecchia
+    instance::take_over();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![panel_state, panel_action, panel_resize])
@@ -590,8 +599,8 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // chiudere la finestra la nasconde: l'app resta nella menu bar
-            WindowEvent::CloseRequested { api, .. } => {
+            // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede si chiudono davvero
+            WindowEvent::CloseRequested { api, .. } if !cards::is_card(window.label()) => {
                 api.prevent_close();
                 let _ = window.hide();
             }
@@ -619,9 +628,9 @@ mod tests {
     const SNAPSHOT: &str = r#"{
       "status": "waiting",
       "sessions": [
-        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "branch": "feat/board", "status": "working", "waiting": true, "waitingKind": "permission"},
-        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "branch": null, "status": "done", "waiting": false},
-        {"id": "s3", "active": false, "cwd": "/old", "branch": "main", "status": "done", "waiting": false}
+        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "project": "agent-office", "branch": "feat/board", "status": "working", "waiting": true, "waitingKind": "permission"},
+        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "project": "olimpo-ui", "branch": null, "status": "done", "waiting": false},
+        {"id": "s3", "active": false, "cwd": "/old", "project": "old", "branch": "main", "status": "done", "waiting": false}
       ],
       "agents": []
     }"#;
@@ -637,6 +646,18 @@ mod tests {
                 SessionFacts { id: "s2".into(), place: "olimpo-ui".into(), status: "done".into(), waiting: None },
             ]
         );
+    }
+
+    #[test]
+    fn progetto_assente_inizio_dell_id() {
+        let o = overview_from(r#"{"status":"idle","sessions":[{"id":"0123456789ab","active":true,"cwd":"/x/y","project":null,"status":"done"}]}"#);
+        assert_eq!(o.facts[0].place, "01234567");
+    }
+
+    #[test]
+    fn etichette_di_stato() {
+        assert_eq!(Status::Idle.label(), "Claude è inattivo");
+        assert_eq!(Status::Waiting.label(), "Claude aspetta un tuo input");
     }
 
     #[test]

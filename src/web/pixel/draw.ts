@@ -1,5 +1,5 @@
 import { CHAR_H, type PixelLook } from './sprites';
-import { TILE, type Cell, type Facing, type Furniture, type FurnitureKind, type PixelPlan, type Pose, type Spot } from './types';
+import { TILE, WALL_DECOR, type Cell, type Facing, type Furniture, type FurnitureKind, type PixelPlan, type Pose, type Spot } from './types';
 
 /**
  * Geometria e ordine di disegno della vista 2D, puri (il canvas sta in PixelOffice.tsx). Coordinate in pixel a
@@ -49,8 +49,8 @@ export function feetOf(pos: Cell): { x: number; y: number } {
   return { x: Math.round(pos.x * TILE + TILE / 2), y: Math.round(pos.z * TILE + TILE - 2) };
 }
 
-/** arredi piatti, sotto a tutto (anche ai personaggi): tappeti e finestre sulle pareti */
-export const FLAT = new Set<FurnitureKind>(['rug', 'window']);
+/** arredi piatti, sotto a tutto (anche ai personaggi): tappeti e quanto è appeso alle pareti */
+export const FLAT = new Set<FurnitureKind>(['rug', ...WALL_DECOR]);
 
 /** a parità di riga: prima i piani delle scrivanie, poi i monitor sopra, poi il resto, infine i personaggi */
 const TIE: Partial<Record<FurnitureKind, number>> = { desk: 0, 'boss-desk': 0, 'coffee-table': 0, monitor: 1 };
@@ -60,7 +60,7 @@ const ACTOR_TIE = 3;
 export const furnitureDepth = (f: Pick<Furniture, 'cell' | 'h'>): number => f.cell.z + f.h - 1;
 
 export type SpriteRef =
-  | { type: 'furniture'; kind: FurnitureKind; facing: Facing; w: number; h: number; frame: number }
+  | { type: 'furniture'; kind: FurnitureKind; facing: Facing; w: number; h: number; frame: number; variant: number }
   | { type: 'character'; look: PixelLook; pose: Pose; facing: Facing; frame: number }
   | { type: 'shadow' }
   | { type: 'selection' };
@@ -75,13 +75,13 @@ export interface DrawOp {
   sprite: SpriteRef;
 }
 
-export function furnitureOp(f: Furniture, frame = 0): DrawOp {
+export function furnitureOp(f: Furniture, frame = 0, variant = f.variant ?? 0): DrawOp {
   return {
     depth: furnitureDepth(f),
     tie: TIE[f.kind] ?? 2,
     x: f.cell.x * TILE,
     y: f.cell.z * TILE,
-    sprite: { type: 'furniture', kind: f.kind, facing: f.facing, w: f.w, h: f.h, frame },
+    sprite: { type: 'furniture', kind: f.kind, facing: f.facing, w: f.w, h: f.h, frame, variant },
   };
 }
 

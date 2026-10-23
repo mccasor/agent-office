@@ -1,6 +1,6 @@
 # Agent Office
 
-Ufficio 3D, visto a 3/4 come uno spaccato, che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente: entrano dalla porta con una tazza di caffè fumante, la posano sulla scrivania e mostrano nome, issue, area di lavoro, avanzamento e token. Sulla parete nord tre board (to do, in progress, in review) con un post-it per task (titolo e issue dell'agente): entrando l'agente sposta il proprio da "to do" a "in progress", andando via da "in progress" a "in review". Chi finisce riprende la tazza e aspetta in area relax, dietro il separè, tra poltroncine e divanetti davanti alla parete di muschio; quando hanno finito tutti escono insieme. Claude stesso compare come **Claudio Code** nella stanza del boss, con gli stessi comportamenti.
+Ufficio 2D in pixel art che mostra in tempo reale gli agenti di Claude Code al lavoro nella cartella corrente. Ogni istanza di Claude Code ha la sua stanza, dove Claude stesso siede alla scrivania del boss come **Claudio Code**: i suoi subagenti entrano dal corridoio, prendono una postazione e lavorano al computer; chi finisce aspetta in sala relax finché lavora un altro agente della stessa istanza, poi escono insieme. A sinistra l'elenco delle istanze (branch, diff, contesto, agenti), a destra la scheda dell'agente cliccato; in alto a destra si passa alla vista lista.
 
 ## Installazione (una volta sola)
 
@@ -80,6 +80,13 @@ npm run app:dev      # sviluppo
 agent-office install-hooks --global   # hook per tutte le sessioni (servono per il pallino rosso)
 ```
 
+Release: la versione sta solo in `package.json` (`src-tauri/tauri.conf.json` la legge da lì, `Cargo.toml` resta a `0.0.0`).
+
+```bash
+npm version minor --no-git-tag-version   # alza la versione (anche patch o major)
+npm run app:release -- --publish         # build universale, release nel tap e cask aggiornato
+```
+
 ## Impostazioni
 
 Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quando cambi le notifiche):
@@ -108,6 +115,7 @@ Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quan
 | Modello, effort, contesto, token usati/rimanenti | transcript della sessione principale |
 | Progetto, branch, righe +/- | `git` nella cartella monitorata |
 | Stato immediato degli agenti | eventi hook in `~/.agent-office/events/<cwd>.jsonl` |
+| Attesa di un tuo input ("!" rosso) | domanda senza risposta nel transcript (`AskUserQuestion`, `ExitPlanMode`) + hook `Notification`, attribuito al subagente con `PermissionRequest`/`PreToolUse`; la sessione eredita l'attesa dei suoi subagenti. Mai il testo della domanda |
 
 **Area di lavoro** (backend, frontend, architecture, test, docs, devops, research, other): dedotta da tipo di agente, descrizione e file toccati.
 
@@ -134,7 +142,7 @@ Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quan
 
 ```
 ~/.claude/projects/<cwd>/*.jsonl ─┐
-~/.agent-office/events/*.jsonl  ──┼─> server Node (127.0.0.1) ──SSE──> React + react-three-fiber
+~/.agent-office/events/*.jsonl  ──┼─> server Node (127.0.0.1) ──SSE──> React + canvas 2D
 git (branch, diff --shortstat) ───┘
 ```
 
@@ -147,9 +155,8 @@ git (branch, diff --shortstat) ───┘
 | `src/server/state` | aggregazione in `Snapshot` |
 | `src/server/http` | API + SSE + statici |
 | `src/cli.ts` | comando `agent-office` |
-| `src/web/scene` | openspace, posti, pathfinding A*, movimento |
-| `src/web/characters` | personaggi procedurali da preset |
-| `src/web/hud` | pannelli ed etichette |
+| `src/web/pixel` | ufficio 2D in pixel art: pianta, posti, pathfinding A*, movimento, sprite |
+| `src/web/hud` | pannelli, scheda agente e vista lista |
 | `src/web/store` | stato client + stream SSE |
 
 ## Sviluppo

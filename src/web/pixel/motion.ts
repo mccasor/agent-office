@@ -1,4 +1,4 @@
-import type { Cell } from './layout';
+import type { Cell } from './path';
 
 /** unità (celle) al secondo */
 export const WALK_SPEED = 3.2;
@@ -6,7 +6,7 @@ export const WALK_SPEED = 3.2;
 export interface PathPosition {
   x: number;
   z: number;
-  /** radianti (rotation.y, modello rivolto a +z): direzione del segmento corrente */
+  /** radianti, atan2(dx, dz): direzione del segmento corrente (0 = verso sud) */
   direction: number;
   /** true quando distanceTravelled >= lunghezza del path */
   done: boolean;
@@ -44,12 +44,12 @@ export function advanceAlongPath(path: readonly Cell[], distanceTravelled: numbe
   return { x: last.x, z: last.z, direction, done: true };
 }
 
-/** secondi tra due partenze: più della sosta alla board, così chi segue non si sovrappone a chi è davanti */
+/** secondi tra due partenze: chi segue non si sovrappone a chi è davanti */
 export const START_GAP = 1.2;
 
 /**
  * Turni di partenza condivisi tra gli attori: chi si muove nello stesso momento (es. più agenti che entrano
- * insieme dalla porta) parte in fila indiana, distanziato di START_GAP secondi. Tempo in secondi (clock della scena).
+ * insieme dalla porta) parte in fila indiana, distanziato di START_GAP secondi. Tempo in secondi.
  */
 export class StartQueue {
   private next = -Infinity;

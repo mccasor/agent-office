@@ -107,6 +107,9 @@
     .agent:hover { background: var(--hover); }
     .agent .dot { width: 7px; height: 7px; margin-top: 0; box-shadow: none; }
     .agent__name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* nome di persona e, in grigio, il compito */
+    .agent__name b { font-weight: 600; }
+    .agent__name span { color: var(--muted); }
     .agent__tool { color: var(--muted); white-space: nowrap; max-width: 45%; overflow: hidden; text-overflow: ellipsis; }
 
     .empty { padding: 4px 10px 8px; color: var(--muted); }
@@ -140,7 +143,9 @@
       '</svg>';
 
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-    const project = (s) => (s.cwd || '').split('/').filter(Boolean).pop() || s.id.slice(0, 8);
+    // progetto e pallino calcolati dal server (snapshot); senza (server vecchio) l'inizio dell'id e grigio
+    const project = (s) => s.project || s.id.slice(0, 8);
+    const dotOf = (s) => s.dot || 'idle';
     const busy = (st) => st === 'working' || st === 'entering';
     const minutes = (ms) => {
       const m = Math.floor(ms / 60000);
@@ -152,9 +157,8 @@
     const WAITING = { permission: 'aspetta un tuo permesso', question: 'ti ha fatto una domanda', plan: "aspetta l'ok al piano", input: 'aspetta un tuo input' };
     const waitingText = (s) => (WAITING[s.waitingKind] || WAITING.input) + (s.waitingSince ? ` · da ${minutes(Date.now() - s.waitingSince)}` : '');
     const toolText = (t) => (t ? (t.target ? `${t.name} ${t.target}` : t.name) : '');
-    // stessa regola del pallino dell'icona e della vista lista
-    const dotOf = (s, agents) => (s.waiting ? 'waiting' : busy(s.status) || agents.some((a) => busy(a.status)) ? 'working' : 'idle');
-    const SESSION_STATUS = { working: 'al lavoro', entering: 'al lavoro', idle: 'inattiva', done: 'pronta' };
+    // stesse etichette dell'ufficio (src/web/hud/labels.ts): stato di Claude stesso nell'istanza
+    const SESSION_STATUS = { working: 'al lavoro', entering: 'in arrivo', idle: 'inattivo', done: 'pronto' };
 
     let state = null;
 
@@ -163,7 +167,9 @@
       const snap = state.snapshot || { sessions: [], agents: [] };
       const sessions = (snap.sessions || []).filter((s) => s.active);
       const agents = snap.agents || [];
-      const working = agents.filter((a) => busy(a.status)).length;
+      // solo gli agenti al lavoro (non inattivi né terminati) delle istanze aperte
+      const open = new Set(sessions.map((s) => s.id));
+      const working = agents.filter((a) => open.has(a.sessionId) && busy(a.status)).length;
       const waitingOnes = sessions.filter((s) => s.waiting);
       const u = state.update;
       let html = '';
@@ -178,7 +184,7 @@
       }
 
       // stato dell'IA
-      let dot = 'idle', title = 'Nessuna attività', sub = sessions.length ? `${sessions.length} ${sessions.length === 1 ? 'istanza aperta' : 'istanze aperte'}` : 'Nessuna istanza di Claude Code aperta';
+      let dot = 'idle', title = 'Claude è inattivo', sub = sessions.length ? `${sessions.length} ${sessions.length === 1 ? 'istanza aperta' : 'istanze aperte'}` : 'Nessuna istanza di Claude Code aperta';
       let subClass = '';
       if (!state.snapshot) {
         title = 'Server non raggiungibile';
@@ -186,7 +192,7 @@
         subClass = state.serverError ? ' status__sub--error' : '';
       } else if (waitingOnes.length) {
         dot = 'waiting';
-        title = waitingOnes.length === 1 ? 'Claude è bloccato' : `${waitingOnes.length} istanze bloccate`;
+        title = waitingOnes.length === 1 ? 'Claude aspetta un tuo input' : `${waitingOnes.length} istanze aspettano un tuo input`;
         sub = waitingOnes.map((s) => `${esc(project(s))}: ${waitingText(s)}`).join(' · ');
       } else if (snap.status === 'working') {
         dot = 'working';
@@ -203,18 +209,18 @@
         <button class="row" data-action="open-office">${icon('office')}<span class="row__label">Apri ufficio</span></button>
         <button class="row" data-action="autostart">${icon('power')}<span class="row__label">Avvia al login</span>${sw(state.autostart)}</button>
         <button class="row" data-action="notify-waiting">${icon('bell')}<span class="row__label">Notifica quando Claude aspetta</span>${sw(state.prefs.notifyWaiting)}</button>
-        <button class="row" data-action="notify-done">${icon('check')}<span class="row__label">Notifica a fine lavoro</span>${sw(state.prefs.notifyDone)}</button>
+        <button class="row" data-action="notify-done">${icon('check')}<span class="row__label">Notifica quando Claude è pronto</span>${sw(state.prefs.notifyDone)}</button>
         <div class="row">${icon('link')}<span class="row__label">Hook di Claude Code</span>
           <button class="mini" data-action="hooks-install">Installa</button><button class="mini" data-action="hooks-remove">Rimuovi</button></div>
         ${showCheck ? `<button class="row" data-action="update" ${u.kind === 'checking' ? 'disabled' : ''}>${icon('refresh')}<span class="row__label">${u.kind === 'checking' || u.kind === 'failed' ? esc(u.label) : 'Cerca aggiornamenti'}</span></button>` : ''}
         ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}`;
 
       // istanze e agenti
-      html += `<hr><div class="section">Istanze e agenti</div>`;
+      html += `<hr><div class="section">Istanze aperte</div>`;
       if (!sessions.length) html += `<div class="empty">Nessuna istanza di Claude Code aperta</div>`;
       for (const s of sessions) {
         const own = agents.filter((a) => a.sessionId === s.id && a.status !== 'done');
-        const d = dotOf(s, own);
+        const d = dotOf(s);
         const ctx = s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
         const ctxClass = ctx > 90 ? ' pill--danger' : ctx > 70 ? ' pill--warn' : '';
         const line = s.waiting ? waitingText(s) : s.tool ? toolText(s.tool) : SESSION_STATUS[s.status] || '';
@@ -226,7 +232,7 @@
         for (const a of own) {
           const ad = busy(a.status) ? 'working' : 'idle';
           html += `<button class="agent" data-action="open-session" data-arg="${esc(s.id)}"><span class="dot dot--${ad}"></span>
-            <span class="agent__name" title="${esc(a.name)}">${esc(a.name)}</span><span class="agent__tool">${esc(toolText(a.tool) || (a.status === 'idle' ? 'inattivo' : ''))}</span></button>`;
+            <span class="agent__name" title="${esc(a.name)}">${a.nickname ? `<b>${esc(a.nickname)}</b> <span>${esc(a.name)}</span>` : esc(a.name)}</span><span class="agent__tool">${esc(toolText(a.tool) || (a.status === 'idle' ? 'inattivo' : ''))}</span></button>`;
         }
       }
 

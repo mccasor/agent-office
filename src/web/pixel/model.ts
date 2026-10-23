@@ -1,6 +1,6 @@
 import type { AgentState, SessionState, Snapshot } from '../../shared/types';
-import { BOSS_PREFIX, bossOf } from '../officeModel';
-import { assignSpots } from '../scene/seats';
+import { BOSS_PREFIX, bossOf } from './boss';
+import { assignSpots } from './seats';
 import { createPlan } from './plan';
 import { INSTANCE_ROOMS, type PixelActor, type PixelModel, type PixelSeating, type Spot } from './types';
 
@@ -44,7 +44,7 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
   const { rooms, roomless } = assignRooms(prev.rooms, active);
 
   // chi ha finito aspetta in sala relax finché lavora un subagente della sua sessione, solo se era già presente
-  // (come in officeModel: un terminato mai visto lavorare, o già uscito, non rientra)
+  // (un terminato mai visto lavorare, o già uscito, non rientra)
   const busy = new Set(agents.filter((a) => a.status !== 'done').map((a) => a.sessionId));
   const present = (a: AgentState) => a.id.startsWith(BOSS_PREFIX) || Object.hasOwn(prev.spots, a.id);
   const resting = [...agents, ...bosses].filter((a) => a.status === 'done' && busy.has(a.sessionId) && present(a));
@@ -73,7 +73,8 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
   const spotById = new Map<string, Spot>(
     [...plan.rooms.flatMap((r) => [...r.desks, ...(r.boss ? [r.boss] : []), ...r.seats]), ...plan.overflow].map((s) => [s.id, s]),
   );
-  const waiting = new Set(active.filter((s) => s.waiting).map((s) => s.id));
+  // il boss solo se è Claude stesso a essere bloccato; un subagente bloccato ha il suo fumetto
+  const waiting = new Set(active.filter((s) => s.waiting && !s.waitingAgentId).map((s) => s.id));
   const actors: PixelActor[] = [...agents, ...bosses].map((a) => {
     const boss = a.id.startsWith(BOSS_PREFIX);
     const spot = spots[a.id];
@@ -83,7 +84,7 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
       sessionId: a.sessionId,
       boss,
       target: spot === undefined ? null : (spotById.get(spot) ?? null),
-      waiting: boss && waiting.has(a.sessionId),
+      waiting: boss ? waiting.has(a.sessionId) : a.waiting === true,
     };
   });
   return { plan, rooms, spots, actors, roomless };

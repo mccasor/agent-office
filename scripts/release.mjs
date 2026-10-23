@@ -2,6 +2,8 @@
 // Release dell'app per la menu bar via Homebrew.
 //   node scripts/release.mjs            build universale + .dmg + cask in release/ (niente su GitHub)
 //   node scripts/release.mjs --publish  in più: release GitHub nel tap con il .dmg e cask aggiornato nel tap
+// La versione è solo in package.json (tauri.conf.json la legge da lì): prima alzala con
+//   npm version patch|minor|major --no-git-tag-version
 // Richiede rustup con il target x86_64-apple-darwin; per --publish, gh autenticato con accesso al tap.
 import { execFileSync } from 'node:child_process';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,12 +16,6 @@ const root = new URL('..', import.meta.url).pathname;
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const publish = process.argv.includes('--publish');
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: 'inherit', cwd: root, ...opts });
-
-const tauriVersion = JSON.parse(readFileSync(join(root, 'src-tauri/tauri.conf.json'), 'utf8')).version;
-if (tauriVersion !== version) throw new Error(`versione di package.json (${version}) diversa da tauri.conf.json (${tauriVersion})`);
-// l'app confronta la propria versione (Cargo.toml) con le release del tap per proporre gli aggiornamenti
-const cargoVersion = /^version = "([^"]+)"/m.exec(readFileSync(join(root, 'src-tauri/Cargo.toml'), 'utf8'))?.[1];
-if (cargoVersion !== version) throw new Error(`versione di package.json (${version}) diversa da Cargo.toml (${cargoVersion})`);
 
 run('npx', ['tauri', 'build', '--target', 'universal-apple-darwin', '--bundles', 'app,dmg']);
 

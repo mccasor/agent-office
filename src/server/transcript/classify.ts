@@ -4,7 +4,8 @@ type Rule = [area: WorkArea, pattern: RegExp];
 
 /** Token di agentType (separati da - _ spazio), in ordine di priorità. */
 const AGENT_TYPE_RULES: Rule[] = [
-  ['frontend', /^(ui|ux|frontend|front|web|css|design(er)?)$/],
+  ['design', /^(ui|ux|design(er)?|css|figma|graphics?|icons?)$/],
+  ['frontend', /^(frontend|front|web)$/],
   ['docs', /^(docs?|documentation|writer)$/],
   ['test', /^(tests?|testing|tester|qa|e2e|nyquist|uat)$/],
   ['architecture', /^(plan|planner|architect|architecture|roadmapper|spec)$/],
@@ -18,7 +19,8 @@ const DESCRIPTION_RULES: Rule[] = [
   ['test', /\b(tests?|testing|e2e|unit|spec|vitest|jest|playwright|cypress|qa|coverage|collaudo)\b/],
   ['docs', /\b(docs?|documentation|documentazione|readme|changelog|guida|guide|manuale)\b/],
   ['devops', /\b(ci|cd|pipeline|deploy\w*|docker\w*|kubernetes|k8s|helm|terraform|infra\w*|release|rilascio|github actions)\b/],
-  ['frontend', /\b(ui|ux|frontend|front-end|react|css|components?|componenti?|pages?|pagina|view|hud|scene|scena|3d|layout|styles?|stile|web|characters?|personaggi)\b/],
+  ['design', /\b(ui|ux|figma|grafica|graphics?|icons?|icone|icona|css|palette|colou?rs?|colori|mockups?|wireframes?|sprites?|pixel art|typography|tipografia|illustrations?|illustrazion[ei]|design system)\b/],
+  ['frontend', /\b(frontend|front-end|react|components?|componenti?|pages?|pagina|view|hud|scene|scena|3d|layout|styles?|stile|web|characters?|personaggi)\b/],
   ['backend', /\b(backend|back-end|server|api|endpoints?|database|db|sql|migrations?|migrazion[ei]|sse|http|services?|servizi?o?|watcher)\b/],
   ['architecture', /\b(architecture|architettura|plan|piano|pianifica\w*|refactor\w*|struttura|structure|contract|contratto|design)\b/],
   ['research', /\b(explore|esplora\w*|research|ricerca|analy[sz]e|analisi|investigate|indaga\w*|survey|audit|review|search|cerca)\b/],
@@ -29,6 +31,7 @@ const PATH_RULES: Rule[] = [
   ['test', /(\.(test|spec)\.[cm]?[jt]sx?$)|(\/(__tests__|tests?|e2e|fixtures?)\/)/],
   ['docs', /(\.(md|mdx|rst|adoc|txt)$)|(\/docs?\/)/],
   ['devops', /(\/\.github\/)|(\/dockerfile[^/]*$)|(docker-compose[^/]*$)|(\.tf$)|(\/makefile$)|(\/jenkinsfile$)|(\.gitlab-ci\.ya?ml$)|(\/(k8s|helm|deploy|infra)\/)/],
+  ['design', /(\.(svg|png|jpe?g|gif|webp|ico|icns|fig|sketch|psd|woff2?|ttf|otf)$)|(\/(icons?|images?|fonts?)\/)/],
   ['frontend', /(\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$)|(\/(web|client|frontend|ui|components?|pages)\/)/],
   ['backend', /(\.(go|py|rb|java|kt|rs|php|cs|sql)$)|(\/(server|api|backend|db|migrations?)\/)/],
 ];

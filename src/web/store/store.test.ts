@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../shared/types';
-import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './index';
+import { connectSnapshotStream, toView, useOfficeStore, visibleSnapshot } from './index';
 
 type Listener = (ev: MessageEvent) => void;
 
@@ -36,7 +36,7 @@ class FakeEventSource {
   }
 }
 
-const snap = (generatedAt: number): Snapshot => ({ status: 'idle', repo: null, sessions: [], agents: [], generatedAt });
+const snap = (generatedAt: number): Snapshot => ({ status: 'idle', sessions: [], agents: [], generatedAt });
 const last = () => FakeEventSource.instances.at(-1)!;
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -185,7 +185,7 @@ describe('sessioni visibili nell\'ufficio', () => {
   it('visibleSnapshot toglie le sessioni nascoste e i loro agenti', () => {
     const s = (id: string) => ({ id }) as Snapshot['sessions'][number];
     const a = (id: string, sessionId: string) => ({ id, sessionId }) as Snapshot['agents'][number];
-    const snap = { status: 'idle', repo: null, sessions: [s('x'), s('y')], agents: [a('1', 'x'), a('2', 'y')], generatedAt: 0 } as Snapshot;
+    const snap = { status: 'idle', sessions: [s('x'), s('y')], agents: [a('1', 'x'), a('2', 'y')], generatedAt: 0 } as Snapshot;
     expect(visibleSnapshot(snap, [])).toBe(snap);
     const v = visibleSnapshot(snap, ['y'])!;
     expect(v.sessions.map((x) => x.id)).toEqual(['x']);
@@ -201,19 +201,24 @@ describe('sessioni visibili nell\'ufficio', () => {
     expect(useOfficeStore.getState().hiddenSessions).toEqual([]);
     useOfficeStore.getState().setView('list');
     expect(useOfficeStore.getState().view).toBe('list');
-    useOfficeStore.getState().setView('office');
+    useOfficeStore.getState().setView('pixel');
   });
 });
 
 describe('vista e scheda agente', () => {
-  it('select apre e chiude la scheda; setView accetta la vista 2D', () => {
+  it('select apre e chiude la scheda', () => {
     useOfficeStore.getState().select('a1');
     expect(useOfficeStore.getState().selectedAgent).toBe('a1');
     useOfficeStore.getState().select(null);
     expect(useOfficeStore.getState().selectedAgent).toBeNull();
-    useOfficeStore.getState().setView('pixel');
-    expect(useOfficeStore.getState().view).toBe('pixel');
-    useOfficeStore.getState().setView('office');
+  });
+
+  it('toView: la vecchia vista 3D (office) apre l\'ufficio 2D, valori sconosciuti -> null', () => {
+    expect(toView('office')).toBe('pixel');
+    expect(toView('pixel')).toBe('pixel');
+    expect(toView('list')).toBe('list');
+    expect(toView('boh')).toBeNull();
+    expect(toView(null)).toBeNull();
   });
 
   /** store nuovo con le preferenze salvate `saved` e la query `search` */
@@ -226,7 +231,7 @@ describe('vista e scheda agente', () => {
     return { store, saved: () => JSON.parse(data.get('agent-office.prefs')!) as unknown };
   }
 
-  it('preferenze: vista 2D ricordata, quelle vecchie valide, valori sconosciuti → 3D, ?view prevale', async () => {
+  it('preferenze: vista ricordata, valori sconosciuti → ufficio, 3D salvato o chiesto → ufficio 2D, ?view prevale', async () => {
     const { store, saved } = await freshStore({ view: 'pixel', hiddenSessions: ['x'] });
     expect(store.getState().view).toBe('pixel');
     expect(store.getState().hiddenSessions).toEqual(['x']);
@@ -236,7 +241,9 @@ describe('vista e scheda agente', () => {
     store.getState().select('a1');
     expect(saved()).toEqual({ view: 'list', hiddenSessions: ['x'] });
     expect((await freshStore({ view: 'list' })).store.getState().view).toBe('list');
-    expect((await freshStore({ view: 'boh' })).store.getState().view).toBe('office');
+    expect((await freshStore({ view: 'boh' })).store.getState().view).toBe('pixel');
+    expect((await freshStore({ view: 'office' })).store.getState().view).toBe('pixel');
+    expect((await freshStore({ view: 'list' }, '?view=office')).store.getState().view).toBe('pixel');
     expect((await freshStore({ view: 'list' }, '?view=pixel')).store.getState().view).toBe('pixel');
     expect((await freshStore({ view: 'pixel' }, '?view=nulla')).store.getState().view).toBe('pixel');
   });

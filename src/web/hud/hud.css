@@ -1,4 +1,4 @@
-/* HUD agent-office: pannelli overlay ed etichette 3D.
+/* HUD agent-office: pannelli overlay ed etichette.
    Niente backdrop-filter: sopra il canvas WebGL la sfocatura andrebbe ricalcolata a ogni frame. */
 :root {
   --hud-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -18,6 +18,7 @@
 
   --area-backend: #2f6fde;
   --area-frontend: #c2399a;
+  --area-design: #6f8f00;
   --area-architecture: #7b4ddb;
   --area-test: #2e9d57;
   --area-docs: #b8860b;
@@ -43,6 +44,7 @@
 
     --area-backend: #6c9cf0;
     --area-frontend: #ec6fc7;
+    --area-design: #b6d84a;
     --area-architecture: #a78bfa;
     --area-test: #4cc27a;
     --area-docs: #e6b84a;
@@ -93,17 +95,12 @@
 .hud-row dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; }
 .hud-muted { color: var(--hud-muted); }
 .hud-title { font-weight: 600; font-size: 14px; }
-.hud-session { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; min-width: 0; }
-.hud-session .hud-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-session__branch { font-family: var(--hud-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-session__alert { margin: 0 0 6px; color: var(--hud-danger); font-weight: 600; }
-.hud-branch { font-family: var(--hud-mono); font-size: 12px; color: var(--hud-muted); }
 .hud-diff { display: flex; gap: 10px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .hud-added { color: var(--hud-added); font-weight: 600; }
 .hud-removed { color: var(--hud-removed); font-weight: 600; }
 
-.hud-details { margin-top: 4px; }
-.hud-details > summary { cursor: pointer; color: var(--hud-muted); font-size: 12px; }
 .hud-breakdown { margin: 2px 0 0; font-size: 12px; }
 
 .hud-context { margin: 6px 0; }
@@ -130,52 +127,11 @@
 .hud-bar[data-level='ok'] .hud-bar__fill { background: var(--hud-ok); }
 .hud-bar[data-level='warn'] .hud-bar__fill { background: var(--hud-warn); }
 .hud-bar[data-level='danger'] .hud-bar__fill { background: var(--hud-danger); }
-.hud-bar--indeterminate .hud-bar__fill {
-  width: 35%;
-  animation: hud-indeterminate 1.4s ease-in-out infinite;
-}
-@keyframes hud-indeterminate {
-  from { transform: translateX(-100%); }
-  to { transform: translateX(290%); }
-}
 @media (prefers-reduced-motion: reduce) {
-  .hud-bar--indeterminate .hud-bar__fill { animation: none; width: 100%; opacity: 0.4; }
   .hud-bar__fill { transition: none; }
 }
 
-/* ---- etichetta agente ---- */
-.hud-label {
-  font: 11px/1.3 var(--hud-font);
-  color: var(--hud-fg);
-  background: var(--hud-bg);
-  border: 1px solid var(--hud-border);
-  border-radius: 8px;
-  box-shadow: var(--hud-shadow);
-  padding: 5px 8px;
-  width: max-content;
-  min-width: 72px;
-  max-width: 140px;
-  user-select: none;
-  transition: opacity 300ms ease;
-}
-.hud-label--idle { opacity: 0.55; }
-.hud-label--done { opacity: 0.4; }
-.hud-label[role='button'] { cursor: pointer; }
-.hud-label[role='button']:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
-.hud-label--selected {
-  opacity: 1;
-  border-color: var(--hud-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hud-accent) 35%, transparent), var(--hud-shadow);
-}
-.hud-label .hud-bar { margin-top: 2px; }
-.hud-label--waiting {
-  opacity: 1;
-  border-color: var(--hud-danger);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--hud-danger) 35%, transparent), var(--hud-shadow);
-}
-.hud-label--waiting .hud-label__time { color: var(--hud-danger); font-weight: 600; }
-.hud-label__time { color: var(--hud-muted); font-size: 10px; white-space: nowrap; }
-.hud-label__name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ---- numero della issue accanto al nome ---- */
 .hud-label__issue {
   margin-left: 6px;
   padding: 0 5px;
@@ -184,9 +140,6 @@
   color: #fff;
   font-size: 0.85em;
 }
-.hud-label__meta { display: flex; align-items: center; gap: 6px; margin-top: 2px; white-space: nowrap; }
-.hud-label__status { color: var(--hud-muted); margin-left: auto; }
-.hud-label__progress { color: var(--hud-muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
 
 .hud-chip {
   --chip: var(--area-other);
@@ -201,6 +154,7 @@
 }
 .hud-chip--backend { --chip: var(--area-backend); }
 .hud-chip--frontend { --chip: var(--area-frontend); }
+.hud-chip--design { --chip: var(--area-design); }
 .hud-chip--architecture { --chip: var(--area-architecture); }
 .hud-chip--test { --chip: var(--area-test); }
 .hud-chip--docs { --chip: var(--area-docs); }
@@ -216,8 +170,8 @@
   overscroll-behavior: contain;
   box-sizing: border-box;
 }
-/* a destra c'è sopra il selettore della vista */
-.hud-card { max-height: calc(100vh - 80px); width: 300px; max-width: 100%; }
+/* a destra c'è sopra il selettore della vista e sotto i pulsanti di zoom della vista 2D */
+.hud-card { max-height: calc(100vh - 124px); width: 300px; max-width: 100%; }
 .hud-instances { padding: 4px; width: 300px; max-width: 100%; }
 .hud-instance + .hud-instance { border-top: 1px solid var(--hud-border); }
 .hud-instance__head {
@@ -270,11 +224,18 @@
 .hud-instance__agent:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: -2px; }
 .hud-instance__agent[aria-pressed='true'] { background: color-mix(in srgb, var(--hud-accent) 18%, transparent); }
 .hud-instance__agent--done { opacity: 0.6; }
+.hud-instance__agent-head { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .hud-instance__agent-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-instance__agent-head .hud-chip { flex: none; margin-left: auto; }
+.hud-instance__agent-task { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-instance__agent-status { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* subagente bloccato in attesa dell'utente: stato in rosso */
+.hud-instance__agent--waiting .hud-instance__agent-status { color: var(--hud-danger); font-weight: 600; }
 
 .hud-card__head { display: flex; align-items: flex-start; gap: 8px; }
-.hud-card__head .hud-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.hud-card__names { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.hud-card__names .hud-title { overflow-wrap: anywhere; }
+.hud-card__task { font-size: 12px; overflow-wrap: anywhere; }
 .hud-card__close {
   flex: none;
   width: 24px;
@@ -304,7 +265,7 @@
   .hud-instances, .hud-card { width: auto; max-height: 38vh; }
 }
 
-/* ---- selettore 3D / 2D / lista ---- */
+/* ---- selettore ufficio / lista ---- */
 .hud-toggle {
   display: inline-flex;
   padding: 3px;
@@ -369,7 +330,13 @@
 }
 .list-agent:last-child { border-bottom: 0; }
 .list-agent__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-agent__name strong { font-weight: 600; }
+.list-agent__task { margin-left: 6px; color: var(--hud-muted); }
 .list-agent--done { opacity: 0.6; }
+/* subagente bloccato in attesa dell'utente: riga rossa */
+.list-agent--waiting { background: color-mix(in srgb, var(--hud-danger) 8%, transparent); }
+.list-agent--waiting .list-agent__name,
+.list-agent--waiting .list-agent__status { color: var(--hud-danger); font-weight: 600; opacity: 1; }
 @media (max-width: 680px) {
   .list-view { padding-top: 120px; }
   .list-agent { grid-template-columns: minmax(0, 1fr) auto; }
@@ -390,3 +357,63 @@
 }
 .list-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--hud-muted); }
 .list-session--focus { box-shadow: 0 0 0 2px var(--hud-accent), var(--hud-shadow); }
+
+/* ---- pulsante "apri in una finestra" (#92) ---- */
+.hud-popout {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--hud-muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hud-popout:hover { background: var(--hud-track); color: var(--hud-fg); }
+.hud-popout:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+.hud-card__head .hud-popout { margin: -4px -2px 0 0; }
+.hud-instance__tools { display: flex; align-items: flex-start; gap: 6px; }
+.hud-instance__tools .hud-instance__meta { flex: 1; min-width: 0; }
+.hud-instance__tools .hud-popout { margin: -3px -4px 0 0; }
+
+/* ---- finestra di una scheda staccata: la scheda a tutta finestra, senza ufficio ---- */
+.card-window {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  font: 13px/1.4 var(--hud-font);
+  color: var(--hud-fg);
+  background: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .card-window { background: #16191e; }
+}
+.card-window > .hud-panel {
+  width: auto;
+  max-height: none;
+  min-width: 0;
+  overflow: visible;
+  padding: 14px 16px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-window .hud-card .hud-title { font-size: 16px; }
+.card-window__instance { padding: 6px 8px 12px; }
+.card-window__head { cursor: default; }
+.card-window__head:hover { background: none; }
+.card-window__head::after { content: none; }
+.card-window__note,
+.card-window__offline {
+  margin: 12px 16px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--hud-muted);
+  background: var(--hud-track);
+}
+.card-window__note + .hud-panel { opacity: 0.75; }
+.card-window__offline { color: var(--hud-warn); font-weight: 600; }

@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { CHARACTER_PRESETS } from '../characters/presets';
+import { CHARACTER_PRESETS } from './presets';
 import {
-  bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
-  selectionImage, shadowImage, tileImage, type PixelImage,
+  bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
+  SCREEN_FRAMES, SCREEN_THEMES, selectionImage, shadowImage, tileImage, type PixelImage,
 } from './sprites';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from './types';
 
 const FACINGS: Facing[] = ['down', 'up', 'left', 'right'];
-const POSES: Pose[] = ['stand', 'walk', 'sit', 'type'];
+const POSES: Pose[] = ['stand', 'walk', 'sit', 'type', 'play'];
 const FURNITURE: FurnitureKind[] = [
   'desk', 'boss-desk', 'chair', 'monitor', 'plant', 'sofa', 'armchair', 'coffee-table', 'coffee-machine', 'water-cooler',
-  'bookshelf', 'rug', 'whiteboard', 'window',
+  'bookshelf', 'rug', 'whiteboard', 'window', 'painting', 'clock', 'corkboard', 'poster', 'floor-lamp', 'cabinet', 'locker',
+  'printer', 'bin', 'coat-rack', 'plant-tall', 'cactus', 'foosball', 'vending', 'fridge', 'arcade',
 ];
 const TILES: TileKind[] = ['void', 'floor', 'lounge', 'corridor', 'wall', 'door'];
 
@@ -117,7 +118,31 @@ describe('arredi', () => {
     const off = furnitureImage('monitor', 'down', 1, 1, -1);
     expect(sameData(a, b)).toBe(false);
     expect(sameData(a, off)).toBe(false);
-    expect(sameData(a, furnitureImage('monitor', 'down', 1, 1, 2))).toBe(true);
+    expect(sameData(a, furnitureImage('monitor', 'down', 1, 1, SCREEN_FRAMES))).toBe(true);
+  });
+
+  it('ogni tema dello schermo si anima e si distingue dagli altri; di spalle il monitor non cambia', () => {
+    const first = SCREEN_THEMES.map((_, t) => furnitureImage('monitor', 'down', 1, 1, 0, t));
+    for (const [t, img] of first.entries()) {
+      const frames = Array.from({ length: SCREEN_FRAMES }, (_, f) => furnitureImage('monitor', 'down', 1, 1, f, t));
+      expect(frames.some((f) => !sameData(f, img)), SCREEN_THEMES[t]).toBe(true);
+      for (const other of first.slice(t + 1)) expect(sameData(img, other)).toBe(false);
+    }
+    expect(sameData(furnitureImage('monitor', 'up', 1, 1, 0, 3), furnitureImage('monitor', 'up', 1, 1, 5, 7))).toBe(true);
+  });
+
+  it('il biliardino in partita muove la palla, fermo resta uguale', () => {
+    const still = furnitureImage('foosball', 'down', 2, 1, -1);
+    const frames = Array.from({ length: FOOSBALL_FRAMES }, (_, f) => furnitureImage('foosball', 'down', 2, 1, f));
+    expect(new Set(frames.map((f) => Array.from(f.data).join())).size).toBeGreaterThan(4);
+    expect(frames.every((f) => !sameData(f, still))).toBe(true);
+  });
+
+  it('le varianti cambiano tappeti, quadri, poster e cabinati', () => {
+    for (const [kind, n] of [['rug', 4], ['painting', 6], ['poster', 2], ['arcade', 2]] as const) {
+      const imgs = Array.from({ length: n }, (_, v) => Array.from(furnitureImage(kind, 'down', 1, 1, 0, v).data).join());
+      expect(new Set(imgs).size, kind).toBe(n);
+    }
   });
 });
 
@@ -137,6 +162,14 @@ describe('tile', () => {
     const variants = new Set([0, 1, 2, 3, 4, 5].map((x) => Array.from(tileImage('floor', x, 0, false).data).join()));
     expect(variants.size).toBeGreaterThan(1);
     expect(sameData(tileImage('wall', 0, 0, true), tileImage('wall', 0, 0, false))).toBe(false);
+  });
+
+  it('pavimenti e pareti cambiano tinta da una stanza all\'altra', () => {
+    for (const kind of ['floor', 'wall'] as const) {
+      const styles = [0, 1, 2, 3, 4].map((s) => Array.from(tileImage(kind, 2, 3, true, s).data).join());
+      expect(new Set(styles).size, kind).toBe(5);
+    }
+    expect(sameData(tileImage('corridor', 1, 1, false, 3), tileImage('corridor', 1, 1, false))).toBe(true);
   });
 });
 

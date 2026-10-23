@@ -1,28 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { findPath, planFrom } from './path';
-import type { Cell, OfficeLayout } from './layout';
+import { findPath, planFrom, type Cell, type Grid } from './path';
 
-function grid(rows: string[]): OfficeLayout {
-  return {
-    width: rows[0]!.length,
-    depth: rows.length,
-    door: { x: 0, z: 0 },
-    seats: [],
-    islands: [],
-    bossSeats: [],
-    bossDoor: { x: 0, z: 0 },
-    lounge: [],
-    dividers: [],
-    boards: {
-      todo: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
-      progress: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
-      review: { id: 'board', cell: { x: 0, z: 0 }, facing: 0 },
-    },
-    walkable: rows.map((r) => [...r].map((c) => c !== '#')),
-  };
+function grid(rows: string[]): Grid {
+  return { width: rows[0]!.length, walkable: rows.map((r) => [...r].map((c) => c !== '#')) };
 }
 
-function expectValid(l: OfficeLayout, p: Cell[]) {
+function expectValid(l: Grid, p: Cell[]) {
   for (let i = 1; i < p.length; i++) {
     const a = p[i - 1]!;
     const b = p[i]!;

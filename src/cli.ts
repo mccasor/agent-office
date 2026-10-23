@@ -99,7 +99,6 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     buildSnapshot({
       transcript: transcript.current(),
       hookEvents: hooks.current(),
-      repo: opts.all ? null : repos.get(opts.cwd),
       repoAt: (cwd) => repos.get(cwd),
       now: Date.now(),
     });

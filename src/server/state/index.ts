@@ -6,9 +6,11 @@ import type {
   RepoState,
   SessionState,
   Snapshot,
+  TranscriptSession,
   TranscriptSnapshot,
   WaitingKind,
 } from '../../shared/types.js';
+import { nicknameOf } from '../../shared/nickname.js';
 
 /** un agente è "entering" (cammina dalla porta) nei primi ms dopo startedAt */
 export const ENTERING_MS = 5_000;
@@ -69,29 +71,103 @@ export function branchIssue(branch: string | null): number | null {
   return m ? Number(m[1]) : null;
 }
 
+interface Ask {
+  at: number;
+  kind: WaitingKind;
+}
+
+/** tool con cui Claude aspetta un subagente, non l'utente */
+const AGENT_TOOLS = new Set(['Agent', 'Task']);
+
+/**
+ * Notifiche di blocco (permesso, domanda, input) e ultima attività successiva, per sessione e per subagente.
+ * Chi è bloccato: l'agentId dell'hook se c'è; per un permesso senza agentId, chi ha l'unica richiesta di permesso
+ * aperta (PermissionRequest), altrimenti l'unico con un tool avviato e senza risultato (PreToolUse precede la
+ * richiesta di permesso). Se è ambiguo, o tocca a Claude, il blocco resta della sessione.
+ */
+function collectAsks(events: HookEvent[]) {
+  const session = new Map<string, Ask>();
+  const sessionActive = new Map<string, number>();
+  const agent = new Map<string, Ask>();
+  const agentActive = new Map<string, number>();
+  /** per sessione: ultimo evento di ciascuno ("" = Claude) e chi ha una richiesta di permesso aperta */
+  const last = new Map<string, Map<string, HookEvent>>();
+  const permissions = new Map<string, Set<string>>();
+  const later = (m: Map<string, number>, id: string, t: number) => m.set(id, Math.max(m.get(id) ?? -Infinity, t));
+  const ask = (m: Map<string, Ask>, id: string, a: Ask) => {
+    if (a.at >= (m.get(id)?.at ?? -Infinity)) m.set(id, a);
+  };
+  const owner = (e: HookEvent, kind: WaitingKind): string | null => {
+    if (e.agentId !== null) return e.agentId;
+    if (kind !== 'permission') return null;
+    const asking = [...(permissions.get(e.sessionId) ?? [])];
+    if (asking.length === 1) return asking[0] || null;
+    const open = [...(last.get(e.sessionId) ?? [])].filter(([, x]) => x.event === 'PreToolUse');
+    if (open.some(([who, x]) => who === '' && !AGENT_TOOLS.has(x.toolName ?? ''))) return null;
+    const agents = open.filter(([who]) => who !== '');
+    return agents.length === 1 ? agents[0]![0] : null;
+  };
+  for (const e of [...events].sort((a, b) => a.timestamp - b.timestamp)) {
+    if (e.event === 'Notification') {
+      if (e.notification === 'idle') continue;
+      const a = { at: e.timestamp, kind: e.notification ?? 'input' };
+      const id = owner(e, a.kind);
+      ask(id === null ? session : agent, id ?? e.sessionId, a);
+      continue;
+    }
+    later(sessionActive, e.sessionId, e.timestamp);
+    if (e.agentId !== null) later(agentActive, e.agentId, e.timestamp);
+    const who = e.agentId ?? '';
+    const pending = permissions.get(e.sessionId) ?? new Set<string>();
+    const byOwner = last.get(e.sessionId) ?? new Map<string, HookEvent>();
+    permissions.set(e.sessionId, pending);
+    last.set(e.sessionId, byOwner);
+    if (e.event === 'PermissionRequest') {
+      pending.add(who);
+      continue;
+    }
+    pending.delete(who);
+    if (e.event === 'SubagentStop') byOwner.delete(who);
+    else byOwner.set(who, e);
+  }
+  return { session, sessionActive, agent, agentActive };
+}
+
+type Asks = ReturnType<typeof collectAsks>;
+
+/** bloccato: notifica senza attività successiva e vicina all'ultima riga del transcript (il tool_use la precede) */
+const blockedBy = (a: Ask | undefined, activeAt: number | undefined, updatedAt: number): a is Ask =>
+  a !== undefined && a.at > (activeAt ?? -Infinity) && a.at >= updatedAt - ASK_GRACE_MS;
+
+/** Attesa di un subagente: domanda senza risposta nel suo transcript, altrimenti notifica dell'hook attribuita a lui. */
+function resolveAgentWaiting(agent: AgentState, asks: Asks): AgentState {
+  const asked = asks.agent.get(agent.id);
+  const blocked = blockedBy(asked, asks.agentActive.get(agent.id), agent.updatedAt);
+  const waiting = agent.status !== 'done' && (agent.waiting === true || blocked);
+  if (!waiting && !agent.waiting) return agent;
+  const waitingKind = !waiting ? null : agent.waiting ? (agent.waitingKind ?? 'input') : (asked?.kind ?? 'input');
+  const waitingSince = !waiting ? null : agent.waiting ? (agent.waitingSince ?? null) : (asked?.at ?? null);
+  return { ...agent, waiting, waitingKind, waitingSince };
+}
+
+/** subagente della sessione in attesa da più tempo */
+function firstWaiting(agents: AgentState[], sessionId: string): AgentState | undefined {
+  const since = (a: AgentState) => a.waitingSince ?? Infinity;
+  return agents.filter((a) => a.sessionId === sessionId && a.waiting).sort((a, b) => since(a) - since(b))[0];
+}
+
 function resolveSessions(
-  sessions: SessionState[],
+  sessions: TranscriptSession[],
   events: HookEvent[],
-  repo: RepoState | null,
+  asks: Asks,
+  agents: AgentState[],
   repoAt: ((cwd: string) => RepoState | null) | undefined,
   now: number,
-): SessionState[] {
+): TranscriptSession[] {
   const endedAt = new Map<string, number>();
   const mainHook = new Map<string, HookEvent>();
-  /** ultima notifica "bloccato su input" e ultima attività successiva, per sessione */
-  const askedAt = new Map<string, number>();
-  /** motivo dell'ultima notifica di blocco, per sessione */
-  const askedKind = new Map<string, WaitingKind>();
-  const activeAt = new Map<string, number>();
-  const later = (m: Map<string, number>, id: string, t: number) => m.set(id, Math.max(m.get(id) ?? -Infinity, t));
   for (const e of events) {
     if (e.event === 'SessionEnd') endedAt.set(e.sessionId, Math.max(endedAt.get(e.sessionId) ?? -Infinity, e.timestamp));
-    if (e.event === 'Notification') {
-      if (e.notification !== 'idle' && e.timestamp >= (askedAt.get(e.sessionId) ?? -Infinity)) {
-        askedAt.set(e.sessionId, e.timestamp);
-        askedKind.set(e.sessionId, e.notification ?? 'input');
-      }
-    } else later(activeAt, e.sessionId, e.timestamp);
     if (e.agentId !== null || !(e.event in MAIN_HOOK_STATUS)) continue;
     const prev = mainHook.get(e.sessionId);
     if (!prev || e.timestamp > prev.timestamp) mainHook.set(e.sessionId, e);
@@ -102,19 +178,23 @@ function resolveSessions(
       const ended = s.active && end !== undefined && end > s.updatedAt;
       const hook = mainHook.get(s.id);
       const status = ended ? 'done' : hook && hook.timestamp > s.updatedAt ? hookMainStatus(hook, now) : s.status;
-      const fromBranch = branchIssue(s.branch ?? repo?.branch ?? null);
+      // stato git della cartella della sessione: branch di riserva per la issue e diff (solo se attiva)
+      const r = s.cwd && repoAt ? repoAt(s.cwd) : null;
+      const fromBranch = branchIssue(s.branch ?? r?.branch ?? null);
       const issues = s.issues.length > 0 || fromBranch === null ? s.issues : [fromBranch];
-      // bloccata: domanda senza risposta nel transcript, o notifica di permesso/input senza attività successiva
-      const asked = askedAt.get(s.id) ?? -Infinity;
-      const blocked = asked > (activeAt.get(s.id) ?? -Infinity) && asked >= s.updatedAt - ASK_GRACE_MS;
-      const waiting = !ended && (s.waiting || blocked);
-      // motivo e inizio del blocco: la domanda nel transcript, altrimenti la notifica dell'hook
-      const waitingKind = !waiting ? null : s.waiting ? (s.waitingKind ?? 'input') : (askedKind.get(s.id) ?? 'input');
-      const waitingSince = !waiting ? null : s.waiting ? (s.waitingSince ?? null) : asked;
+      // Claude bloccato: domanda senza risposta nel transcript, o notifica non attribuita a un subagente
+      const asked = asks.session.get(s.id);
+      const blocked = blockedBy(asked, asks.sessionActive.get(s.id), s.updatedAt);
+      // altrimenti la sessione è bloccata dal suo subagente in attesa da più tempo, con il motivo di lui
+      const agent = ended || s.waiting || blocked ? undefined : firstWaiting(agents, s.id);
+      const waiting = !ended && (s.waiting || blocked || agent !== undefined);
+      // motivo e inizio del blocco: la domanda nel transcript, poi la notifica dell'hook, poi il subagente
+      const waitingKind = !waiting ? null : s.waiting ? (s.waitingKind ?? 'input') : blocked ? asked.kind : (agent?.waitingKind ?? 'input');
+      const waitingSince = !waiting ? null : s.waiting ? (s.waitingSince ?? null) : blocked ? asked.at : (agent?.waitingSince ?? null);
+      const waitingAgentId = agent?.id ?? null;
       const active = ended ? false : s.active;
-      const r = active && s.cwd && repoAt ? repoAt(s.cwd) : null;
-      const diff = r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
-      return { ...s, status, issues, waiting, waitingKind, waitingSince, active, diff };
+      const diff = active && r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
+      return { ...s, status, issues, waiting, waitingKind, waitingSince, waitingAgentId, active, diff };
     })
     .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
 }
@@ -170,29 +250,43 @@ function finishedToday(all: AgentState[], present: AgentState[], now: number): A
     .slice(0, MAX_FINISHED);
 }
 
-/** Stato per l'icona: una sessione attiva bloccata sull'utente > qualcuno lavora > nessuna attività. */
-export function officeStatus(sessions: SessionState[], agents: AgentState[]): OfficeStatus {
-  const active = sessions.filter((s) => s.active);
-  if (active.some((s) => s.waiting)) return 'waiting';
-  const busy = (st: AgentStatus) => st === 'working' || st === 'entering';
-  const ids = new Set(active.map((s) => s.id));
-  if (active.some((s) => busy(s.status)) || agents.some((a) => ids.has(a.sessionId) && busy(a.status))) return 'working';
-  return 'idle';
+/** Nome del progetto: ultima cartella del cwd; null senza cwd. */
+export const projectOf = (cwd: string | null): string | null => cwd?.split('/').filter(Boolean).at(-1) ?? null;
+
+const busy = (st: AgentStatus) => st === 'working' || st === 'entering';
+
+/** Pallino di una sessione: attiva e bloccata sull'utente > lei o un suo agente lavora > inattiva. */
+export function sessionDot(session: TranscriptSession, agents: AgentState[]): OfficeStatus {
+  if (!session.active) return 'idle';
+  if (session.waiting) return 'waiting';
+  return busy(session.status) || agents.some((a) => a.sessionId === session.id && busy(a.status)) ? 'working' : 'idle';
+}
+
+/** Stato per l'icona: il pallino più urgente tra le sessioni (waiting > working > idle). */
+export function officeStatus(sessions: SessionState[]): OfficeStatus {
+  if (sessions.some((s) => s.dot === 'waiting')) return 'waiting';
+  return sessions.some((s) => s.dot === 'working') ? 'working' : 'idle';
 }
 
 /** Funzione pura: combina transcript + eventi hook + git nello Snapshot inviato al browser. */
 export function buildSnapshot(input: {
   transcript: TranscriptSnapshot;
   hookEvents: HookEvent[];
-  repo: RepoState | null;
-  /** stato del repository di un cwd (diff per sessione); assente = nessun diff */
+  /** stato del repository di un cwd (diff per sessione, branch di riserva); assente = nessun dato git */
   repoAt?: (cwd: string) => RepoState | null;
   now: number;
 }): Snapshot {
-  const { transcript, hookEvents, repo, now } = input;
+  const { transcript, hookEvents, now } = input;
   const hooks = latestAgentHooks(hookEvents);
-  const resolved = transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now));
+  const asks = collectAsks(hookEvents);
+  const resolved = transcript.agents.map((a) => ({
+    ...resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks),
+    nickname: nicknameOf(a.id),
+  }));
   const agents = keepFinished(resolved, now);
-  const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now);
-  return { status: officeStatus(sessions, agents), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
+  // attesa su due livelli: la sessione eredita quella dei subagenti (pallino rosso, status 'waiting', menu bar)
+  const sessions = resolveSessions(transcript.sessions, hookEvents, asks, agents, input.repoAt, now).map(
+    (s): SessionState => ({ ...s, dot: sessionDot(s, agents), project: projectOf(s.cwd) }),
+  );
+  return { status: officeStatus(sessions), sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }

@@ -3,11 +3,11 @@
  * e rendering (PixelOffice.tsx).
  *
  * Griglia di celle quadrate da TILE pixel (a scala 1), vista dall'alto con angolazione fissa a 3/4: le pareti nord
- * mostrano la faccia, i personaggi sono più alti di una cella. Coordinate come la vista 3D: x verso est, z verso
- * sud (verso il basso dello schermo), così i percorsi riusano findPath e advanceAlongPath di ../scene.
+ * mostrano la faccia, i personaggi sono più alti di una cella. Coordinate: x verso est, z verso sud (verso il basso
+ * dello schermo), le stesse di findPath (path.ts) e advanceAlongPath (motion.ts).
  */
 import type { AgentState } from '../../shared/types';
-import type { Cell } from '../scene/layout';
+import type { Cell } from './path';
 
 export type { Cell };
 
@@ -38,7 +38,10 @@ export type TileKind =
 
 /** Un posto dove un personaggio si ferma: postazione, scrivania del boss, posto in sala relax, posto in piedi. */
 export interface Spot {
-  /** stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'lounge-<n>', 'stand-<n>', 'hall-<n>' (corridoio) */
+  /**
+   * stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'foos-<n>' (al biliardino), 'lounge-<n>',
+   * 'stand-<n>', 'hall-<n>' (corridoio)
+   */
   id: string;
   cell: Cell;
   /** verso cui guarda chi occupa il posto (la scrivania, il tavolino) */
@@ -62,7 +65,7 @@ export interface Room {
   desks: Spot[];
   /** stanze istanza: scrivania del boss (Claude stesso); sala relax: null */
   boss: Spot | null;
-  /** sala relax: posti a sedere e poi in piedi, nell'ordine in cui si occupano; stanze istanza: [] */
+  /** sala relax: biliardino, posti a sedere e poi in piedi, nell'ordine in cui si occupano; stanze istanza: [] */
   seats: Spot[];
 }
 
@@ -80,7 +83,29 @@ export type FurnitureKind =
   | 'bookshelf'
   | 'rug'
   | 'whiteboard'
-  | 'window';
+  | 'window'
+  // sulle pareti (piatti come le finestre)
+  | 'painting'
+  | 'clock'
+  | 'corkboard'
+  | 'poster'
+  // arredi minori
+  | 'floor-lamp'
+  | 'cabinet'
+  | 'locker'
+  | 'printer'
+  | 'bin'
+  | 'coat-rack'
+  | 'plant-tall'
+  | 'cactus'
+  // sala relax
+  | 'foosball'
+  | 'vending'
+  | 'fridge'
+  | 'arcade';
+
+/** arredi appesi alle pareti: stanno sulla riga di parete, piatti, non bloccano nulla */
+export const WALL_DECOR: ReadonlySet<FurnitureKind> = new Set<FurnitureKind>(['window', 'painting', 'clock', 'corkboard', 'poster']);
 
 /** Un arredo: occupa w×h celle a partire da `cell` (angolo nord-ovest). */
 export interface Furniture {
@@ -91,6 +116,8 @@ export interface Furniture {
   facing: Facing;
   /** stanza di appartenenza (id di Room), null per il corridoio */
   room: string | null;
+  /** variante dello sprite (colori del tappeto, soggetto del quadro...), 0 se assente */
+  variant?: number;
 }
 
 export interface PixelPlan {
@@ -99,6 +126,11 @@ export interface PixelPlan {
   depth: number;
   /** tiles[z][x] */
   tiles: TileKind[][];
+  /**
+   * styles[z][x]: tinta di pavimento e pareti, l'indice della stanza in `rooms` (le pareti con la faccia visibile
+   * prendono quella della stanza sotto); -1 per il corridoio e il resto
+   */
+  styles: number[][];
   /** walkable[z][x]: pavimenti, porte e posti; non pareti né arredi (le sedie dei posti sì) */
   walkable: boolean[][];
   /** stanze istanza (INSTANCE_ROOMS, da 'room-0') e poi la sala relax */
@@ -112,18 +144,18 @@ export interface PixelPlan {
 
 /** Un personaggio da disegnare: un subagente o Claude stesso (boss) di un'istanza. */
 export interface PixelActor {
-  /** id dell'agente; per il boss `boss:<sessionId>` come nella vista 3D */
+  /** id dell'agente; per il boss `boss:<sessionId>`, come in boss.ts */
   id: string;
   agent: AgentState;
   sessionId: string;
   boss: boolean;
   /** dove deve andare: un posto, oppure null = esce dall'ingresso */
   target: Spot | null;
-  /** la sessione è bloccata in attesa dell'utente: fumetto "!" sopra il boss */
+  /** bloccato in attesa dell'utente (il boss per la sessione, il subagente per sé): fumetto "!" sopra */
   waiting: boolean;
 }
 
-/** Assegnazioni stabili tra uno snapshot e il successivo (stesso ruolo di Seating nella vista 3D). */
+/** Assegnazioni stabili tra uno snapshot e il successivo. */
 export interface PixelSeating {
   /** sessionId -> indice della stanza istanza (0..INSTANCE_ROOMS-1) */
   rooms: Record<string, number>;
@@ -138,5 +170,5 @@ export interface PixelModel extends PixelSeating {
   roomless: string[];
 }
 
-/** Pose di un personaggio, una riga di fotogrammi per ciascuna. */
-export type Pose = 'stand' | 'walk' | 'sit' | 'type';
+/** Pose di un personaggio, una riga di fotogrammi per ciascuna; play: in piedi alle stecche del biliardino. */
+export type Pose = 'stand' | 'walk' | 'sit' | 'type' | 'play';

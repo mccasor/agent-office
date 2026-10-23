@@ -6,8 +6,9 @@ type Case = [label: string, input: { agentType?: string; description?: string; f
 
 const cases: Case[] = [
   // 1. agentType ha la priorità
-  ['gsd-ui-auditor', { agentType: 'gsd-ui-auditor' }, 'frontend'],
-  ['gsd-ui-researcher batte "research"', { agentType: 'gsd-ui-researcher' }, 'frontend'],
+  ['gsd-ui-auditor', { agentType: 'gsd-ui-auditor' }, 'design'],
+  ['gsd-ui-researcher batte "research"', { agentType: 'gsd-ui-researcher' }, 'design'],
+  ['ux-designer', { agentType: 'ux-designer' }, 'design'],
   ['Explore', { agentType: 'Explore', description: 'Fix React component' }, 'research'],
   ['Plan', { agentType: 'Plan', description: 'write tests' }, 'architecture'],
   ['gsd-planner', { agentType: 'gsd-planner' }, 'architecture'],
@@ -23,6 +24,10 @@ const cases: Case[] = [
   ['frontend-dev', { agentType: 'frontend-developer' }, 'frontend'],
   // 2. agentType generico -> keyword della description (it/en)
   ['general-purpose + hud', { agentType: 'general-purpose', description: 'HUD and store #12 #13' }, 'frontend'],
+  ['icone', { agentType: 'general-purpose', description: 'Disegnare le icone della menu bar' }, 'design'],
+  ['figma', { agentType: 'general-purpose', description: 'Port the Figma mockup' }, 'design'],
+  ['CSS e palette', { agentType: 'general-purpose', description: 'Palette colori del tema scuro' }, 'design'],
+  ['"design" da solo resta architettura', { agentType: 'general-purpose', description: 'Design of the module boundaries' }, 'architecture'],
   ['general-purpose + scena', { agentType: 'general-purpose', description: 'Scena 3D ufficio' }, 'frontend'],
   ['server watcher', { agentType: 'general-purpose', description: 'Transcript watcher server' }, 'backend'],
   ['API endpoint', { agentType: 'general-purpose', description: 'Add REST API endpoint' }, 'backend'],
@@ -43,6 +48,7 @@ const cases: Case[] = [
   ['test files', { description: 'Step 4', filePaths: ['/p/src/a.test.ts', '/p/src/b.spec.tsx'] }, 'test'],
   ['markdown', { filePaths: ['/p/README.md', '/p/docs/guide.md'] }, 'docs'],
   ['workflows', { filePaths: ['/p/.github/workflows/ci.yml'] }, 'devops'],
+  ['immagini e svg', { filePaths: ['/p/assets/logo.svg', '/p/src/icons/play.png', '/p/src/web/a.tsx'] }, 'design'],
   ['python', { filePaths: ['/p/app/models.py'] }, 'backend'],
   ['maggioranza', { filePaths: ['/p/src/web/a.tsx', '/p/src/web/b.css', '/p/src/server/c.ts'] }, 'frontend'],
   // 4. default

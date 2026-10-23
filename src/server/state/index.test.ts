@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentState, AgentStatus, HookEvent, RepoState, SessionState } from '../../shared/types.js';
+import type { AgentState, AgentStatus, HookEvent, RepoState, TranscriptSession } from '../../shared/types.js';
+import { nicknameOf } from '../../shared/nickname.js';
 import { branchIssue, buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS, LOUNGE_WAIT_MS } from './index.js';
 
 const NOW = 1_000_000;
@@ -24,7 +25,7 @@ function agent(over: Partial<AgentState> = {}): AgentState {
   };
 }
 
-function session(over: Partial<SessionState> = {}): SessionState {
+function session(over: Partial<TranscriptSession> = {}): TranscriptSession {
   return {
     id: 's1',
     title: null,
@@ -125,7 +126,7 @@ describe('buildSnapshot: stato agente', () => {
   ];
 
   it.each(cases)('$name', ({ agent: over, hooks = [], expected }) => {
-    const snap = buildSnapshot({ transcript: { sessions: [], agents: [agent(over)] }, hookEvents: hooks, repo: null, now: NOW });
+    const snap = buildSnapshot({ transcript: { sessions: [], agents: [agent(over)] }, hookEvents: hooks, now: NOW });
     expect(snap.agents[0]?.status ?? null).toBe(expected);
     expect(snap.agents).toHaveLength(expected === null ? 0 : 1);
   });
@@ -134,7 +135,6 @@ describe('buildSnapshot: stato agente', () => {
     const snap = buildSnapshot({
       transcript: { sessions: [], agents: [agent({ updatedAt: NOW - 5_000 })] },
       hookEvents: [hook('PostToolUse', NOW - 100)],
-      repo: null,
       now: NOW,
     });
     expect(snap.agents[0]?.updatedAt).toBe(NOW - 100);
@@ -144,7 +144,6 @@ describe('buildSnapshot: stato agente', () => {
     const snap = buildSnapshot({
       transcript: { sessions: [], agents: [] },
       hookEvents: [hook('SubagentStart', NOW - 100, { agentId: 'ghost' })],
-      repo: null,
       now: NOW,
     });
     expect(snap.agents).toEqual([]);
@@ -153,13 +152,19 @@ describe('buildSnapshot: stato agente', () => {
   it('preserva l\'ordine e gli altri campi degli agenti', () => {
     const a = agent({ id: 'a1', name: 'uno' });
     const b = agent({ id: 'a2', name: 'due' });
-    const snap = buildSnapshot({ transcript: { sessions: [], agents: [a, b] }, hookEvents: [], repo: null, now: NOW });
-    expect(snap.agents).toEqual([a, b]);
+    const snap = buildSnapshot({ transcript: { sessions: [], agents: [a, b] }, hookEvents: [], now: NOW });
+    expect(snap.agents).toEqual([{ ...a, nickname: nicknameOf('a1') }, { ...b, nickname: nicknameOf('a2') }]);
+  });
+
+  it('ogni agente ha un nome di persona stabile (#88)', () => {
+    const build = () => buildSnapshot({ transcript: { sessions: [], agents: [agent({ id: 'a1' })] }, hookEvents: [], now: NOW });
+    expect(build().agents[0]?.nickname).toMatch(/^\S+ \S+$/);
+    expect(build().agents[0]?.nickname).toBe(build().agents[0]?.nickname);
   });
 });
 
 describe('buildSnapshot: sessioni', () => {
-  const cases: Array<{ name: string; sessions: Partial<SessionState>[]; hooks?: HookEvent[]; expected: Array<[string, boolean]> }> = [
+  const cases: Array<{ name: string; sessions: Partial<TranscriptSession>[]; hooks?: HookEvent[]; expected: Array<[string, boolean]> }> = [
     {
       name: 'attive prima, poi updatedAt desc',
       sessions: [
@@ -211,7 +216,6 @@ describe('buildSnapshot: sessioni', () => {
     const snap = buildSnapshot({
       transcript: { sessions: sessions.map((s) => session(s)), agents: [] },
       hookEvents: hooks,
-      repo: null,
       now: NOW,
     });
     expect(snap.sessions.map((s) => [s.id, s.active])).toEqual(expected);
@@ -219,20 +223,26 @@ describe('buildSnapshot: sessioni', () => {
 });
 
 describe('buildSnapshot: snapshot', () => {
-  it('include repo e generatedAt, non muta l\'input', () => {
-    const repo: RepoState = { project: 'p', branch: 'main', linesAdded: 1, linesRemoved: 2, filesChanged: 3 };
+  it('include generatedAt, non muta l\'input', () => {
     const transcript = { sessions: [session()], agents: [agent({ status: 'working' })] };
     const frozen = structuredClone(transcript);
-    const snap = buildSnapshot({ transcript, hookEvents: [hook('SubagentStop', NOW - 100), hook('SessionEnd', NOW - 100)], repo, now: NOW });
-    expect(snap.repo).toBe(repo);
+    const snap = buildSnapshot({ transcript, hookEvents: [hook('SubagentStop', NOW - 100), hook('SessionEnd', NOW - 100)], now: NOW });
     expect(snap.generatedAt).toBe(NOW);
     expect(transcript).toEqual(frozen);
   });
 
+  it('diff per sessione dalla sua cartella, solo per le sessioni attive', () => {
+    const at = (cwd: string) => (cwd === '/p' ? { ...repo('main'), linesAdded: 4 } : null);
+    const build = (over: Partial<TranscriptSession>) =>
+      buildSnapshot({ transcript: { sessions: [session(over)], agents: [] }, hookEvents: [], repoAt: at, now: NOW }).sessions[0]!;
+    expect(build({ cwd: '/p' }).diff).toEqual({ linesAdded: 4, linesRemoved: 0, filesChanged: 0 });
+    expect(build({ cwd: '/altro' }).diff).toBeNull();
+    expect(build({ cwd: '/p', active: false }).diff).toBeNull();
+  });
+
   it('input vuoto', () => {
-    expect(buildSnapshot({ transcript: { sessions: [], agents: [] }, hookEvents: [], repo: null, now: NOW })).toEqual({
+    expect(buildSnapshot({ transcript: { sessions: [], agents: [] }, hookEvents: [], now: NOW })).toEqual({
       status: 'idle',
-      repo: null,
       sessions: [],
       agents: [],
       finished: [],
@@ -243,7 +253,7 @@ describe('buildSnapshot: snapshot', () => {
 
 describe('buildSnapshot: area relax', () => {
   const build = (agents: AgentState[]) =>
-    buildSnapshot({ transcript: { sessions: [], agents }, hookEvents: [], repo: null, now: NOW }).agents.map((a) => a.id);
+    buildSnapshot({ transcript: { sessions: [], agents }, hookEvents: [], now: NOW }).agents.map((a) => a.id);
 
   it('chi ha finito resta (in area relax) finché un altro agente lavora', () => {
     const old = agent({ id: 'old', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
@@ -286,18 +296,18 @@ describe('buildSnapshot: terminati di oggi', () => {
       sessions: [],
       agents: [done('gone', now - 3 * 3_600_000), done('later', now - 3_600_000), done('ieri', midnight - 1), done('relax', now - 1_000), busy],
     };
-    const snap = buildSnapshot({ transcript, hookEvents: [], repo: null, now });
+    const snap = buildSnapshot({ transcript, hookEvents: [], now });
     expect(snap.agents.map((a) => a.id)).toEqual(['relax', 'busy']);
     expect(snap.finished!.map((a) => a.id)).toEqual(['later', 'gone']);
   });
 });
 
 describe('buildSnapshot: sessione principale (Claudio Code)', () => {
-  const build = (over: Partial<SessionState>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
+  const build = (over: Partial<TranscriptSession>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
     buildSnapshot({
-      transcript: { sessions: [session(over)], agents: [] },
+      transcript: { sessions: [session({ cwd: '/p', ...over })], agents: [] },
       hookEvents,
-      repo: branch === null ? null : repo(branch),
+      repoAt: () => (branch === null ? null : repo(branch)),
       now: NOW,
     }).sessions[0]!;
 
@@ -328,8 +338,8 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
 
 describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
   const notif = (t: number, notification: NonNullable<HookEvent['notification']>) => hook('Notification', t, { agentId: null, notification });
-  const build = (sessions: SessionState[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
-    buildSnapshot({ transcript: { sessions, agents }, hookEvents, repo: null, now: NOW });
+  const build = (sessions: TranscriptSession[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
+    buildSnapshot({ transcript: { sessions, agents }, hookEvents, now: NOW });
 
   it('notifica di permesso senza attività successiva → waiting; quella di attesa prompt no', () => {
     expect(build([session()], [notif(NOW - 500, 'input')]).sessions[0]!.waiting).toBe(true);
@@ -355,6 +365,85 @@ describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
     expect(build([session({ status: 'done' })]).status).toBe('idle');
     expect(build([session({ status: 'working', waiting: true })]).status).toBe('waiting');
     expect(build([session({ status: 'working', waiting: true, active: false })]).status).toBe('idle');
+  });
+
+  it('pallino per sessione: solo i suoi agenti contano; le sessioni non attive sono grigie', () => {
+    const dots = (sessions: TranscriptSession[], agents: AgentState[] = []) => build(sessions, [], agents).sessions.map((s) => [s.id, s.dot]);
+    expect(dots([session({ waiting: true })])).toEqual([['s1', 'waiting']]);
+    expect(dots([session()])).toEqual([['s1', 'working']]);
+    expect(dots([session({ status: 'done' })], [agent()])).toEqual([['s1', 'working']]);
+    expect(dots([session({ status: 'done' })], [agent({ status: 'idle', updatedAt: NOW - IDLE_MS - 1 })])).toEqual([['s1', 'idle']]);
+    expect(dots([session({ active: false, waiting: true })])).toEqual([['s1', 'idle']]);
+    // l'agente al lavoro di s1 non colora s2
+    expect(dots([session({ status: 'done' }), session({ id: 's2', status: 'done', updatedAt: NOW - 2_000 })], [agent()])).toEqual([
+      ['s1', 'working'],
+      ['s2', 'idle'],
+    ]);
+  });
+
+  it('progetto: ultima cartella del cwd, null senza cwd', () => {
+    expect(build([session({ cwd: '/Users/x/agent-office/' })]).sessions[0]!.project).toBe('agent-office');
+    expect(build([session({ cwd: null })]).sessions[0]!.project).toBeNull();
+  });
+
+  describe('subagente bloccato', () => {
+    const permission = (t: number, agentId: string | null) => hook('Notification', t, { agentId, notification: 'permission' });
+    const pre = (t: number, agentId: string | null, toolName = 'Bash') => hook('PreToolUse', t, { agentId, toolName });
+    const a1 = agent({ id: 'a1', updatedAt: NOW - 10_000 });
+    const a2 = agent({ id: 'a2', updatedAt: NOW - 10_000 });
+    const main = session({ updatedAt: NOW - 10_000 });
+
+    it('notifica con agentId: attesa sul subagente, la sessione la eredita con il motivo', () => {
+      const snap = build([main], [permission(NOW - 8_000, 'a1')], [a1, a2]);
+      expect(snap.agents.find((a) => a.id === 'a1')).toMatchObject({ waiting: true, waitingKind: 'permission', waitingSince: NOW - 8_000 });
+      expect(snap.agents.find((a) => a.id === 'a2')!.waiting).toBeUndefined();
+      expect(snap.sessions[0]).toMatchObject({ waiting: true, waitingKind: 'permission', waitingSince: NOW - 8_000, waitingAgentId: 'a1' });
+      expect(snap.status).toBe('waiting');
+    });
+
+    it('l\'attività del subagente chiude l\'attesa, quella di un altro no', () => {
+      const other = build([main], [permission(NOW - 8_000, 'a1'), hook('PostToolUse', NOW - 1_000, { agentId: 'a2' })], [a1, a2]);
+      expect(other.sessions[0]).toMatchObject({ waiting: true, waitingAgentId: 'a1' });
+      const own = build([main], [permission(NOW - 8_000, 'a1'), hook('PostToolUse', NOW - 1_000)], [a1, a2]);
+      expect(own.agents.every((a) => !a.waiting)).toBe(true);
+      expect(own.sessions[0]).toMatchObject({ waiting: false, waitingAgentId: null });
+    });
+
+    it('permesso senza agentId: attribuito alla richiesta di permesso aperta', () => {
+      const events = [pre(NOW - 9_500, 'a2'), pre(NOW - 9_000, 'a1'), hook('PermissionRequest', NOW - 9_000, { agentId: 'a1' }), permission(NOW - 3_000, null)];
+      const snap = build([main], events, [a1, a2]);
+      expect(snap.agents.find((a) => a.id === 'a1')!.waiting).toBe(true);
+      expect(snap.agents.find((a) => a.id === 'a2')!.waiting).toBeUndefined();
+      expect(snap.sessions[0]!.waitingAgentId).toBe('a1');
+    });
+
+    it('permesso senza agentId: attribuito all\'unico tool avviato senza risultato, se non è di Claude', () => {
+      // Claude aspetta il subagente (Agent), il subagente aspetta il permesso per il suo Bash
+      const unique = build([main], [pre(NOW - 9_500, null, 'Agent'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(unique.sessions[0]!.waitingAgentId).toBe('a1');
+      // ambiguo (due tool aperti) o Claude con un tool suo: il blocco resta della sessione, nessun subagente segnato
+      const twice = build([main], [pre(NOW - 9_500, 'a2'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(twice.agents.some((a) => a.waiting)).toBe(false);
+      expect(twice.sessions[0]).toMatchObject({ waiting: true, waitingKind: 'permission', waitingAgentId: null });
+      const mainTool = build([main], [pre(NOW - 9_500, null, 'Edit'), pre(NOW - 9_000, 'a1'), permission(NOW - 3_000, null)], [a1, a2]);
+      expect(mainTool.agents.some((a) => a.waiting)).toBe(false);
+      // un tool lungo in esecuzione senza notifica non è un'attesa
+      expect(build([main], [pre(NOW - 9_000, 'a1')], [a1]).agents[0]!.waiting).toBeUndefined();
+    });
+
+    it('domanda nel transcript del subagente; un subagente terminato non aspetta', () => {
+      const asking = agent({ waiting: true, waitingKind: 'question', waitingSince: NOW - 4_000 });
+      expect(build([main], [], [asking]).sessions[0]).toMatchObject({ waiting: true, waitingKind: 'question', waitingAgentId: 'a1' });
+      const done = build([main], [permission(NOW - 8_000, 'a1')], [agent({ status: 'done', updatedAt: NOW - 10_000 })]);
+      expect(done.agents[0]!.waiting).toBeFalsy();
+      expect(done.sessions[0]!.waiting).toBe(false);
+    });
+
+    it('se Claude stesso è bloccato il motivo è il suo', () => {
+      const asking = agent({ waiting: true, waitingKind: 'question', waitingSince: NOW - 4_000 });
+      const snap = build([session({ waiting: true, waitingKind: 'plan', waitingSince: NOW - 9_000 })], [], [asking]);
+      expect(snap.sessions[0]).toMatchObject({ waitingKind: 'plan', waitingAgentId: null });
+    });
   });
 
   it('area relax per sessione: i terminati di una sessione non aspettano gli agenti di un\'altra', () => {
