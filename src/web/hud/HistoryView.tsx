@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import type { AgentState, FinishedAgent, HistoryReport } from '../../shared/types';
 import { formatCost, formatDuration } from './format';
 import {
-  clockTime, eventDuration, eventLabel, FILES_EMPTY, FILES_HINT, FILES_TITLE, HISTORY_DAY, HISTORY_ERROR, HISTORY_LOADING,
+  clockTime, eventDuration, eventLabel, eventOutcome, FILES_EMPTY, FILES_HINT, FILES_TITLE, HISTORY_DAY, HISTORY_ERROR, HISTORY_LOADING,
   HISTORY_TITLE, HISTORY_TODAY, TIMELINE_EMPTY, TIMELINE_TITLE, TYPES_COLUMNS, TYPES_EMPTY, TYPES_TITLE, waitsCount,
   waitsSummary, WAITS_EMPTY, WAITS_TITLE,
 } from './historyLabels';
+import { OutcomeTag } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
 import './history.css';
@@ -35,6 +36,7 @@ export const finishedAsAgent = (f: FinishedAgent): AgentState => ({
   startedAt: f.startedAt,
   updatedAt: f.endedAt,
   cost: f.cost,
+  outcome: f.outcome ?? null,
 });
 
 /** Attese della giornata: totale e per istanza (bloccata su un permesso o una domanda, non a fine turno). */
@@ -61,7 +63,7 @@ function Waits({ waits }: { waits: HistoryReport['waits'] }) {
   );
 }
 
-/** Cronologia degli eventi, dal più recente: ora, evento, agente, progetto, tool, durata. */
+/** Cronologia degli eventi, dal più recente: ora, evento (con l'esito se interrotto o fallito), agente, progetto, tool, durata. */
 function Timeline({ events }: { events: HistoryReport['events'] }) {
   return (
     <section className="history-card" aria-label={TIMELINE_TITLE}>
@@ -70,20 +72,24 @@ function Timeline({ events }: { events: HistoryReport['events'] }) {
         <p className="hud-muted">{TIMELINE_EMPTY}</p>
       ) : (
         <ol className="history-timeline">
-          {events.map((e, i) => (
-            <li key={`${e.at}-${e.kind}-${i}`} className={`history-event history-event--${e.kind}`}>
-              <time className="hud-muted">{clockTime(e.at)}</time>
-              <span>
-                <strong>{eventLabel(e)}</strong>
-                <span className="history-event__part">
-                  {[e.agent && (e.agentType ? `${e.agent} (${e.agentType})` : e.agent), e.tool, e.project, eventDuration(e)]
-                    .filter(Boolean)
-                    .map((part) => ` · ${part}`)
-                    .join('')}
+          {events.map((e, i) => {
+            const outcome = eventOutcome(e);
+            return (
+              <li key={`${e.at}-${e.kind}-${i}`} className={`history-event history-event--${e.kind}`}>
+                <time className="hud-muted">{clockTime(e.at)}</time>
+                <span>
+                  <strong>{eventLabel(e)}</strong>
+                  {outcome && <>{' · '}<OutcomeTag outcome={outcome} /></>}
+                  <span className="history-event__part">
+                    {[e.agent && (e.agentType ? `${e.agent} (${e.agentType})` : e.agent), e.tool, e.project, eventDuration(e)]
+                      .filter(Boolean)
+                      .map((part) => ` · ${part}`)
+                      .join('')}
+                  </span>
                 </span>
-              </span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
       )}
     </section>

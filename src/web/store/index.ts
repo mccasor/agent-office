@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { create } from 'zustand';
 import { DEFAULT_DISPLAY, isShown, toDisplaySettings, type DisplaySettings, type SettingKey } from '../../shared/settings';
 import type { AgentState, Snapshot } from '../../shared/types';
@@ -175,6 +176,12 @@ export const useSettings = (): DisplaySettings => useOfficeStore((s) => s.settin
 
 /** La voce `key` del catalogo (shared/settings.ts) è da mostrare: `{useShow('session.diff') && <DiffStat …/>}`. */
 export const useShow = (key: SettingKey): boolean => useOfficeStore((s) => isShown(s.settings, key));
+
+/** Tutte le voci in una volta, per chi ne legge molte: `const show = useShown(); show('agent.role')`. */
+export function useShown(): (key: SettingKey) => boolean {
+  const settings = useSettings();
+  return useCallback((key: SettingKey) => isShown(settings, key), [settings]);
+}
 
 /** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti fatti uscire. Pura. */
 export function visibleSnapshot(

@@ -1,4 +1,5 @@
 import type { DayStats } from '../../shared/types';
+import { useShow } from '../store';
 import { formatCost, formatDuration } from './format';
 import { plural, TODAY_HINT, TODAY_LABEL, TODAY_TITLE } from './labels';
 import './hud.css';
@@ -26,10 +27,12 @@ export function todayItems(t: DayStats): Item[] {
 /**
  * Cruscotto della giornata (#97): in cima alla lista una riga di valori con l'etichetta sotto; `compact` per
  * l'ufficio, una riga sola e discreta sopra l'HUD ("Oggi ≈ $3,40 · ≈ $0,25/h · 5 lanciati ..."). Numeri calcolati
- * dal server (snapshot.today); il tooltip ne dice i limiti.
+ * dal server (snapshot.today); il tooltip ne dice i limiti. Le due forme si spengono a parte (`today.list`, `today.office`).
  */
 export function TodayBar({ today, compact = false }: { today: DayStats; compact?: boolean }) {
+  const shown = useShow(compact ? 'today.office' : 'today.list');
   const items = todayItems(today);
+  if (!shown) return null;
   if (compact) {
     return (
       <p className="hud-panel today-bar today-bar--compact" aria-label={TODAY_TITLE} title={TODAY_HINT}>

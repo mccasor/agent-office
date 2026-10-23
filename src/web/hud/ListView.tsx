@@ -1,10 +1,10 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { AgentState, DayStats, FinishedAgent, SessionState } from '../../shared/types';
-import type { OfficeView } from '../store';
+import { useShown, type OfficeView } from '../store';
 import { byUrgency, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { StateCounts } from './InstancesPanel';
+import { sessionMeta, StateCounts } from './InstancesPanel';
 import {
-  agentName, agentTask, alertShort, DISMISS_HINT, DISMISS_LABEL, doneGroupLabel, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName,
+  agentName, agentTask, alertShort, DISMISS_HINT, DISMISS_LABEL, doneGroupLabel, FINISHED_TODAY_TITLE, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName,
   SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
 import { CLOSED_FINISHED_TITLE } from './historyLabels';
@@ -46,7 +46,7 @@ function saveFilter(filter: ListFilter): void {
 
 /** Nome di persona in grassetto e compito accanto, in grigio. */
 function AgentName({ agent }: { agent: AgentState }) {
-  const task = agentTask(agent);
+  const task = useShown()('agent.task') ? agentTask(agent) : null;
   return (
     <>
       <strong>{agentName(agent)}</strong>
@@ -90,32 +90,47 @@ function bySession(agents: readonly AgentState[]): Map<string, AgentState[]> {
 
 const NONE: AgentState[] = [];
 
-/** Errori dei tool in breve ("2 errori"), con il dettaglio nel tooltip; mai il testo dell'errore. */
-function ToolErrorsNote({ agent }: { agent: AgentState }) {
-  if (!agent.toolErrors) return null;
-  return <span className="list-agent__errors" title={toolErrorsText(agent.toolErrors)}>{` · ${toolErrorsShort(agent.toolErrors)}`}</span>;
+/** Errori dei tool in breve ("2 errori"), con il dettaglio nel tooltip; mai il testo dell'errore. `lead`: dopo altro testo, con " · ". */
+function ToolErrorsNote({ agent, lead }: { agent: AgentState; lead: boolean }) {
+  const shown = useShown()('agent.toolErrors');
+  if (!agent.toolErrors || !shown) return null;
+  const text = toolErrorsShort(agent.toolErrors);
+  return <span className="list-agent__errors" title={toolErrorsText(agent.toolErrors)}>{lead ? ` · ${text}` : text}</span>;
+}
+
+/** Chip del ruolo, o un segnaposto se è spenta: la riga è una griglia a colonne fisse. */
+function RoleCell({ area, shown }: { area: AgentState['area']; shown: boolean }) {
+  return shown ? <RoleChip area={area} /> : <span />;
 }
 
 /** Agenti della sessione (o delle istanze chiuse, `title`) terminati oggi: nome, esito, durata, costo ed errori. Chiusa di default. */
-const FinishedToday = memo(function FinishedToday({ agents, title = 'Terminati oggi' }: { agents: AgentState[]; title?: string }) {
+const FinishedToday = memo(function FinishedToday({ agents, title = FINISHED_TODAY_TITLE }: { agents: AgentState[]; title?: string }) {
+  const show = useShown();
   if (agents.length === 0) return null;
   return (
     <details className="list-finished">
       <summary>{`${title} (${agents.length})`}</summary>
       <ul className="list-agents">
-        {agents.map((a) => (
-          <li key={a.id} className="list-agent list-agent--done">
-            <span className="list-agent__name" title={a.name}><AgentName agent={a} /></span>
-            <RoleChip area={a.area} />
-            <span className="list-agent__status hud-muted">
-              {[`in ${formatDuration(a.updatedAt - a.startedAt)}`, `${formatTokens(a.tokens.output)} token`, a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null]
-                .filter(Boolean)
-                .join(' · ')}
-              <ToolErrorsNote agent={a} />
-            </span>
-            {a.outcome ? <OutcomeTag outcome={a.outcome} /> : <span />}
-          </li>
-        ))}
+        {agents.map((a) => {
+          const text = [
+            show('agent.duration') && `in ${formatDuration(a.updatedAt - a.startedAt)}`,
+            show('agent.tokens') && `${formatTokens(a.tokens.output)} token`,
+            show('agent.cost') && a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          return (
+            <li key={a.id} className="list-agent list-agent--done">
+              <span className="list-agent__name" title={a.name}><AgentName agent={a} /></span>
+              <RoleCell area={a.area} shown={show('agent.role')} />
+              <span className="list-agent__status hud-muted">
+                {text}
+                <ToolErrorsNote agent={a} lead={text !== ''} />
+              </span>
+              {a.outcome && show('agent.outcome') ? <OutcomeTag outcome={a.outcome} /> : <span />}
+            </li>
+          );
+        })}
       </ul>
     </details>
   );
@@ -126,13 +141,22 @@ const FinishedToday = memo(function FinishedToday({ agents, title = 'Terminati o
  * terminato esito e costo; l'avviso se è fermo o in loop ("!" giallo, con "Fallo uscire" se è fermo); gli errori.
  */
 const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent: AgentState; now: number; onDismiss?: (id: string) => void }) {
-  const pct = a.progress ? percent(a.progress.completed, a.progress.total) : null;
+  const show = useShown();
+  const pct = a.progress && show('agent.progress') ? percent(a.progress.completed, a.progress.total) : null;
   const done = a.status === 'done';
-  const alert = !done && a.alert ? alertShort(a.alert, now) : null;
-  const cost = done && a.cost !== null && a.cost !== undefined ? ` · ${formatCost(a.cost)}` : '';
+  const alert = !done && a.alert && show('agent.alerts') ? alertShort(a.alert, now) : null;
+  // chi è fermo lo dice già lo stato ("fermo da 1 h 12")
+  const text = [
+    a.alert?.kind === 'loop' && alert,
+    statusText(a, now),
+    show('agent.duration') && `${done ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`,
+    show('agent.cost') && done && a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   let last = pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />;
-  if (done && a.outcome) last = <OutcomeTag outcome={a.outcome} />;
-  else if (a.alert?.kind === 'stale' && onDismiss) {
+  if (done && a.outcome && show('agent.outcome')) last = <OutcomeTag outcome={a.outcome} />;
+  else if (alert && a.alert?.kind === 'stale' && onDismiss) {
     last = <button type="button" className="hud-alert__dismiss" title={DISMISS_HINT} onClick={() => onDismiss(a.id)}>{DISMISS_LABEL}</button>;
   }
   return (
@@ -140,14 +164,12 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
       <span className="list-agent__name" title={a.name}>
         {alert && <AlertMark title={alert} />}
         <AgentName agent={a} />
-        {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
+        {a.issues.length > 0 && show('agent.issues') && <span className="hud-label__issue">{issueText(a.issues)}</span>}
       </span>
-      <RoleChip area={a.area} />
+      <RoleCell area={a.area} shown={show('agent.role')} />
       <span className="list-agent__status hud-muted">
-        {/* chi è fermo lo dice già lo stato ("fermo da 1 h 12") */}
-        {a.alert?.kind === 'loop' && !done ? `${alert} · ` : ''}
-        {`${statusText(a, now)} · ${done ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}${cost}`}
-        <ToolErrorsNote agent={a} />
+        {text}
+        <ToolErrorsNote agent={a} lead />
       </span>
       {last}
     </li>
@@ -169,7 +191,8 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
   onToggle: (sessionId: string) => void;
   onDismiss?: (agentId: string) => void;
 }) {
-  const own = hideDone ? all.filter((a) => a.status !== 'done') : all;
+  const show = useShown();
+  const own = hideDone || !show('instances.done') ? all.filter((a) => a.status !== 'done') : all;
   // dal più urgente; i terminati ancora in ufficio in un gruppo richiudibile
   const sorted = byUrgency(own);
   const live = sorted.filter((a) => a.status !== 'done');
@@ -185,8 +208,8 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         <StatusDot status={s.dot} />
         <div className="list-session__name">
           <strong>{projectName(s)}</strong>
-          {s.branch && <span className="hud-muted">{s.branch}</span>}
-          {s.issues.length > 0 && <span className="hud-label__issue">{issueText(s.issues)}</span>}
+          {s.branch && show('session.branch') && <span className="hud-muted">{s.branch}</span>}
+          {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{issueText(s.issues)}</span>}
         </div>
         <StateCounts agents={all} />
         <label className="list-session__show">
@@ -194,17 +217,14 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
           Nell'ufficio
         </label>
       </header>
-      {s.title && <p className="list-session__title">{s.title}</p>}
+      {s.title && show('session.title') && <p className="list-session__title">{s.title}</p>}
       {s.diff && <DiffStat diff={s.diff} />}
       <div className="list-session__metarow">
         <p className="list-session__meta hud-muted">
           {[
-            s.model,
-            s.effort,
-            `${formatTokens(s.tokensUsed.output)} token generati`,
-            s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null,
+            sessionMeta(s, show),
             // il turno corrente (dall'ultimo prompt) o l'ultimo chiuso, non l'età della sessione
-            turnText(s, now),
+            show('session.turn') && turnText(s, now),
             statusText(s, now, SESSION_STATUS_LABEL),
           ]
             .filter(Boolean)
@@ -220,7 +240,7 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
           <ul className="list-agents">{done.map((a) => <AgentLine key={a.id} agent={a} now={now} />)}</ul>
         </details>
       )}
-      <FinishedToday agents={finished} />
+      {show('list.finishedToday') && <FinishedToday agents={finished} />}
     </section>
   );
 }, sameProps);
@@ -266,6 +286,7 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
   onDismiss?: (agentId: string) => void;
 }) {
   const now = useNow();
+  const show = useShown();
   const [filter, setFilter] = useState(loadFilter);
   // sessione aperta dal pannello della menu bar: portata in vista una volta, quando cambia
   useEffect(() => {
@@ -327,7 +348,7 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
           onDismiss={onDismiss}
         />
       ))}
-      {closed.length > 0 && (
+      {closed.length > 0 && show('list.closedFinished') && (
         <section className="list-session list-closed" aria-label={CLOSED_FINISHED_TITLE}>
           <FinishedToday agents={closed} title={CLOSED_FINISHED_TITLE} />
         </section>

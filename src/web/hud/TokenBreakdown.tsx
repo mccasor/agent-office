@@ -7,15 +7,18 @@ export const tokenText = (t: TokenUsage): string => `Output ${formatTokens(t.out
 
 /**
  * Sezione dei token (`title`): in breve e, con `cost`, il costo stimato; con `details` il dettaglio (input, cache read,
- * cache creation e la parte da 1 ora) in un riquadro chiuso.
+ * cache creation e la parte da 1 ora) in un riquadro chiuso. Con i token nascosti dalle impostazioni (`showTokens`)
+ * resta il costo; senza nemmeno quello la sezione non c'è, titolo compreso.
  */
-export function TokenSummary({ title, tokens, cost, costTestId, details = true }: {
+export function TokenSummary({ title, tokens, cost, costTestId, details = true, showTokens = true }: {
   title?: string;
   tokens: TokenUsage;
   cost?: number | null;
   costTestId?: string;
   details?: boolean;
+  showTokens?: boolean;
 }) {
+  if (!showTokens && cost === undefined) return null;
   const parts: [key: string, label: string, value: number][] = [
     ['input', 'Input', tokens.input],
     ['cacheRead', 'Cache read', tokens.cacheRead],
@@ -26,16 +29,18 @@ export function TokenSummary({ title, tokens, cost, costTestId, details = true }
     <>
       {title && <div className="hud-card__section hud-muted">{title}</div>}
       <dl>
-        <Row label="Token">
-          <span data-testid="tokens-summary">{tokenText(tokens)}</span>
-        </Row>
+        {showTokens && (
+          <Row label="Token">
+            <span data-testid="tokens-summary">{tokenText(tokens)}</span>
+          </Row>
+        )}
         {cost !== undefined && (
           <Row label="Costo stimato">
             <span data-testid={costTestId}>{formatCost(cost)}</span>
           </Row>
         )}
       </dl>
-      {details && (
+      {details && showTokens && (
         <details className="hud-tokens">
           <summary className="hud-muted">Dettaglio token</summary>
           <dl className="hud-breakdown">
