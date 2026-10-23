@@ -206,7 +206,7 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
       frame: frameAt(pose, now, seedOf(e.actor.id)), selected,
     }));
     rects.push(actorRect(e.actor.id, e.motion.pos));
-    if (selected || e.actor.boss) labels.push({ entry: e, ...feetOf(e.motion.pos) });
+    if (selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
   const screen = Math.floor(now * SCREEN_FPS);
   for (const f of solid) {
@@ -226,11 +226,11 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
   for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
 
-  // sopra a tutto: fumetti dei boss bloccati ed etichette (boss e selezionato)
+  // sopra a tutto: fumetti di chi è bloccato ed etichette (boss, bloccati e selezionato)
   const bubble = cachedImage('x:bubble', bubbleImage);
   for (const { entry, x, y } of labels) {
     let top = y - 21;
-    if (entry.actor.waiting && entry.actor.boss) {
+    if (entry.actor.waiting) {
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }

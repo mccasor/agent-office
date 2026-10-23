@@ -8,9 +8,11 @@ import { useNow } from './useNow';
 import './hud.css';
 
 /** Una riga dell'elenco agenti: nome e stato (o tool in uso); il clic apre la scheda. */
-function AgentRow({ agent, status, selected, onSelect }: {
+function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
   agent: AgentState;
   status: string;
+  /** bloccato in attesa dell'utente: stato in rosso */
+  waiting?: boolean;
   selected: boolean;
   onSelect: (agentId: string) => void;
 }) {
@@ -18,7 +20,7 @@ function AgentRow({ agent, status, selected, onSelect }: {
     <li>
       <button
         type="button"
-        className={`hud-instance__agent hud-instance__agent--${agent.status}`}
+        className={`hud-instance__agent hud-instance__agent--${agent.status}${waiting ? ' hud-instance__agent--waiting' : ''}`}
         aria-pressed={selected}
         onClick={() => onSelect(agent.id)}
       >
@@ -39,12 +41,14 @@ function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
 }) {
   const now = useNow();
   const pct = percent(s.context.used, s.context.window);
-  const bossStatus = s.waiting
+  // bloccata da un subagente: il motivo va sulla sua riga, Claude resta col suo stato
+  const blocker = s.waitingAgentId ? agents.find((a) => a.id === s.waitingAgentId) : undefined;
+  const bossStatus = s.waiting && !s.waitingAgentId
     ? waitingText(s.waitingKind, s.waitingSince, now)
     : [SESSION_STATUS_LABEL[s.status], s.tool ? toolText(s.tool) : null].filter(Boolean).join(' · ');
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
-      {s.waiting && <SessionAlert session={s} />}
+      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker?.name ?? 'Un subagente') : null} />}
       <p className="hud-instance__meta hud-muted">
         {[s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
           .filter(Boolean)
@@ -58,12 +62,17 @@ function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
       )}
       {s.diff && <DiffStat diff={s.diff} />}
       <ul className="hud-instance__agents" aria-label={`Agenti di ${projectName(s)}`}>
-        {boss && <AgentRow agent={boss} status={bossStatus} selected={selected === boss.id} onSelect={onSelect} />}
+        {boss && <AgentRow agent={boss} status={bossStatus} waiting={s.waiting && !s.waitingAgentId} selected={selected === boss.id} onSelect={onSelect} />}
         {agents.map((a) => (
           <AgentRow
             key={a.id}
             agent={a}
-            status={[STATUS_LABEL[a.status], a.tool && a.status !== 'done' ? toolText(a.tool) : null].filter(Boolean).join(' · ')}
+            status={
+              a.waiting
+                ? waitingText(a.waitingKind, a.waitingSince, now)
+                : [STATUS_LABEL[a.status], a.tool && a.status !== 'done' ? toolText(a.tool) : null].filter(Boolean).join(' · ')
+            }
+            waiting={a.waiting === true}
             selected={selected === a.id}
             onSelect={onSelect}
           />

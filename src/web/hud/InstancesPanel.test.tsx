@@ -80,6 +80,26 @@ describe('InstancesPanel', () => {
     expect(screen.getByText('ti ha fatto una domanda · da 2 min')).toBeTruthy();
   });
 
+  it('subagente bloccato: motivo sulla sua riga, in rosso, e avviso col suo nome; Claude resta col suo stato', () => {
+    const t = Date.now();
+    render(
+      <InstancesPanel
+        sessions={[session({ waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000, waitingAgentId: 'a1' })]}
+        agents={[agent({ waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 })]}
+        bosses={[boss('s1')]}
+        onSelect={() => {}}
+      />,
+    );
+    expect(within(head(/agent-office/)).getByRole('img', { name: /in attesa/ })).toBeTruthy();
+    expect(screen.getByText('Build HUD panel aspetta un tuo permesso · da 3 min')).toBeTruthy();
+    const row = screen.getByRole('button', { name: /Build HUD panel/ });
+    expect(row.className).toContain('hud-instance__agent--waiting');
+    expect(within(row).getByText('aspetta un tuo permesso · da 3 min')).toBeTruthy();
+    const claude = screen.getByRole('button', { name: /Claudio Code/ });
+    expect(claude.className).not.toContain('--waiting');
+    expect(within(claude).getByText('al lavoro')).toBeTruthy();
+  });
+
   it('sessione in evidenza aperta (anche se arriva dopo)', () => {
     const { rerender } = render(<InstancesPanel sessions={sessions} agents={[]} bosses={[]} focus="s1" onSelect={() => {}} />);
     expect(head(/agent-office/).getAttribute('aria-expanded')).toBe('true');

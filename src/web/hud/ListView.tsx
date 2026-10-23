@@ -198,7 +198,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                 {own.map((a) => {
                   const pct = a.progress ? percent(a.progress.completed, a.progress.total) : null;
                   return (
-                    <li key={a.id} className={`list-agent list-agent--${a.status}`}>
+                    <li key={a.id} className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}`}>
                       <span className="list-agent__name" title={a.name}>
                         {a.name}
                         {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
@@ -206,8 +206,9 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                       <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
                       <span className="list-agent__status hud-muted">
                         {[
-                          STATUS_LABEL[a.status],
-                          a.tool && a.status !== 'done' ? toolText(a.tool) : null,
+                          // bloccato: il motivo al posto dello stato e del tool
+                          a.waiting ? waitingText(a.waitingKind, a.waitingSince, now) : STATUS_LABEL[a.status],
+                          a.tool && a.status !== 'done' && !a.waiting ? toolText(a.tool) : null,
                           `${a.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`,
                         ]
                           .filter(Boolean)

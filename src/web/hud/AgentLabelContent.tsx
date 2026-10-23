@@ -7,11 +7,15 @@ import './hud.css';
 
 export const NAME_MAX_CHARS = 24;
 
-/** Blocco della sessione: motivo e da quando. */
+/** Blocco della sessione o del subagente: motivo e da quando. */
 export interface Waiting {
   kind: WaitingKind | null;
   since: number | null;
 }
+
+/** Blocco di un subagente, null se non è in attesa dell'utente. */
+export const agentWaiting = (agent: AgentState): Waiting | null =>
+  agent.waiting && agent.status !== 'done' ? { kind: agent.waitingKind ?? null, since: agent.waitingSince ?? null } : null;
 
 /** Riga sotto il nome: motivo del blocco, oppure tool in uso e da quanto lavora (o quanto ha lavorato). */
 export function activityText(agent: AgentState, waiting: Waiting | null, now: number): string {
@@ -24,7 +28,7 @@ export function activityText(agent: AgentState, waiting: Waiting | null, now: nu
 
 interface AgentLabelContentProps {
   agent: AgentState;
-  /** la sessione è bloccata in attesa dell'utente (solo per Claudio Code) */
+  /** bloccato in attesa dell'utente: Claudio Code (sessione) o il subagente stesso */
   waiting?: Waiting | null;
   /** la sua scheda è aperta */
   selected?: boolean;

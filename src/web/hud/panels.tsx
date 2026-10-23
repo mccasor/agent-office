@@ -41,11 +41,17 @@ export function DiffStat({ diff }: { diff: RepoDiff }) {
   );
 }
 
-/** Avviso della sessione bloccata: motivo e da quanto ("Aspetta un tuo permesso · da 3 min"). */
-export function SessionAlert({ session }: { session: SessionState }) {
+/**
+ * Avviso della sessione (o del subagente) bloccato: motivo e da quanto ("Aspetta un tuo permesso · da 3 min");
+ * con `who`, chi è bloccato ("Explore aspetta un tuo permesso · da 3 min").
+ */
+export function SessionAlert({ session, who = null }: {
+  session: Pick<SessionState, 'waitingKind' | 'waitingSince'>;
+  who?: string | null;
+}) {
   const now = useNow();
   const text = waitingText(session.waitingKind, session.waitingSince, now);
-  return <p className="hud-session__alert">{text.charAt(0).toUpperCase() + text.slice(1)}</p>;
+  return <p className="hud-session__alert">{who ? `${who} ${text}` : text.charAt(0).toUpperCase() + text.slice(1)}</p>;
 }
 
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */

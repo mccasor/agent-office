@@ -3,10 +3,10 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 /** Eventi registrati (verificati su https://code.claude.com/docs/en/hooks). */
-export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit', 'Notification'] as const;
+export const HOOK_EVENTS = ['SessionStart', 'SessionEnd', 'SubagentStart', 'SubagentStop', 'PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit', 'Notification', 'PermissionRequest'] as const;
 
 /** Eventi con matcher sul nome del tool: "*" = tutti. Per gli altri il matcher omesso significa "tutti". */
-const TOOL_EVENTS = new Set<string>(['PreToolUse', 'PostToolUse']);
+const TOOL_EVENTS = new Set<string>(['PreToolUse', 'PostToolUse', 'PermissionRequest']);
 
 /** Marcatore con cui riconosciamo le nostre voci. */
 const MARKER = 'agent-office-hook';

@@ -272,6 +272,8 @@
 .hud-instance__agent--done { opacity: 0.6; }
 .hud-instance__agent-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-instance__agent-status { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* subagente bloccato in attesa dell'utente: stato in rosso */
+.hud-instance__agent--waiting .hud-instance__agent-status { color: var(--hud-danger); font-weight: 600; }
 
 .hud-card__head { display: flex; align-items: flex-start; gap: 8px; }
 .hud-card__head .hud-title { flex: 1; min-width: 0; overflow-wrap: anywhere; }
@@ -370,6 +372,10 @@
 .list-agent:last-child { border-bottom: 0; }
 .list-agent__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-agent--done { opacity: 0.6; }
+/* subagente bloccato in attesa dell'utente: riga rossa */
+.list-agent--waiting { background: color-mix(in srgb, var(--hud-danger) 8%, transparent); }
+.list-agent--waiting .list-agent__name,
+.list-agent--waiting .list-agent__status { color: var(--hud-danger); font-weight: 600; opacity: 1; }
 @media (max-width: 680px) {
   .list-view { padding-top: 120px; }
   .list-agent { grid-template-columns: minmax(0, 1fr) auto; }

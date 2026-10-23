@@ -77,6 +77,24 @@ describe('AgentCard', () => {
     expect(screen.getByTestId('agent-cost').textContent).toBe('≈ $3,50');
   });
 
+  it('subagente bloccato: motivo del blocco; Claude bloccato da un subagente lo dice', () => {
+    const t = Date.now();
+    const { unmount } = render(
+      <AgentCard agent={agent({ waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000 })} onClose={() => {}} />,
+    );
+    expect(screen.getByText('Ti ha fatto una domanda · da 2 min')).toBeTruthy();
+    unmount();
+    const boss = agent({ id: 'boss:s1', name: 'Claudio Code', agentType: 'main', description: '', progress: null });
+    render(
+      <AgentCard
+        agent={boss}
+        session={session({ waiting: true, waitingKind: 'permission', waitingSince: t - 60_000, waitingAgentId: 'a1' })}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText('Un subagente aspetta un tuo permesso · da 1 min')).toBeTruthy();
+  });
+
   it('si chiude con il pulsante e con Esc', () => {
     const onClose = vi.fn();
     render(<AgentCard agent={agent()} onClose={onClose} />);

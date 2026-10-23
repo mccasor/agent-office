@@ -7,7 +7,7 @@ export type { ContextLevel } from './format';
 export { RepoPanel, HudOverlay } from './panels';
 export { InstancesPanel } from './InstancesPanel';
 export { AgentCard } from './AgentCard';
-export { AgentLabelContent, activityText } from './AgentLabelContent';
+export { AgentLabelContent, activityText, agentWaiting } from './AgentLabelContent';
 export type { Waiting } from './AgentLabelContent';
 export { ProgressBar } from './ProgressBar';
 export { ListView, ViewToggle } from './ListView';
@@ -19,7 +19,7 @@ export interface AgentLabelProps {
   position?: [number, number, number];
   /** scala dell'Html in funzione della distanza dalla camera */
   distanceFactor?: number;
-  /** sessione bloccata in attesa dell'utente */
+  /** bloccato in attesa dell'utente (sessione per Claudio Code, sé stesso per un subagente) */
   waiting?: Waiting | null;
   /** la sua scheda è aperta */
   selected?: boolean;

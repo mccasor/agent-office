@@ -194,6 +194,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         updatedAt,
         tool: status === 'done' ? null : s.tool,
         cost: estimateCost(s.model ?? s.declaredModel, s.tokens),
+        // domanda all'utente (AskUserQuestion, ExitPlanMode) del subagente ancora senza risposta
+        ...(s.awaitingUser && !s.finished ? { waiting: true, waitingKind: s.awaitingKind, waitingSince: s.awaitingSince } : {}),
       });
     }
 

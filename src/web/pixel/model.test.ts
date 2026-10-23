@@ -95,6 +95,14 @@ describe('pixelModel', () => {
     expect(waiting.actors.find((a) => a.id === 'w')?.waiting).toBe(false);
   });
 
+  it('subagente bloccato: "!" sopra di lui, non sopra il boss della sessione che ne eredita l\'attesa', () => {
+    const blocked = { ...agent('w'), waiting: true, waitingKind: 'permission' as const };
+    const m = pixelModel(snap([blocked, agent('x')], [session('s1', 1, { waiting: true, waitingAgentId: 'w' })]), EMPTY);
+    expect(m.actors.find((a) => a.id === 'w')?.waiting).toBe(true);
+    expect(m.actors.find((a) => a.id === 'x')?.waiting).toBe(false);
+    expect(m.actors.find((a) => a.id === 'boss:s1')?.waiting).toBe(false);
+  });
+
   it('agenti di sessioni non attive: nel corridoio mentre lavorano, nessun boss', () => {
     const m = pixelModel(snap([agent('x', 'old')], [session('old', 1, { active: false })]), EMPTY);
     expect(m.actors.map((a) => a.id)).toEqual(['x']);
