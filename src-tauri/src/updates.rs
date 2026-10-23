@@ -121,15 +121,15 @@ fn brew() -> Option<PathBuf> {
 /// Come è partito l'aggiornamento.
 #[derive(Debug)]
 pub enum Upgrade {
-    /// brew in corso: chiuderà l'app, la sostituirà e la riaprirà
+    /// brew in corso: sostituisce l'app (senza chiuderla: brew gira dentro di lei); poi `relaunch`
     Brew(Child),
     /// app non installata da Homebrew: aperta la pagina della release
     Page,
     Failed,
 }
 
-/// Aggiorna via Homebrew se l'app è installata dal cask: il processo è staccato dall'app, che brew chiude prima di
-/// sostituirla e riapre alla fine. Altrimenti apre la pagina della release.
+/// Aggiorna via Homebrew se l'app è installata dal cask, altrimenti apre la pagina della release. brew sostituisce
+/// il bundle ma non chiude l'app ("brew is running inside it"): a fine aggiornamento l'app chiama `relaunch`.
 pub fn upgrade() -> Upgrade {
     let installed = brew().filter(|b| {
         Command::new(b)
@@ -145,7 +145,10 @@ pub fn upgrade() -> Upgrade {
         return if opened { Upgrade::Page } else { Upgrade::Failed };
     };
     let brew = brew.to_string_lossy().replace('\'', "'\\''");
-    let script = format!("'{brew}' update --quiet; '{brew}' upgrade --cask {CASK} && /usr/bin/open -a 'Agent Office'");
+    // aggiorna solo il nostro tap: `brew update` passa da tutti i tap e uno irraggiungibile costa minuti
+    let script = format!(
+        "git -C \"$('{brew}' --repository {TAP})\" pull --quiet --ff-only; HOMEBREW_NO_AUTO_UPDATE=1 '{brew}' upgrade --cask {CASK}"
+    );
     // uscita di brew in ~/.agent-office/upgrade.log, per capire un aggiornamento non riuscito
     let log = std::env::var_os("HOME")
         .map(|h| PathBuf::from(h).join(".agent-office/upgrade.log"))
@@ -166,6 +169,36 @@ pub fn upgrade() -> Upgrade {
         .stderr(err)
         .spawn()
         .map_or(Upgrade::Failed, Upgrade::Brew)
+}
+
+/// file che la versione appena aggiornata legge all'avvio: contiene la versione di prima
+fn marker_path() -> Option<PathBuf> {
+    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/updated-from"))
+}
+
+/// Dopo un aggiornamento riuscito: avvia la versione nuova (stesso bundle, sostituito da brew), che chiude questa
+/// all'avvio (instance::take_over) e mostra l'esito. false se non è stato possibile avviarla.
+pub fn relaunch(from: &str) -> bool {
+    let Some(bundle) = std::env::current_exe().ok().and_then(|exe| exe.ancestors().nth(3).map(PathBuf::from)) else {
+        return false;
+    };
+    if let Some(path) = marker_path() {
+        let _ = std::fs::write(path, from);
+    }
+    Command::new("/usr/bin/open").arg("-n").arg(bundle).status().is_ok_and(|s| s.success())
+}
+
+/// Versione di prima, se l'app è stata appena aggiornata (il file si legge una volta sola).
+pub fn take_updated_from() -> Option<String> {
+    let path = marker_path()?;
+    let from = std::fs::read_to_string(&path).ok()?;
+    let _ = std::fs::remove_file(path);
+    Some(from.trim().to_string())
+}
+
+/// Testo dell'esito per chi è passato da `from` a `current`; None se la versione non è cambiata. Pura.
+pub fn updated_message(from: &str, current: &str) -> Option<String> {
+    (from != current).then(|| format!("Aggiornata alla versione {current}"))
 }
 
 #[cfg(test)]
@@ -217,5 +250,12 @@ mod tests {
 
         assert!(!UpdateState::Checking.enabled());
         assert!(UpdateState::Failed.enabled());
+    }
+
+    #[test]
+    fn esito_dopo_l_aggiornamento() {
+        assert_eq!(updated_message("0.6.0", "0.6.1").as_deref(), Some("Aggiornata alla versione 0.6.1"));
+        // brew non ha aggiornato (già all'ultima): niente messaggio
+        assert_eq!(updated_message("0.6.1", "0.6.1"), None);
     }
 }
