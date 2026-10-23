@@ -203,6 +203,21 @@ describe('sessioni visibili nell\'ufficio', () => {
     expect(useOfficeStore.getState().view).toBe('list');
     useOfficeStore.getState().setView('pixel');
   });
+
+  it('nascondere una sessione toglie gli id delle sessioni sparite dallo snapshot', () => {
+    const s = (id: string) => ({ id }) as Snapshot['sessions'][number];
+    useOfficeStore.setState({
+      snapshot: { status: 'idle', sessions: [s('a'), s('b')], agents: [], generatedAt: 0 },
+      hiddenSessions: ['sparita', 'a'],
+    });
+    useOfficeStore.getState().toggleSession('b');
+    expect(useOfficeStore.getState().hiddenSessions).toEqual(['a', 'b']);
+    // mostrare di nuovo una sessione toglie solo quella
+    useOfficeStore.setState({ hiddenSessions: ['sparita', 'a'] });
+    useOfficeStore.getState().toggleSession('a');
+    expect(useOfficeStore.getState().hiddenSessions).toEqual(['sparita']);
+    useOfficeStore.setState({ snapshot: null, hiddenSessions: [] });
+  });
 });
 
 describe('vista e scheda agente', () => {
@@ -222,8 +237,8 @@ describe('vista e scheda agente', () => {
   });
 
   /** store nuovo con le preferenze salvate `saved` e la query `search` */
-  async function freshStore(saved: unknown, search = '') {
-    const data = new Map([['agent-office.prefs', JSON.stringify(saved)]]);
+  async function freshStore(saved: unknown, search = '', raw = JSON.stringify(saved)) {
+    const data = new Map([['agent-office.prefs', raw]]);
     vi.stubGlobal('localStorage', { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => data.set(k, v) });
     vi.stubGlobal('location', { search });
     vi.resetModules();
@@ -246,5 +261,34 @@ describe('vista e scheda agente', () => {
     expect((await freshStore({ view: 'list' }, '?view=office')).store.getState().view).toBe('pixel');
     expect((await freshStore({ view: 'list' }, '?view=pixel')).store.getState().view).toBe('pixel');
     expect((await freshStore({ view: 'pixel' }, '?view=nulla')).store.getState().view).toBe('pixel');
+  });
+
+  it('preferenze non valide: si ignorano i valori sbagliati e si tengono quelli validi', async () => {
+    const hidden = async (saved: unknown) => (await freshStore(saved)).store.getState().hiddenSessions;
+    expect(await hidden({ hiddenSessions: ['x', 3, null, 'y', { id: 'z' }] })).toEqual(['x', 'y']);
+    expect(await hidden({ hiddenSessions: 'x' })).toEqual([]);
+    expect(await hidden(null)).toEqual([]);
+    expect(await hidden(['x'])).toEqual([]);
+    const corrupt = (await freshStore(null, '', '{rotto')).store.getState();
+    expect([corrupt.view, corrupt.hiddenSessions]).toEqual(['pixel', []]);
+    // ?view prevale anche su preferenze illeggibili (l'app della menu bar apre la lista)
+    expect((await freshStore(null, '?view=list', '{rotto')).store.getState().view).toBe('list');
+  });
+
+  it('storage non disponibile: default in lettura, nessun errore in scrittura', async () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    vi.stubGlobal('location', { search: '?session=s1' });
+    vi.resetModules();
+    const { useOfficeStore: store } = await import('./index');
+    expect(store.getState()).toMatchObject({ view: 'pixel', hiddenSessions: [], focusSession: 's1' });
+    expect(() => store.getState().toggleSession('s1')).not.toThrow();
+    expect(store.getState().hiddenSessions).toEqual(['s1']);
   });
 });
