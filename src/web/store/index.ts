@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import type { Snapshot } from '../../shared/types';
 
-/** pixel = ufficio (2D in pixel art), list = lista delle sessioni */
-export type OfficeView = 'pixel' | 'list';
+/** pixel = ufficio (2D in pixel art), list = lista delle sessioni, history = analisi della giornata (#98) */
+export type OfficeView = 'pixel' | 'list' | 'history';
 
 /**
  * Vista richiesta (preferenza salvata, ?view=, app della menu bar) -> vista valida; null se sconosciuta.
@@ -10,7 +10,7 @@ export type OfficeView = 'pixel' | 'list';
  */
 export function toView(v: unknown): OfficeView | null {
   if (v === 'office' || v === 'pixel') return 'pixel';
-  return v === 'list' ? 'list' : null;
+  return v === 'list' || v === 'history' ? v : null;
 }
 
 export interface OfficeStoreState {

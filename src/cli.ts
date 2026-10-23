@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTranscriptWatcher } from './server/transcript/index.js';
 import {
@@ -15,6 +17,7 @@ import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
+import { createHistory } from './server/history/index.js';
 import type { Snapshot } from './shared/types.js';
 
 export interface CliOptions {
@@ -98,17 +101,27 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     await repos.poll(Date.now());
   }
 
-  await Promise.all([transcript.start(), hooks.start()]);
-  const snapshot = () =>
-    buildSnapshot({
+  // storico della giornata (#98): attese, cronologia, terminati delle sessioni chiuse, file toccati
+  const history = createHistory({
+    dir: join(dataDir ?? join(homedir(), '.agent-office'), 'history'),
+    filesOf: (sessionId, agentId) => transcript.filesOf(sessionId, agentId),
+  });
+  await Promise.all([transcript.start(), hooks.start(), history.start()]);
+  const snapshot = (): Snapshot => {
+    const next = buildSnapshot({
       transcript: transcript.current(),
       hookEvents: hooks.current(),
       repoAt: (cwd) => repos.get(cwd),
       now: Date.now(),
     });
+    // un confronto con lo stato già registrato a ogni pubblicazione; la lista dei terminati chiusi è in cache
+    history.observe(next);
+    const closedFinished = history.closedFinished();
+    return closedFinished ? { ...next, closedFinished } : next;
+  };
 
   const first = snapshot();
-  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first });
+  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first, history: (day) => history.report(day) });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
   let last = '';
@@ -150,7 +163,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
       throttle.cancel();
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
-      await server.close();
+      await Promise.all([server.close(), history.flush()]);
     },
   };
 }

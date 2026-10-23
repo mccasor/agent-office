@@ -4,6 +4,7 @@ import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store'
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
 import { openCardWindow } from './hud/popout';
+import { HistoryView } from './hud/HistoryView';
 import './app.css';
 
 export function App() {
@@ -62,11 +63,13 @@ export function App() {
           sessions={fullSnapshot?.sessions ?? []}
           agents={fullSnapshot?.agents ?? []}
           finished={fullSnapshot?.finished ?? []}
+          closedFinished={fullSnapshot?.closedFinished}
           hidden={hidden}
           onToggle={toggleSession}
           focus={focusSession}
         />
       )}
+      {viewMode === 'history' && <HistoryView />}
       <HudOverlay side="left">
         {office && (
           <InstancesPanel

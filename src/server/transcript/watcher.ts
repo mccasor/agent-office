@@ -46,6 +46,8 @@ type Transcript = Exclude<Parsed, { kind: 'meta' }>;
  */
 export interface TranscriptWatcher extends Omit<Watcher<TranscriptSnapshot>, 'onChange'> {
   onChange(listener: () => void): () => void;
+  /** basename dei file letti o modificati da un subagente (o da Claude stesso con agentId null), per lo storico */
+  filesOf(sessionId: string, agentId: string | null): string[];
 }
 
 interface TrackedFile {
@@ -282,6 +284,15 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
       await Promise.all([...files.values()].map((f) => f.queue));
     },
     current: compute,
+    filesOf(sessionId, agentId) {
+      // chiamato di rado (fine di un agente o di una sessione): basta scorrere i file seguiti
+      for (const f of files.values()) {
+        const p = f.parsed;
+        if (p.sessionId !== sessionId || (p.kind === 'agent' ? p.agentId : null) !== agentId) continue;
+        return [...new Set(f.acc.state.filePaths.map((path) => basename(path)))];
+      }
+      return [];
+    },
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
