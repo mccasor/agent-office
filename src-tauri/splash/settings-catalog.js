@@ -2,38 +2,32 @@
 globalThis.AGENT_OFFICE_SETTINGS = {
   "tabs": [
     {
-      "id": "general",
-      "label": "Generali"
+      "id": "general"
     },
     {
-      "id": "claude",
-      "label": "Claude"
+      "id": "claude"
     },
     {
-      "id": "agents",
-      "label": "Agenti"
+      "id": "agents"
     },
     {
-      "id": "git",
-      "label": "Git"
+      "id": "git"
     },
     {
-      "id": "instances",
-      "label": "Istanze"
+      "id": "instances"
     }
   ],
-  "places": {
-    "office": "Ufficio",
-    "instances": "Istanze",
-    "card": "Scheda",
-    "list": "Lista",
-    "panel": "Menu bar"
-  },
+  "places": [
+    "office",
+    "instances",
+    "card",
+    "list",
+    "panel"
+  ],
   "items": [
     {
       "key": "session.model",
       "tab": "claude",
-      "label": "Modello",
       "places": [
         "instances",
         "list",
@@ -44,7 +38,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.effort",
       "tab": "claude",
-      "label": "Effort",
       "places": [
         "instances",
         "list",
@@ -55,7 +48,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.tokens",
       "tab": "claude",
-      "label": "Token generati",
       "places": [
         "instances",
         "list",
@@ -66,7 +58,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.cost",
       "tab": "claude",
-      "label": "Costo stimato",
       "places": [
         "instances",
         "list",
@@ -77,7 +68,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.context",
       "tab": "claude",
-      "label": "Contesto usato",
       "places": [
         "instances",
         "list",
@@ -89,7 +79,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.turn",
       "tab": "claude",
-      "label": "Durata del turno",
       "places": [
         "instances",
         "list",
@@ -100,7 +89,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.title",
       "tab": "claude",
-      "label": "Titolo della conversazione",
       "places": [
         "list",
         "card"
@@ -110,7 +98,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.toolErrors",
       "tab": "claude",
-      "label": "Errori dei tool",
       "places": [
         "card"
       ],
@@ -119,7 +106,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.activity",
       "tab": "claude",
-      "label": "Attività sotto l'istanza",
       "places": [
         "panel"
       ],
@@ -128,7 +114,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.role",
       "tab": "agents",
-      "label": "Ruolo",
       "places": [
         "office",
         "instances",
@@ -140,7 +125,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.task",
       "tab": "agents",
-      "label": "Compito",
       "places": [
         "instances",
         "list",
@@ -152,7 +136,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.type",
       "tab": "agents",
-      "label": "Tipo di agente",
       "places": [
         "card"
       ],
@@ -161,7 +144,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.description",
       "tab": "agents",
-      "label": "Descrizione",
       "places": [
         "card"
       ],
@@ -170,7 +152,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.issues",
       "tab": "agents",
-      "label": "Issue",
       "places": [
         "list",
         "card"
@@ -180,7 +161,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.progress",
       "tab": "agents",
-      "label": "Avanzamento",
       "places": [
         "list",
         "card"
@@ -190,7 +170,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.duration",
       "tab": "agents",
-      "label": "Durata",
       "places": [
         "list",
         "card"
@@ -200,7 +179,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.model",
       "tab": "agents",
-      "label": "Modello",
       "places": [
         "card"
       ],
@@ -209,7 +187,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.effort",
       "tab": "agents",
-      "label": "Effort",
       "places": [
         "card"
       ],
@@ -218,7 +195,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.tokens",
       "tab": "agents",
-      "label": "Token",
       "places": [
         "list",
         "card"
@@ -228,7 +204,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.cost",
       "tab": "agents",
-      "label": "Costo stimato",
       "places": [
         "list",
         "card"
@@ -238,7 +213,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.outcome",
       "tab": "agents",
-      "label": "Esito dei terminati",
       "places": [
         "list",
         "card"
@@ -248,7 +222,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.toolErrors",
       "tab": "agents",
-      "label": "Errori dei tool",
       "places": [
         "list",
         "card"
@@ -258,7 +231,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "agent.alerts",
       "tab": "agents",
-      "label": "Avviso se fermo o in loop",
       "places": [
         "office",
         "instances",
@@ -270,7 +242,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "office.labels",
       "tab": "agents",
-      "label": "Nomi sopra i personaggi",
       "places": [
         "office"
       ],
@@ -279,7 +250,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "office.bubbles",
       "tab": "agents",
-      "label": "Fumetto di chi aspetta",
       "places": [
         "office"
       ],
@@ -288,7 +258,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "panel.agents",
       "tab": "agents",
-      "label": "Agenti sotto le istanze",
       "places": [
         "panel"
       ],
@@ -297,7 +266,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.branch",
       "tab": "git",
-      "label": "Branch",
       "places": [
         "instances",
         "list",
@@ -309,7 +277,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.diff",
       "tab": "git",
-      "label": "Modifiche non committate",
       "places": [
         "instances",
         "list",
@@ -320,7 +287,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "session.issues",
       "tab": "git",
-      "label": "Issue del branch",
       "places": [
         "instances",
         "list",
@@ -331,7 +297,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "instances.counts",
       "tab": "instances",
-      "label": "Subagenti per stato",
       "places": [
         "instances",
         "list"
@@ -341,7 +306,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "instances.done",
       "tab": "instances",
-      "label": "Terminati ancora in ufficio",
       "places": [
         "instances",
         "list"
@@ -351,7 +315,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "list.finishedToday",
       "tab": "instances",
-      "label": "Terminati oggi, già usciti",
       "places": [
         "list"
       ],
@@ -360,7 +323,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "list.closedFinished",
       "tab": "instances",
-      "label": "Terminati delle istanze chiuse",
       "places": [
         "list"
       ],
@@ -369,7 +331,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "today.list",
       "tab": "instances",
-      "label": "Barra \"Oggi\" completa",
       "places": [
         "list"
       ],
@@ -378,7 +339,6 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "today.office",
       "tab": "instances",
-      "label": "Barra \"Oggi\" compatta",
       "places": [
         "office"
       ],

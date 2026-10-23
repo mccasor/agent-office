@@ -15,7 +15,6 @@ describe('catalogo delle impostazioni', () => {
       expect(item.key).toMatch(/^[a-z][a-zA-Z0-9]*(\.[a-zA-Z0-9]+)+$/);
       expect(tabs.has(item.tab) && (item.tab as string) !== 'general').toBe(true);
       expect(item.places.length).toBeGreaterThan(0);
-      expect(item.label.length).toBeLessThanOrEqual(32);
     }
     // ogni scheda (tranne Generali) ha qualcosa da mostrare
     for (const tab of SETTINGS_TABS.filter((t) => t.id !== 'general')) {
@@ -34,8 +33,12 @@ describe('catalogo delle impostazioni', () => {
   });
 
   it('preferenze ricevute: lingua valida o "system"; voce assente al default', () => {
-    expect(toDisplaySettings({ language: 'en', show: { 'panel.agents': false } })).toMatchObject({ language: 'en', show: { 'panel.agents': false } });
+    expect(toDisplaySettings({ language: 'en', show: { 'panel.agents': false } })).toMatchObject({ language: 'en', locale: 'en', show: { 'panel.agents': false } });
     expect(toDisplaySettings({ language: 'fr' }).language).toBe('system');
+    // lingua già risolta dal server; senza (server vecchio) quella scelta, o l'italiano con "system"
+    expect(toDisplaySettings({ language: 'system', locale: 'es' }).locale).toBe('es');
+    expect(toDisplaySettings({ language: 'system', locale: 'fr' }).locale).toBe('it');
+    expect(toDisplaySettings({ language: 'system' }).locale).toBe('it');
     expect(toDisplaySettings('rotto')).toEqual(DEFAULT_DISPLAY);
     expect(isShown({ show: {} as never }, 'session.diff')).toBe(true);
     expect(isShown({ show: { ...DEFAULT_DISPLAY.show, 'session.diff': false } }, 'session.diff')).toBe(false);

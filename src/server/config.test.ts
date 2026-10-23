@@ -2,7 +2,7 @@ import { mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_CONFIG, displaySettings, loadConfig, parseConfig, watchConfig, type ServerConfig } from './config.js';
+import { DEFAULT_CONFIG, displaySettings, loadConfig, parseConfig, systemLanguages, watchConfig, type ServerConfig } from './config.js';
 
 describe('loadConfig', () => {
   let dir: string;
@@ -47,8 +47,20 @@ describe('parseConfig', () => {
     expect(parseConfig([1, 2])).toEqual(DEFAULT_CONFIG);
   });
 
-  it('alle pagine solo lingua e voci da mostrare', () => {
-    expect(Object.keys(displaySettings(DEFAULT_CONFIG)).sort()).toEqual(['language', 'show']);
+  it('alle pagine solo lingua (scelta e risolta) e voci da mostrare', () => {
+    expect(Object.keys(displaySettings(DEFAULT_CONFIG)).sort()).toEqual(['language', 'locale', 'show']);
+  });
+
+  it('lingua "system" risolta una volta qui: macOS (dall\'app), poi il terminale, poi italiano', () => {
+    expect(systemLanguages({ AGENT_OFFICE_LANGUAGES: 'fr-FR, es-ES', LANG: 'en_US.UTF-8' })).toEqual(['fr-FR', 'es-ES']);
+    expect(systemLanguages({ LC_ALL: 'C', LANG: 'en_US.UTF-8' })).toEqual(['en_US.UTF-8']);
+    expect(systemLanguages({})).toEqual([]);
+    expect(displaySettings(DEFAULT_CONFIG, ['fr-FR', 'es-ES']).locale).toBe('es');
+    expect(displaySettings(DEFAULT_CONFIG, ['en_US.UTF-8']).locale).toBe('en');
+    expect(displaySettings(DEFAULT_CONFIG, ['de-DE']).locale).toBe('it');
+    expect(displaySettings(DEFAULT_CONFIG, []).locale).toBe('it');
+    // una lingua scelta vale su quella del sistema
+    expect(displaySettings(parseConfig({ language: 'es' }), ['en-US']).locale).toBe('es');
   });
 });
 

@@ -2,6 +2,7 @@ import { watch, type FSWatcher } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { resolveLocale } from '../shared/i18n/index.js';
 import { LANGUAGES, resolveShow, type DisplaySettings } from '../shared/settings.js';
 
 /**
@@ -42,7 +43,7 @@ const FIELDS = {
   staleAgentMinutes: number(1, 24 * 60, 60),
   /** chiamate consecutive allo stesso tool con lo stesso input da cui un subagente ha l'avviso "in loop" (#97) */
   loopRepeats: integer(2, 100, 5),
-  /** lingua dell'interfaccia (#93, non ancora usata) */
+  /** lingua dell'interfaccia (#93): "system" o una lingua; alle pagine va già risolta (displaySettings) */
   language: oneOf(LANGUAGES, 'system'),
   /** voci da mostrare (catalogo in shared/settings.ts): sempre tutte, risolte con i default */
   show: { default: resolveShow(undefined), parse: resolveShow } satisfies Field<DisplaySettings['show']>,
@@ -64,8 +65,27 @@ export function parseConfig(raw: unknown): ServerConfig {
   return out as ServerConfig;
 }
 
-/** Preferenze di visualizzazione per le pagine: niente che non serva a disegnare (né percorsi né prompt). */
-export const displaySettings = (c: ServerConfig): DisplaySettings => ({ language: c.language, show: c.show });
+/**
+ * Lingue preferite del sistema, dalla più gradita: quelle di macOS passate dall'app della menu bar
+ * (AGENT_OFFICE_LANGUAGES, es. "fr-FR,en-US"), altrimenti la lingua del terminale (LC_ALL, LC_MESSAGES, LANG). Pura.
+ */
+export function systemLanguages(env: NodeJS.ProcessEnv = process.env): string[] {
+  const fromApp = (env.AGENT_OFFICE_LANGUAGES ?? '').split(',').map((l) => l.trim()).filter(Boolean);
+  if (fromApp.length > 0) return fromApp;
+  // "C" e "POSIX" non dicono niente sulla lingua
+  return [env.LC_ALL, env.LC_MESSAGES, env.LANG].filter((l): l is string => !!l && l !== 'C' && l !== 'POSIX');
+}
+
+/**
+ * Preferenze di visualizzazione per le pagine: niente che non serva a disegnare (né percorsi né prompt). La lingua
+ * arriva già risolta (`locale`): "system" si risolve qui, una volta, così ufficio, schede e app (che passa le stesse
+ * lingue di macOS) concordano anche dove `navigator.languages` non segue il sistema (WKWebView, browser in un'altra lingua).
+ */
+export const displaySettings = (c: ServerConfig, languages: readonly string[] = systemLanguages()): DisplaySettings => ({
+  language: c.language,
+  locale: resolveLocale(c.language, languages),
+  show: c.show,
+});
 
 /** File assente o illeggibile -> tutto default. */
 export async function loadConfig(dataDir = defaultDataDir()): Promise<ServerConfig> {
