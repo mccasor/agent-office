@@ -167,6 +167,8 @@
     const SESSION_STATUS = { working: 'al lavoro', entering: 'in arrivo', idle: 'inattivo', done: 'pronto' };
 
     let state = null;
+    /** ultimo contenuto mostrato: se non cambia, niente DOM da rifare né ridimensionamento */
+    let shown = '';
 
     function render() {
       if (!state) return;
@@ -245,6 +247,8 @@
       html += `<hr><button class="row" data-action="quit">${icon('quit')}<span class="row__label">Esci da Agent Office</span></button>
         <div class="footer">Agent Office ${esc(state.version)}</div>`;
 
+      if (html === shown) return;
+      shown = html;
       document.getElementById('root').innerHTML = html;
       invoke('panel_resize', { height: Math.ceil(document.documentElement.scrollHeight) });
     }
@@ -267,8 +271,8 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') invoke('panel_action', { action: 'close', arg: null });
     });
-    // tempi ("da 3 min") aggiornati anche senza nuovi snapshot, solo a pannello visibile
-    setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+    // tempi ("da 3 min") aggiornati anche senza nuovi snapshot: l'app chiama agentPanelRefresh a ogni giro di polling,
+    // solo a pannello visibile (un timer qui raddoppierebbe le letture)
     refresh();
   </script>
 </body>

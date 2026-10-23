@@ -1995,7 +1995,7 @@ export function cachedImage(key: string, make: () => PixelImage): Sprite {
 
 export function characterSprite(look: PixelLook, pose: Pose, facing: Facing, frame: number): Sprite {
   const f = frame % POSE_FRAMES[pose];
-  return cachedImage(`c:${look.id}:${pose}:${facing}:${f}`, () => characterImage(look, pose, facing, f));
+  return cachedImage(`c:${look.id}:${String(look.accent)}:${String(look.shoes)}:${pose}:${facing}:${f}`, () => characterImage(look, pose, facing, f));
 }
 
 export function furnitureSprite(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0, variant = 0): Sprite {

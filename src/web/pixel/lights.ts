@@ -207,6 +207,11 @@ export class RoomLights {
     });
   }
 
+  /** buio di ogni zona in questo fotogramma (per capire se il fotogramma è cambiato) */
+  get levels(): readonly number[] {
+    return this.dark;
+  }
+
   /** la zona ha l'interruttore acceso */
   isOn(zone: number): boolean {
     return this.switches?.[zone]?.on ?? true;

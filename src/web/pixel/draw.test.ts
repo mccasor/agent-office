@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  actorOps, actorRect, contentSize, FLAT, fitScale, furnitureOp, hitTest, inFront, sceneFurniture, sortByDepth, viewportFor,
+  actorOps, actorRect, contentSize, FLAT, fitScale, furnitureOp, hitTest, inFront, sameFrame, sceneFurniture, sortByDepth, viewportFor,
   wallFaceVisible, type ActorDraw, type DrawOp,
 } from './draw';
+import { frameAt, POSE_FPS } from './actors';
 import { createPlan } from './plan';
 import { pickLook } from './sprites';
 import type { Furniture } from './types';
@@ -100,5 +101,22 @@ describe('hitTest', () => {
     const y = front.y + 2;
     expect(hitTest([front, back], front.x + 4, y)).toBe('front');
     expect(hitTest([back, front], front.x + 4, y)).toBe('front');
+  });
+});
+
+describe('fotogrammi uguali', () => {
+  const sprite = {};
+  it('stessi elementi (sprite per identità) e stessa lunghezza', () => {
+    expect(sameFrame(null, [])).toBe(false);
+    expect(sameFrame([1, sprite, 'Marta'], [1, sprite, 'Marta'])).toBe(true);
+    expect(sameFrame([1, sprite], [1, {}])).toBe(false);
+    expect(sameFrame([1, sprite], [1, sprite, 2])).toBe(false);
+    expect(sameFrame([0, NaN], [0, NaN])).toBe(true);
+  });
+
+  it('chi siede fermo cambia posa poco più di una volta al secondo: a 30 fps quasi tutti i fotogrammi si saltano', () => {
+    const frames = Array.from({ length: 30 }, (_, i) => frameAt('sit', 100 + i / 30, 7));
+    const redraws = frames.filter((f, i) => i > 0 && !sameFrame([frames[i - 1]], [f])).length;
+    expect(redraws).toBeLessThanOrEqual(Math.ceil(POSE_FPS.sit));
   });
 });
