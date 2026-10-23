@@ -12,7 +12,7 @@ const session = (id: string, updatedAt = 1, extra: Partial<SessionState> = {}): 
   startedAt: 0, updatedAt, active: true, status: 'working', issues: [], cwd: null, branch: null, waiting: false, dot: 'working', project: null, ...extra,
 });
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
-  ({ status: 'idle', repo: null, sessions, agents, generatedAt: 0 });
+  ({ status: 'idle', sessions, agents, generatedAt: 0 });
 const EMPTY = EMPTY_PIXEL_SEATING;
 const target = (m: PixelModel, id: string) => m.actors.find((a) => a.id === id)?.target?.id ?? null;
 

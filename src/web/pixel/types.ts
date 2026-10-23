@@ -7,7 +7,7 @@
  * sud (verso il basso dello schermo), così i percorsi riusano findPath e advanceAlongPath di ../scene.
  */
 import type { AgentState } from '../../shared/types';
-import type { Cell } from '../scene/layout';
+import type { Cell } from './path';
 
 export type { Cell };
 

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
+import type { OfficeStatus, RepoDiff, SessionState } from '../../shared/types';
 import { DOT_LABEL, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
@@ -57,22 +57,4 @@ export function SessionAlert({ session, who = null }: {
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
 export function StatusDot({ status }: { status: OfficeStatus }) {
   return <span className={`list-dot list-dot--${status}`} role="img" aria-label={DOT_LABEL[status]} title={DOT_LABEL[status]} />;
-}
-
-/** Pannello overlay: progetto, branch, +righe / -righe, file modificati. */
-export function RepoPanel({ repo }: { repo: RepoState | null }) {
-  if (!repo) {
-    return (
-      <section className="hud-panel hud-panel--empty" aria-label="Repository">
-        Nessun repository git
-      </section>
-    );
-  }
-  return (
-    <section className="hud-panel" aria-label="Repository">
-      <div className="hud-title">{repo.project}</div>
-      <div className="hud-branch">{repo.branch ?? '(detached)'}</div>
-      <DiffStat diff={repo} />
-    </section>
-  );
 }

@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn chi_risponde_sulla_porta() {
         assert_eq!(probe(None), Probe::Down);
-        assert_eq!(probe(Some(r#"{"app":"agent-office","status":"idle","activeSessions":0}"#)), Probe::Ours);
+        assert_eq!(probe(Some(r#"{"app":"agent-office","status":"idle"}"#)), Probe::Ours);
         assert_eq!(probe(Some(r#"{"status":"idle"}"#)), Probe::Foreign);
         assert_eq!(probe(Some("<html>altro programma</html>")), Probe::Foreign);
     }

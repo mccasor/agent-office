@@ -135,7 +135,6 @@ export interface RepoState extends RepoDiff {
 export interface Snapshot {
   /** priorità: waiting (una sessione aspetta l'utente) > working > idle */
   status: OfficeStatus;
-  repo: RepoState | null;
   sessions: SessionState[];
   agents: AgentState[];
   /** agenti terminati oggi e già usciti dall'ufficio, dal più recente (cronologia); assente nei client vecchi */

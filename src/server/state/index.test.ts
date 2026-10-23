@@ -125,7 +125,7 @@ describe('buildSnapshot: stato agente', () => {
   ];
 
   it.each(cases)('$name', ({ agent: over, hooks = [], expected }) => {
-    const snap = buildSnapshot({ transcript: { sessions: [], agents: [agent(over)] }, hookEvents: hooks, repo: null, now: NOW });
+    const snap = buildSnapshot({ transcript: { sessions: [], agents: [agent(over)] }, hookEvents: hooks, now: NOW });
     expect(snap.agents[0]?.status ?? null).toBe(expected);
     expect(snap.agents).toHaveLength(expected === null ? 0 : 1);
   });
@@ -134,7 +134,6 @@ describe('buildSnapshot: stato agente', () => {
     const snap = buildSnapshot({
       transcript: { sessions: [], agents: [agent({ updatedAt: NOW - 5_000 })] },
       hookEvents: [hook('PostToolUse', NOW - 100)],
-      repo: null,
       now: NOW,
     });
     expect(snap.agents[0]?.updatedAt).toBe(NOW - 100);
@@ -144,7 +143,6 @@ describe('buildSnapshot: stato agente', () => {
     const snap = buildSnapshot({
       transcript: { sessions: [], agents: [] },
       hookEvents: [hook('SubagentStart', NOW - 100, { agentId: 'ghost' })],
-      repo: null,
       now: NOW,
     });
     expect(snap.agents).toEqual([]);
@@ -153,7 +151,7 @@ describe('buildSnapshot: stato agente', () => {
   it('preserva l\'ordine e gli altri campi degli agenti', () => {
     const a = agent({ id: 'a1', name: 'uno' });
     const b = agent({ id: 'a2', name: 'due' });
-    const snap = buildSnapshot({ transcript: { sessions: [], agents: [a, b] }, hookEvents: [], repo: null, now: NOW });
+    const snap = buildSnapshot({ transcript: { sessions: [], agents: [a, b] }, hookEvents: [], now: NOW });
     expect(snap.agents).toEqual([a, b]);
   });
 });
@@ -211,7 +209,6 @@ describe('buildSnapshot: sessioni', () => {
     const snap = buildSnapshot({
       transcript: { sessions: sessions.map((s) => session(s)), agents: [] },
       hookEvents: hooks,
-      repo: null,
       now: NOW,
     });
     expect(snap.sessions.map((s) => [s.id, s.active])).toEqual(expected);
@@ -219,20 +216,26 @@ describe('buildSnapshot: sessioni', () => {
 });
 
 describe('buildSnapshot: snapshot', () => {
-  it('include repo e generatedAt, non muta l\'input', () => {
-    const repo: RepoState = { project: 'p', branch: 'main', linesAdded: 1, linesRemoved: 2, filesChanged: 3 };
+  it('include generatedAt, non muta l\'input', () => {
     const transcript = { sessions: [session()], agents: [agent({ status: 'working' })] };
     const frozen = structuredClone(transcript);
-    const snap = buildSnapshot({ transcript, hookEvents: [hook('SubagentStop', NOW - 100), hook('SessionEnd', NOW - 100)], repo, now: NOW });
-    expect(snap.repo).toBe(repo);
+    const snap = buildSnapshot({ transcript, hookEvents: [hook('SubagentStop', NOW - 100), hook('SessionEnd', NOW - 100)], now: NOW });
     expect(snap.generatedAt).toBe(NOW);
     expect(transcript).toEqual(frozen);
   });
 
+  it('diff per sessione dalla sua cartella, solo per le sessioni attive', () => {
+    const at = (cwd: string) => (cwd === '/p' ? { ...repo('main'), linesAdded: 4 } : null);
+    const build = (over: Partial<TranscriptSession>) =>
+      buildSnapshot({ transcript: { sessions: [session(over)], agents: [] }, hookEvents: [], repoAt: at, now: NOW }).sessions[0]!;
+    expect(build({ cwd: '/p' }).diff).toEqual({ linesAdded: 4, linesRemoved: 0, filesChanged: 0 });
+    expect(build({ cwd: '/altro' }).diff).toBeNull();
+    expect(build({ cwd: '/p', active: false }).diff).toBeNull();
+  });
+
   it('input vuoto', () => {
-    expect(buildSnapshot({ transcript: { sessions: [], agents: [] }, hookEvents: [], repo: null, now: NOW })).toEqual({
+    expect(buildSnapshot({ transcript: { sessions: [], agents: [] }, hookEvents: [], now: NOW })).toEqual({
       status: 'idle',
-      repo: null,
       sessions: [],
       agents: [],
       finished: [],
@@ -243,7 +246,7 @@ describe('buildSnapshot: snapshot', () => {
 
 describe('buildSnapshot: area relax', () => {
   const build = (agents: AgentState[]) =>
-    buildSnapshot({ transcript: { sessions: [], agents }, hookEvents: [], repo: null, now: NOW }).agents.map((a) => a.id);
+    buildSnapshot({ transcript: { sessions: [], agents }, hookEvents: [], now: NOW }).agents.map((a) => a.id);
 
   it('chi ha finito resta (in area relax) finché un altro agente lavora', () => {
     const old = agent({ id: 'old', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 60_000 });
@@ -286,7 +289,7 @@ describe('buildSnapshot: terminati di oggi', () => {
       sessions: [],
       agents: [done('gone', now - 3 * 3_600_000), done('later', now - 3_600_000), done('ieri', midnight - 1), done('relax', now - 1_000), busy],
     };
-    const snap = buildSnapshot({ transcript, hookEvents: [], repo: null, now });
+    const snap = buildSnapshot({ transcript, hookEvents: [], now });
     expect(snap.agents.map((a) => a.id)).toEqual(['relax', 'busy']);
     expect(snap.finished!.map((a) => a.id)).toEqual(['later', 'gone']);
   });
@@ -295,9 +298,9 @@ describe('buildSnapshot: terminati di oggi', () => {
 describe('buildSnapshot: sessione principale (Claudio Code)', () => {
   const build = (over: Partial<TranscriptSession>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
     buildSnapshot({
-      transcript: { sessions: [session(over)], agents: [] },
+      transcript: { sessions: [session({ cwd: '/p', ...over })], agents: [] },
       hookEvents,
-      repo: branch === null ? null : repo(branch),
+      repoAt: () => (branch === null ? null : repo(branch)),
       now: NOW,
     }).sessions[0]!;
 
@@ -329,7 +332,7 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
 describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
   const notif = (t: number, notification: NonNullable<HookEvent['notification']>) => hook('Notification', t, { agentId: null, notification });
   const build = (sessions: TranscriptSession[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
-    buildSnapshot({ transcript: { sessions, agents }, hookEvents, repo: null, now: NOW });
+    buildSnapshot({ transcript: { sessions, agents }, hookEvents, now: NOW });
 
   it('notifica di permesso senza attività successiva → waiting; quella di attesa prompt no', () => {
     expect(build([session()], [notif(NOW - 500, 'input')]).sessions[0]!.waiting).toBe(true);

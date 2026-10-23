@@ -35,12 +35,6 @@ export function contextLevel(pct: number): ContextLevel {
   return 'ok';
 }
 
-/** Tronca a `max` caratteri (ellissi inclusa). */
-export function truncate(text: string, max: number): string {
-  const chars = [...text];
-  return chars.length <= max ? text : `${chars.slice(0, max - 1).join('').trimEnd()}…`;
-}
-
 /** Durata compatta: "<1 min", "12 min", "2 h", "2 h 05"; valori negativi o non finiti → "<1 min". */
 export function formatDuration(ms: number): string {
   const min = Number.isFinite(ms) ? Math.floor(ms / 60_000) : 0;

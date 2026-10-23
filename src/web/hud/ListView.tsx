@@ -80,13 +80,13 @@ function ContextBar({ session }: { session: SessionState }) {
   );
 }
 
+// "Ufficio" e non "2D": c'è una sola vista dell'ufficio, e il nome è lo stesso di "Apri ufficio" (menu bar) e "Nell'ufficio"
 const VIEW_LABEL: [OfficeView, string, string][] = [
-  ['office', '3D', 'Ufficio 3D'],
-  ['pixel', '2D', 'Ufficio 2D in pixel art'],
+  ['pixel', 'Ufficio', 'Ufficio in pixel art'],
   ['list', 'Lista', 'Lista delle istanze'],
 ];
 
-/** Selettore a tre segmenti in alto a destra: ufficio 3D, ufficio 2D o lista delle istanze. */
+/** Selettore a due segmenti in alto a destra: ufficio o lista delle istanze. */
 export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
     <div className="hud-toggle" role="group" aria-label="Vista">
@@ -101,7 +101,7 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
 
 /**
  * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
- * la casella "Nell'ufficio" sceglie quali sessioni mostrare nella scena 3D.
+ * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
 export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
   sessions: SessionState[];

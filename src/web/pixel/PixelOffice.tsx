@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { Snapshot } from '../../shared/types';
-import { StartQueue } from '../scene/motion';
+import { StartQueue } from './motion';
 import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
 import {
   actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
