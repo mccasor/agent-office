@@ -87,5 +87,6 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
       waiting: boss ? waiting.has(a.sessionId) : a.waiting === true,
     };
   });
-  return { plan, rooms, spots, actors, roomless };
+  const idle = active.filter((s) => s.dot === 'idle').map((s) => s.id);
+  return { plan, rooms, spots, actors, roomless, idle };
 }
