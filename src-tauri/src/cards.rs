@@ -107,6 +107,8 @@ mod tests {
         assert_eq!(s.label, "card-session-s1");
         assert!(is_card(&s.label));
         assert!(!is_card("office"));
+        // l'ordine dei parametri non conta; l'URL è ricostruito, l'etichetta resta la stessa
+        assert_eq!(card("http://127.0.0.1:4318/?id=s1&card=session"), Some(s));
     }
 
     #[test]
@@ -124,6 +126,8 @@ mod tests {
             "http://127.0.0.1:4318/?card=agent&id=a1&id=a2",
             "http://127.0.0.1:4318/?card=agent&id=%27);alert(1)//",
             "http://127.0.0.1:4318/?card=agent&id=a1#x",
+            "http://127.0.0.1:4318/?card=agent&id=%C3%A01",
+            "http://127.0.0.1:4318/?card=agent&id=a%2F..%2Fx",
             "http://u:p@127.0.0.1:4318/?card=agent&id=a1",
             "file:///etc/passwd",
         ] {

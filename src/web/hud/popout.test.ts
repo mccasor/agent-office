@@ -23,6 +23,9 @@ describe('schede staccabili (#92)', () => {
     openCardWindow('session', 's1');
     expect(open).toHaveBeenCalledWith(`${location.origin}/?card=session&id=s1`, 'agent-office-session-s1', expect.stringMatching(/^popup,width=\d+,height=\d+$/));
     expect(focus).toHaveBeenCalled();
+    // finestra negata (popup bloccato o app della menu bar, dove la apre Tauri): nessun errore
+    open.mockReturnValue(null);
+    expect(() => openCardWindow('agent', 'a1')).not.toThrow();
     open.mockRestore();
   });
 });

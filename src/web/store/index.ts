@@ -37,15 +37,15 @@ const PREFS_KEY = 'agent-office.prefs';
 
 /** Preferenze del visitatore (vista, sessioni nascoste): comodità locale, la pagina funziona anche senza. */
 function loadPrefs(): Pick<OfficeStoreState, 'view' | 'hiddenSessions'> {
+  // ?view=pixel|list (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata, anche se illeggibile
+  const asked = toView(new URLSearchParams(globalThis.location?.search ?? '').get('view'));
   try {
     const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
     const p = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const hidden = Array.isArray(p.hiddenSessions) ? p.hiddenSessions.filter((x): x is string => typeof x === 'string') : [];
-    // ?view=pixel|list (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
-    const asked = new URLSearchParams(globalThis.location?.search ?? '').get('view');
-    return { view: toView(asked) ?? toView(p.view) ?? 'pixel', hiddenSessions: hidden };
+    return { view: asked ?? toView(p.view) ?? 'pixel', hiddenSessions: hidden };
   } catch {
-    return { view: 'pixel', hiddenSessions: [] };
+    return { view: asked ?? 'pixel', hiddenSessions: [] };
   }
 }
 

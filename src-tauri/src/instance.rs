@@ -42,5 +42,7 @@ mod tests {
         assert_eq!(other_pids("22350\n64075\n", 64075), vec![22350]);
         assert_eq!(other_pids("", 1), Vec::<u32>::new());
         assert_eq!(other_pids("42\n", 42), Vec::<u32>::new());
+        // righe con spazi tollerate, quelle non numeriche ignorate
+        assert_eq!(other_pids(" 7 \npgrep: errore\n\n9\n", 1), vec![7, 9]);
     }
 }
