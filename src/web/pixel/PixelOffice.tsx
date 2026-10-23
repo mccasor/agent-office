@@ -8,6 +8,7 @@ import {
 } from './draw';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
+import { furnitureLook, type FurnitureUse } from './screens';
 import {
   bossLook, bubbleImage, cachedImage, characterSprite, furnitureSprite, PALETTE, pickLook, selectionImage, shadowImage,
   tileSprite, toCanvas, type PixelLook, type Sprite, type SpriteCanvas,
@@ -16,8 +17,6 @@ import { TILE, type PixelActor, type PixelModel } from './types';
 
 /** animazioni semplici: 30 fotogrammi al secondo bastano, come nella vista 3D */
 const MAX_FPS = 30;
-/** fotogrammi al secondo dei monitor accesi */
-const SCREEN_FPS = 2;
 
 const plan = createPlan();
 const furniture = sceneFurniture(plan);
@@ -35,12 +34,12 @@ function floorLayer(): SpriteCanvas {
     for (let z = 0; z < plan.depth; z++) {
       for (let x = 0; x < plan.width; x++) {
         const kind = plan.tiles[z]![x]!;
-        const s = tileSprite(kind, x, z, kind === 'wall' && wallFaceVisible(plan, x, z));
+        const s = tileSprite(kind, x, z, kind === 'wall' && wallFaceVisible(plan, x, z), plan.styles[z]![x]!);
         ctx.drawImage(s.canvas, x * TILE - s.ax, z * TILE - s.ay);
       }
     }
     for (const f of flat) {
-      const s = furnitureSprite(f.kind, f.facing, f.w, f.h);
+      const s = furnitureSprite(f.kind, f.facing, f.w, f.h, 0, f.variant);
       ctx.drawImage(s.canvas, f.cell.x * TILE - s.ax, f.cell.z * TILE - s.ay);
     }
   }
@@ -50,7 +49,7 @@ function floorLayer(): SpriteCanvas {
 
 const spriteOf = (ref: SpriteRef): Sprite => {
   switch (ref.type) {
-    case 'furniture': return furnitureSprite(ref.kind, ref.facing, ref.w, ref.h, ref.frame);
+    case 'furniture': return furnitureSprite(ref.kind, ref.facing, ref.w, ref.h, ref.frame, ref.variant);
     case 'character': return characterSprite(ref.look, ref.pose, ref.facing, ref.frame);
     case 'shadow': return cachedImage('x:shadow', shadowImage);
     case 'selection': return cachedImage('x:selection', selectionImage);
@@ -191,15 +190,16 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
   }
   s.fresh = false;
 
-  // chi digita alla propria scrivania accende il monitor che ha davanti
+  // chi digita alla propria scrivania accende il monitor che ha davanti (a tema col ruolo), chi gioca il biliardino
   const ops: DrawOp[] = [];
   const rects: HitRect[] = [];
-  const typing = new Set<string>();
+  const use: FurnitureUse = { screens: new Map(), players: 0 };
   const labels: { entry: Entry; x: number; y: number }[] = [];
   for (const e of s.entries.values()) {
     if (!isVisible(e.motion)) continue;
     const pose = poseOf(e.actor, e.motion);
-    if (pose === 'type' && e.motion.at) typing.add(cellKey(inFront(e.motion.at)));
+    if (pose === 'type' && e.motion.at) use.screens.set(cellKey(inFront(e.motion.at)), e.actor.agent.area);
+    if (pose === 'play') use.players++;
     const selected = e.actor.id === selectedId;
     ops.push(...actorOps({
       id: e.actor.id, pos: e.motion.pos, look: lookOf(e.actor, model), pose, facing: e.motion.facing,
@@ -208,9 +208,9 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
     rects.push(actorRect(e.actor.id, e.motion.pos));
     if (selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
-  const screen = Math.floor(now * SCREEN_FPS);
   for (const f of solid) {
-    ops.push(furnitureOp(f, f.kind === 'monitor' ? (typing.has(cellKey(f.cell)) ? screen : -1) : 0));
+    const { frame, variant } = furnitureLook(f, use, now);
+    ops.push(furnitureOp(f, frame, variant));
   }
   s.rects = rects;
 

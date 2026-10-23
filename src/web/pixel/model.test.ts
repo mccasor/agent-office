@@ -74,7 +74,8 @@ describe('pixelModel', () => {
   it('chi ha finito aspetta in sala relax finché lavora un altro agente dell\'istanza, poi esce', () => {
     const start = pixelModel(snap([agent('d'), agent('w')], [session('s1')]), EMPTY);
     const m = pixelModel(snap([agent('d', 's1', 'done'), agent('w')], [session('s1')]), start);
-    expect(target(m, 'd')).toBe('lounge-0');
+    // il primo che aspetta va al biliardino
+    expect(target(m, 'd')).toBe('foos-0');
     expect(target(m, 'w')).toBe(target(start, 'w'));
     const all = pixelModel(snap([agent('d', 's1', 'done'), agent('w', 's1', 'done')], [session('s1')]), m);
     expect(target(all, 'd')).toBeNull();
@@ -88,7 +89,7 @@ describe('pixelModel', () => {
 
   it('boss: in sala relax se finisce prima degli agenti, poi esce; "!" se la sessione attende', () => {
     const done = pixelModel(snap([agent('w')], [session('s1', 1, { status: 'done' })]), EMPTY);
-    expect(target(done, 'boss:s1')).toMatch(/^lounge-/);
+    expect(target(done, 'boss:s1')).toMatch(/^foos-/);
     expect(target(pixelModel(snap([], [session('s1', 1, { status: 'done' })]), done), 'boss:s1')).toBeNull();
     const waiting = pixelModel(snap([agent('w')], [session('s1', 1, { waiting: true })]), EMPTY);
     expect(waiting.actors.find((a) => a.id === 'boss:s1')?.waiting).toBe(true);
@@ -119,6 +120,8 @@ describe('pixelModel', () => {
     const resting = pixelModel(snap([agent('w'), ...done], [session('s1')]), m);
     const lounge = done.map((a) => target(resting, a.id)).filter((id): id is string => id !== null);
     expect(new Set(lounge).size).toBe(lounge.length);
-    expect(lounge).toEqual(resting.plan.rooms[5]!.seats.map((s) => s.id));
+    // presenti erano in 21 (boss, 8 postazioni, 12 nel corridoio): 20 agenti, tutti in sala relax nell'ordine dei posti
+    expect(lounge).toHaveLength(20);
+    expect(lounge).toEqual(resting.plan.rooms[5]!.seats.map((s) => s.id).slice(0, 20));
   });
 });

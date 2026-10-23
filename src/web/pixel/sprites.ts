@@ -96,6 +96,29 @@ export const PALETTE = {
   paper: ['#fffcf2', '#f2ead6', '#d8ccb2', '#b4a68a'],
   bubble: ['#ff8a78', '#e44c4c', '#b02e3a'],
   select: ['#fff6b0', '#ffd84a', '#dca024'],
+  // tinte delle stanze: pavimenti e facce delle pareti (#89)
+  floorOak: ['#f4d4a4', '#e6c08e', '#d6ac78', '#bc9060'],
+  floorAsh: ['#e2c8a8', '#d2b494', '#c09e7e', '#a28264'],
+  carpet: ['#a8b8cc', '#94a6bc', '#8294ac', '#6a7c94'],
+  tiles: ['#fbf6ea', '#ece2d0', '#dcc6b8', '#c2a898'],
+  wallMint: ['#eef8ea', '#e0f0da', '#c8e0c0', '#a4c29c'],
+  wallSky: ['#eef4fb', '#dfe9f6', '#c6d6ea', '#a2b6ce'],
+  wallPeach: ['#fdeee2', '#f8dccb', '#ecc4ae', '#d0a48c'],
+  wallLilac: ['#f4eefa', '#e8def4', '#d2c4e4', '#b0a0c8'],
+  wallButter: ['#fdf6d8', '#f8ebbc', '#ecd89a', '#cfb878'],
+  // arredi minori e sala relax
+  rugBlue: ['#7a9cc8', '#5b7fb0', '#44628e', '#e4ecf4'],
+  rugGreen: ['#8cbc84', '#6a9c64', '#4e7a4c', '#eef2d4'],
+  rugOchre: ['#e8b860', '#cc9440', '#a87230', '#fbecc8'],
+  steel: ['#c4d4e2', '#9cb2c8', '#7a92ac', '#5a7088'],
+  locker: ['#a8d6dc', '#7cb8c2', '#5a98a4', '#3e7482'],
+  cork: ['#ecc690', '#d8aa70', '#bc8c54', '#986a3c'],
+  lamp: ['#fffbe0', '#fbe8a6', '#e8c674', '#c09a4c'],
+  felt: ['#8cd27a', '#5cb05a', '#3e8a46', '#2a6634'],
+  vending: ['#f08a7c', '#d85a5a', '#b03e48', '#7e2a36'],
+  arcade: ['#b49ae0', '#8a6cc4', '#664c9c', '#463270'],
+  arcadeTeal: ['#7ad8cc', '#3cb4a8', '#2a8a80', '#1c625c'],
+  night: ['#5a6aa8', '#3a4880', '#28325e', '#1a2040'],
 } as const;
 
 export interface PixelImage {
@@ -261,7 +284,7 @@ export interface PixelLook {
 export const CHAR_W = 16;
 export const CHAR_H = 24;
 
-export const POSE_FRAMES: Record<Pose, number> = { stand: 2, walk: 4, sit: 2, type: 4 };
+export const POSE_FRAMES: Record<Pose, number> = { stand: 2, walk: 4, sit: 2, type: 4, play: 4 };
 
 function dist2(a: string, b: string): number {
   const [r1, g1, b1] = rgba(a);
@@ -742,11 +765,12 @@ export function characterImage(look: PixelLook, pose: Pose, facing: Facing, fram
   const f = ((Math.trunc(frame) % n) + n) % n;
   const r = new Raster(CHAR_W, CHAR_H);
   const seated = pose === 'sit' || pose === 'type';
-  // spostamento verticale del corpo (seduto più in basso, passo che rimbalza) e della sola testa (respiro)
-  const bob = pose === 'walk' && f % 2 === 1 ? -1 : 0;
+  // spostamento verticale del corpo (seduto più in basso, passo che rimbalza, saltello al tiro) e della sola testa (respiro)
+  const bob = (pose === 'walk' && f % 2 === 1) || (pose === 'play' && f === 2) ? -1 : 0;
   const body = (seated ? 2 : 0) + bob;
   const breath = (pose === 'stand' || pose === 'sit') && f === 1 ? 1 : 0;
-  const typing = pose === 'type' ? [0, 1, 0, 1][f]! : null;
+  // digita alla tastiera o, in piedi al biliardino, spinge e tira le stecche
+  const typing = pose === 'type' ? [0, 1, 0, 1][f]! : pose === 'play' ? [1, 0, 1, 1][f]! : null;
   const t = 13 + body;
   const view: View = facing === 'right' ? 'right' : facing;
 
@@ -1089,9 +1113,11 @@ function bookshelf(w: number, h: number, facing: Facing): PixelImage {
   return finish(r, E);
 }
 
-function rug(w: number, h: number): PixelImage {
+const RUGS: readonly Color4[] = [PALETTE.rug, PALETTE.rugBlue, PALETTE.rugGreen, PALETTE.rugOchre];
+
+function rug(w: number, h: number, variant: number): PixelImage {
   const { r, W, D } = furnitureRaster(w, h, 0);
-  const c = PALETTE.rug;
+  const c = RUGS[variant % RUGS.length]!;
   r.rect(1, 1, W - 2, D - 2, c[1]);
   r.rect(3, 3, W - 6, D - 6, c[2]);
   r.rect(4, 4, W - 8, D - 8, c[1]);
@@ -1154,6 +1180,395 @@ function windowSprite(w: number, h: number): PixelImage {
   return finish(r, 0);
 }
 
+// arredi minori (#89) ---------------------------------------------------------------------------------------------
+
+/** quadro appeso: cornice e un soggetto per variante (paesaggio, astratto, mare, fiori, montagne, notte) */
+function painting(w: number, h: number, variant: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  const x0 = Math.floor((W - TILE) / 2) + 3;
+  const frame = variant % 2 === 0 ? PALETTE.walnut : PALETTE.armchair;
+  r.rect(x0, 3, 10, 9, frame[2]);
+  r.hline(x0, x0 + 9, 3, frame[0]);
+  const ix = x0 + 1;
+  const iy = 4;
+  const sky = PALETTE.sky;
+  switch (variant % 6) {
+    case 0:
+      // colline al sole
+      r.rect(ix, iy, 8, 7, sky[1]);
+      r.rect(ix + 5, iy + 1, 2, 2, PALETTE.cloth.mustard[0]);
+      [4, 3, 3, 4, 5, 5, 4, 4].forEach((top, i) => r.vline(ix + i, iy + top, iy + 6, i < 4 ? PALETTE.leaf[2] : PALETTE.leaf[1]));
+      break;
+    case 1:
+      // astratto a blocchi
+      r.rect(ix, iy, 8, 7, PALETTE.paper[0]);
+      r.rect(ix, iy, 4, 4, PALETTE.cloth.coral[1]);
+      r.rect(ix + 5, iy + 2, 3, 5, PALETTE.cloth.blue[1]);
+      r.rect(ix, iy + 5, 4, 2, PALETTE.cloth.mustard[1]);
+      r.vline(ix + 4, iy, iy + 6, PALETTE.outline);
+      r.hline(ix, ix + 3, iy + 4, PALETTE.outline);
+      break;
+    case 2:
+      // mare con vela
+      r.rect(ix, iy, 8, 3, sky[1]);
+      r.rect(ix, iy + 3, 8, 4, PALETTE.water[2]);
+      r.hline(ix + 1, ix + 2, iy + 4, PALETTE.water[0]);
+      r.hline(ix + 5, ix + 6, iy + 5, PALETTE.water[0]);
+      r.vline(ix + 4, iy, iy + 2, PALETTE.paper[0]);
+      r.px(ix + 3, iy + 1, PALETTE.paper[0]);
+      r.px(ix + 3, iy + 2, PALETTE.paper[0]);
+      r.hline(ix + 2, ix + 5, iy + 3, PALETTE.walnut[1]);
+      break;
+    case 3:
+      // vaso di fiori
+      r.rect(ix, iy, 8, 7, PALETTE.wallButter[1]);
+      r.rect(ix + 3, iy + 4, 2, 3, PALETTE.cloth.blue[1]);
+      r.px(ix + 2, iy + 2, PALETTE.cloth.rose[0]);
+      r.px(ix + 4, iy + 1, PALETTE.cloth.coral[1]);
+      r.px(ix + 5, iy + 3, PALETTE.cloth.mustard[0]);
+      r.px(ix + 3, iy + 3, PALETTE.leaf[1]);
+      r.px(ix + 4, iy + 3, PALETTE.leaf[2]);
+      break;
+    case 4:
+      // montagne innevate
+      r.rect(ix, iy, 8, 7, sky[1]);
+      for (let i = 0; i < 4; i++) r.hline(ix + 2 - i, ix + 2 + i, iy + 2 + i, i === 0 ? PALETTE.board[0] : PALETTE.metal[2]);
+      for (let i = 0; i < 3; i++) r.hline(ix + 6 - i, ix + 6 + i, iy + 3 + i, i === 0 ? PALETTE.board[0] : PALETTE.metal[3]);
+      r.hline(ix, ix + 7, iy + 6, PALETTE.leaf[2]);
+      break;
+    default:
+      // notte con la luna
+      r.rect(ix, iy, 8, 7, PALETTE.night[2]);
+      r.rect(ix + 5, iy + 1, 2, 2, PALETTE.lamp[1]);
+      r.px(ix + 1, iy + 1, '#ffffff');
+      r.px(ix + 3, iy + 3, PALETTE.lamp[0]);
+      r.px(ix + 1, iy + 5, PALETTE.lamp[0]);
+      r.hline(ix, ix + 7, iy + 6, PALETTE.night[3]);
+      break;
+  }
+  return finish(r, 0);
+}
+
+/** orologio da parete, sulle 10 e 10 */
+function clock(w: number, h: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  const cx = Math.floor(W / 2);
+  r.ellipse(cx, 7.5, 4.5, 4.5, PALETTE.dark[1]);
+  r.ellipse(cx, 7.5, 3.5, 3.5, PALETTE.board[0]);
+  for (const [dx, dy] of [[0, -3], [3, 0], [0, 3], [-3, 0]] as const) r.px(cx + dx - (dx > 0 ? 1 : 0), 7 + dy + (dy < 0 ? 1 : 0) - (dy > 0 ? 1 : 0), PALETTE.metal[2]);
+  r.vline(cx, 5, 7, PALETTE.outline);
+  r.hline(cx, cx + 2, 7, PALETTE.outline);
+  r.px(cx - 1, 6, PALETTE.board[2]);
+  r.px(cx, 8, PALETTE.bubble[1]);
+  return finish(r, 0);
+}
+
+const NOTE_COLORS: readonly Ramp[] = [PALETTE.cloth.mustard, PALETTE.cloth.salmon, PALETTE.cloth.mint, PALETTE.cloth.blue, PALETTE.cloth.rose];
+
+/** bacheca di sughero con post-it, foglietti e puntine */
+function corkboard(w: number, h: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  const c = PALETTE.cork;
+  r.rect(1, 3, W - 2, 10, PALETTE.walnut[2]);
+  r.hline(1, W - 2, 3, PALETTE.walnut[0]);
+  r.rect(2, 4, W - 4, 8, c[1]);
+  for (let y = 4; y < 12; y++) for (let x = 2; x < W - 2; x++) if (hash2(x, y, 61) % 7 === 0) r.px(x, y, c[2]);
+  // un foglio e i post-it, sfalsati
+  r.rect(3, 5, 4, 5, PALETTE.paper[0]);
+  r.hline(4, 5, 6, PALETTE.paper[2]);
+  r.hline(4, 5, 8, PALETTE.paper[2]);
+  r.px(4, 5, PALETTE.bubble[1]);
+  for (let x = 8, i = 0; x + 3 < W - 2; x += 5, i++) {
+    const n = NOTE_COLORS[(i + W) % NOTE_COLORS.length]!;
+    const y = 5 + (i % 2) * 2;
+    r.rect(x, y, 3, 3, n[1]);
+    r.px(x, y, n[0]);
+    r.px(x + 1, y, PALETTE.cloth.blue[2]);
+  }
+  return finish(r, 0);
+}
+
+/** poster della sala relax: un videogioco (0) o una tazza di caffè (1) */
+function poster(w: number, h: number, variant: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  const x0 = Math.floor((W - TILE) / 2) + 3;
+  if (variant % 2 === 0) {
+    r.rect(x0, 2, 10, 11, PALETTE.night[2]);
+    // invasore
+    r.stamp(['.G...G.', '..GGG..', '.GHGHG.', 'GGGGGGG', 'G.G.G.G'], x0 + 1, 4, (ch) => (ch === 'G' ? PALETTE.cloth.lime[0] : PALETTE.night[3]));
+    r.px(x0 + 8, 3, '#ffffff');
+    r.px(x0 + 2, 10, PALETTE.lamp[0]);
+    r.hline(x0 + 1, x0 + 8, 11, PALETTE.cloth.coral[1]);
+  } else {
+    r.rect(x0, 2, 10, 11, PALETTE.cloth.sand[0]);
+    // tazza fumante
+    r.rect(x0 + 2, 7, 5, 4, PALETTE.cloth.coral[1]);
+    r.vline(x0 + 7, 8, 9, PALETTE.cloth.coral[2]);
+    r.hline(x0 + 2, x0 + 6, 7, PALETTE.walnut[2]);
+    r.px(x0 + 3, 5, PALETTE.board[2]);
+    r.px(x0 + 4, 4, PALETTE.board[2]);
+    r.px(x0 + 5, 5, PALETTE.board[2]);
+    r.hline(x0 + 1, x0 + 8, 12, PALETTE.cloth.coral[2]);
+  }
+  return finish(r, 0);
+}
+
+/** lampada a stelo con il paralume acceso */
+function floorLamp(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 18);
+  const m = PALETTE.metal;
+  r.ellipse(8, E + 11.5, 3.5, 1.5, PALETTE.dark[1]);
+  r.vline(8, E - 9, E + 11, m[2]);
+  r.vline(7, E - 9, E + 10, m[1]);
+  const l = PALETTE.lamp;
+  for (let i = 0; i < 6; i++) r.hline(4 - Math.floor(i / 2) + 1, 11 + Math.floor(i / 2) - 1, E - 16 + i, i === 0 ? l[0] : i < 3 ? l[1] : l[2]);
+  r.hline(3, 12, E - 10, l[3]);
+  r.px(5, E - 15, '#ffffff');
+  return finish(r, E);
+}
+
+/** schedario metallico a tre cassetti */
+function cabinet(facing: Facing): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 14);
+  const s = PALETTE.steel;
+  box(r, 2, E + 1, 12, 5, 18, s, s);
+  if (facing !== 'up') {
+    const top = E + 1 - 18 + 5;
+    for (let i = 0; i < 3; i++) {
+      const y = top + 1 + i * 6;
+      r.hline(3, 12, y + 4, s[3]);
+      r.rect(6, y + 1, 4, 1, s[0]);
+      r.rect(7, y + 2, 2, 1, s[3]);
+      r.rect(4, y, 2, 1, PALETTE.paper[1]);
+    }
+  }
+  return finish(r, E);
+}
+
+/** armadietti metallici, due ante per cella, con le prese d'aria */
+function locker(w: number, h: number, facing: Facing): PixelImage {
+  const { r, W, E } = furnitureRaster(w, h, 18);
+  const c = PALETTE.locker;
+  box(r, 1, E + 1, W - 2, 5, 24, c, c);
+  if (facing !== 'up') {
+    const top = E + 1 - 24 + 5;
+    for (let x = 1; x < W - 2; x += 7) {
+      if (x > 1) r.vline(x, top, top + 22, c[3]);
+      for (let v = 0; v < 3; v++) r.hline(x + 2, x + 4, top + 2 + v * 2, c[3]);
+      r.px(x + 5, top + 11, PALETTE.metal[0]);
+      r.px(x + 5, top + 12, PALETTE.dark[1]);
+      r.rect(x + 2, top + 15, 3, 2, PALETTE.paper[0]);
+    }
+  }
+  return finish(r, E);
+}
+
+/** stampante su un mobiletto, con un foglio nel vassoio */
+function printer(facing: Facing): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 12);
+  box(r, 2, E + 4, 12, 6, 7, PALETTE.walnut, PALETTE.walnut);
+  box(r, 3, E - 3, 10, 5, 6, PALETTE.board, PALETTE.metal);
+  r.rect(5, E - 11, 6, 3, PALETTE.paper[0]);
+  r.hline(6, 9, E - 10, PALETTE.paper[2]);
+  if (facing !== 'up') {
+    r.hline(5, 10, E - 2, PALETTE.dark[2]);
+    r.px(11, E - 7, PALETTE.leaf[0]);
+    r.rect(4, E - 7, 2, 1, PALETTE.screen[1]);
+    r.vline(8, E + 4, E + 8, PALETTE.walnut[3]);
+  }
+  return finish(r, E);
+}
+
+/** cestino a rete con le carte appallottolate */
+function bin(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 2);
+  const m = PALETTE.metal;
+  r.rect(5, E + 2, 6, 9, m[2]);
+  r.vline(5, E + 2, E + 10, m[1]);
+  r.vline(10, E + 2, E + 10, m[3]);
+  for (let y = E + 4; y < E + 10; y += 2) for (let x = 6; x < 10; x += 2) r.px(x + ((y >> 1) % 2), y, m[3]);
+  r.hline(5, 10, E + 1, m[0]);
+  r.px(7, E, PALETTE.paper[0]);
+  r.px(8, E, PALETTE.paper[1]);
+  r.px(8, E - 1, PALETTE.paper[0]);
+  return finish(r, E);
+}
+
+/** appendiabiti con cappotto, sciarpa e cappello */
+function coatRack(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 20);
+  const w = PALETTE.walnut;
+  r.hline(4, 11, E + 11, w[2]);
+  r.hline(5, 10, E + 10, w[1]);
+  r.vline(7, E - 16, E + 10, w[1]);
+  r.vline(8, E - 16, E + 10, w[2]);
+  r.hline(5, 10, E - 14, w[2]);
+  // cappello in cima, cappotto a sinistra, sciarpa a destra
+  r.rect(5, E - 19, 6, 3, PALETTE.dark[1]);
+  r.hline(4, 11, E - 17, PALETTE.dark[2]);
+  const coat = PALETTE.cloth.coral;
+  r.rect(3, E - 13, 4, 12, coat[1]);
+  r.vline(3, E - 13, E - 2, coat[0]);
+  r.vline(6, E - 12, E - 2, coat[2]);
+  const scarf = PALETTE.cloth.teal;
+  r.rect(9, E - 13, 2, 9, scarf[1]);
+  r.px(10, E - 5, scarf[2]);
+  r.px(9, E - 9, scarf[0]);
+  return finish(r, E);
+}
+
+/** pianta alta (ficus) in un vaso grande */
+function plantTall(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 24);
+  const pot = PALETTE.board;
+  box(r, 4, E + 8, 8, 4, 7, pot, pot);
+  r.hline(3, 12, E, pot[2]);
+  r.vline(8, E - 12, E, PALETTE.walnut[2]);
+  const leaf = PALETTE.leaf;
+  const tufts = [[8, E - 18, 4, 4], [5, E - 13, 3.5, 3], [11, E - 13, 3.5, 3], [6, E - 7, 3, 2.5], [10, E - 6, 3, 2.5], [8, E - 10, 3, 3]] as const;
+  for (const [cx, cy, rx, ry] of tufts) r.ellipse(cx, cy + 1, rx, ry, leaf[3]);
+  for (const [cx, cy, rx, ry] of tufts) r.ellipse(cx, cy, rx - 0.5, ry - 0.5, leaf[2]);
+  for (const [cx, cy, rx, ry] of tufts) r.ellipse(cx - 1, cy - 1, rx - 2, ry - 1.5, leaf[1]);
+  r.px(7, E - 20, leaf[0]);
+  r.px(4, E - 14, leaf[0]);
+  r.px(10, E - 15, leaf[0]);
+  return finish(r, E);
+}
+
+/** cactus in un vasetto, con un fiore */
+function cactus(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 8);
+  const pot = PALETTE.pot;
+  box(r, 5, E + 9, 6, 3, 5, pot, pot);
+  const g = PALETTE.leaf;
+  r.rect(7, E - 5, 3, 10, g[2]);
+  r.vline(7, E - 4, E + 4, g[1]);
+  r.rect(4, E - 1, 2, 3, g[2]);
+  r.hline(5, 6, E + 1, g[2]);
+  r.rect(11, E - 3, 2, 3, g[2]);
+  r.px(10, E, g[2]);
+  r.px(9, E - 2, g[3]);
+  r.px(8, E + 1, g[3]);
+  r.px(8, E - 6, PALETTE.cloth.rose[0]);
+  r.px(9, E - 6, PALETTE.cloth.rose[1]);
+  return finish(r, E);
+}
+
+/** distributore di snack: vetrina con le file colorate e la pulsantiera */
+function vending(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 22);
+  const c = PALETTE.vending;
+  box(r, 1, E + 1, 14, 5, 26, c, c);
+  const top = E + 1 - 26 + 5;
+  r.rect(3, top + 2, 8, 17, PALETTE.night[3]);
+  const snacks = [PALETTE.cloth.mustard, PALETTE.cloth.blue, PALETTE.cloth.mint, PALETTE.cloth.coral, PALETTE.cloth.violet];
+  for (let s = 0; s < 4; s++) {
+    const y = top + 3 + s * 4;
+    for (let x = 0; x < 3; x++) {
+      const k = snacks[(s * 2 + x) % snacks.length]!;
+      r.rect(4 + x * 2 + (x > 0 ? x - 1 : 0), y, 2, 2, k[1]);
+      r.px(4 + x * 2 + (x > 0 ? x - 1 : 0), y, k[0]);
+    }
+    r.hline(3, 10, y + 2, PALETTE.metal[2]);
+  }
+  r.vline(3, top + 2, top + 18, PALETTE.glass);
+  r.rect(12, top + 3, 2, 5, PALETTE.metal[1]);
+  r.px(12, top + 4, PALETTE.dark[2]);
+  r.px(13, top + 6, PALETTE.dark[2]);
+  r.rect(4, top + 20, 6, 1, PALETTE.dark[3]);
+  return finish(r, E);
+}
+
+/** frigorifero bianco a due ante con le calamite */
+function fridge(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 22);
+  const c = PALETTE.board;
+  box(r, 2, E + 1, 12, 5, 26, c, c);
+  const top = E + 1 - 26 + 5;
+  r.hline(2, 13, top + 7, c[3]);
+  r.vline(11, top + 2, top + 5, PALETTE.metal[2]);
+  r.vline(11, top + 9, top + 15, PALETTE.metal[2]);
+  r.px(4, top + 3, PALETTE.cloth.coral[1]);
+  r.px(6, top + 11, PALETTE.cloth.mustard[1]);
+  r.px(4, top + 13, PALETTE.cloth.blue[1]);
+  r.rect(5, top + 2, 2, 2, PALETTE.paper[1]);
+  return finish(r, E);
+}
+
+/** cabinato da sala giochi: insegna, schermo con un invasore, joystick e pulsanti */
+function arcade(variant: number): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 22);
+  const c = variant % 2 === 0 ? PALETTE.arcade : PALETTE.arcadeTeal;
+  box(r, 2, E + 1, 12, 5, 26, c, c);
+  const top = E + 1 - 26 + 5;
+  r.rect(3, top, 10, 3, PALETTE.lamp[1]);
+  r.hline(4, 11, top + 1, c[1]);
+  r.rect(4, top + 4, 8, 6, PALETTE.night[3]);
+  r.stamp(['G...G', '.GGG.', 'GGGGG', 'G.G.G'], 5, top + 5, () => (variant % 2 === 0 ? PALETTE.cloth.lime[0] : PALETTE.cloth.coral[0]));
+  r.px(10, top + 9, PALETTE.lamp[0]);
+  // pulsantiera sporgente
+  r.rect(3, top + 11, 10, 3, c[0]);
+  r.px(5, top + 11, PALETTE.bubble[1]);
+  r.px(5, top + 12, PALETTE.dark[2]);
+  r.px(9, top + 12, PALETTE.cloth.mustard[1]);
+  r.px(11, top + 12, PALETTE.cloth.blue[1]);
+  r.hline(3, 12, top + 14, c[3]);
+  return finish(r, E);
+}
+
+/** fotogrammi della partita al biliardino; frame < 0 = fermo, palla al centro */
+export const FOOSBALL_FRAMES = 8;
+
+/**
+ * Biliardino visto dall'alto a 3/4, lungo in orizzontale: campo verde, porte ai lati corti, stecche da nord a sud
+ * con gli omini delle due squadre e le manopole che sporgono verso i giocatori.
+ */
+function foosball(w: number, h: number, frame: number): PixelImage {
+  const { r, W, D, E } = furnitureRaster(w, h, 12);
+  const wood = PALETTE.walnut;
+  const fy0 = E - 8;
+  const fd = D - 4;
+  // gambe, fianchi e campo
+  r.rect(3, fy0 + fd + 4, 2, D - fd + 4, wood[3]);
+  r.rect(W - 5, fy0 + fd + 4, 2, D - fd + 4, wood[3]);
+  r.rect(1, fy0, W - 2, fd, wood[1]);
+  r.hline(1, W - 2, fy0, wood[0]);
+  r.rect(1, fy0 + fd, W - 2, 5, wood[2]);
+  r.hline(1, W - 2, fy0 + fd + 4, wood[3]);
+  const fx = 3;
+  const fw = W - 6;
+  const fe = PALETTE.felt;
+  r.rect(fx, fy0 + 2, fw, fd - 4, fe[1]);
+  r.vline(fx + Math.floor(fw / 2), fy0 + 2, fy0 + fd - 3, fe[0]);
+  r.hline(fx, fx + fw - 1, fy0 + 2, fe[2]);
+  r.rect(1, fy0 + Math.floor(fd / 2) - 2, 2, 4, PALETTE.dark[3]);
+  r.rect(W - 3, fy0 + Math.floor(fd / 2) - 2, 2, 4, PALETTE.dark[3]);
+  const playing = frame >= 0;
+  const f = playing ? frame % FOOSBALL_FRAMES : 0;
+  // palla: avanti e indietro sul campo, ferma al centro se non gioca nessuno
+  const path = [0.5, 0.3, 0.15, 0.3, 0.55, 0.75, 0.88, 0.7] as const;
+  const bx = playing ? fx + 1 + Math.round(path[f]! * (fw - 3)) : fx + Math.floor(fw / 2);
+  const by = fy0 + 3 + (playing ? [2, 3, 4, 5, 4, 3, 2, 3][f]! % (fd - 6) : Math.floor((fd - 6) / 2));
+  // stecche: squadre alternate, gli omini scorrono su e giù
+  const rods = Math.max(2, Math.floor(fw / 4));
+  for (let i = 0; i < rods; i++) {
+    const x = fx + 2 + Math.round((i * (fw - 5)) / (rods - 1));
+    const team = (i === 0 || i === rods - 1 ? i === 0 : i % 2 === 1) ? PALETTE.cloth.blue : PALETTE.bubble;
+    r.vline(x, fy0 - 3, fy0 + fd + 1, PALETTE.metal[1]);
+    const north = i % 2 === 0;
+    // manopole: verso nord per una squadra, sul fronte per l'altra
+    if (north) r.rect(x, fy0 - 4, 1, 2, PALETTE.outline);
+    else r.rect(x, fy0 + fd + 1, 1, 2, PALETTE.outline);
+    const shift = playing ? ((f + i) % 4 < 2 ? 0 : 1) : 0;
+    for (let y = fy0 + 3 + shift; y < fy0 + fd - 3; y += 3) {
+      r.px(x, y, team[1]);
+      r.px(x, y + 1, team[2]);
+    }
+  }
+  r.px(bx, by, '#ffffff');
+  return finish(r, E);
+}
+
 /** sprite da una cella al centro di un'impronta w×h (stessa altezza sopra l'impronta) */
 function centered(img: PixelImage, w: number, h: number): PixelImage {
   if (w === 1 && h === 1) return img;
@@ -1164,15 +1579,17 @@ function centered(img: PixelImage, w: number, h: number): PixelImage {
   return r.image(0, img.ay);
 }
 
-/** frame di animazione degli arredi che ne hanno (monitor: schermo che cambia) */
-export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = { monitor: 2 };
+/** frame di animazione degli arredi che ne hanno (monitor: schermo che cambia; biliardino: la partita) */
+export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = { monitor: 2, foosball: FOOSBALL_FRAMES };
 
 /**
  * Arredo w×h celle. L'immagine è larga w·TILE e alta h·TILE più l'altezza dell'oggetto: l'ancora (0, ay) è l'angolo
  * nord-ovest dell'impronta. `facing` è il lato del fronte: dove guarda chi siede (sedia, divano, poltrona), dove è
- * rivolto lo schermo (monitor), il fronte di libreria e lavagna. Monitor: frame >= 0 acceso (2 fotogrammi), < 0 spento.
+ * rivolto lo schermo (monitor), il fronte di libreria e lavagna. Monitor: frame >= 0 acceso (2 fotogrammi), < 0
+ * spento; biliardino: frame >= 0 partita in corso. `variant` sceglie colori del tappeto, soggetto di quadri e
+ * poster, colore dei cabinati.
  */
-export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0): PixelImage {
+export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0, variant = 0): PixelImage {
   w = Math.max(1, Math.round(w));
   h = Math.max(1, Math.round(h));
   switch (kind) {
@@ -1187,9 +1604,25 @@ export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h
     case 'coffee-machine': return coffeeMachine(w, h);
     case 'water-cooler': return waterCooler(w, h);
     case 'bookshelf': return bookshelf(w, h, facing);
-    case 'rug': return rug(w, h);
+    case 'rug': return rug(w, h, variant);
     case 'whiteboard': return whiteboard(w, h);
     case 'window': return windowSprite(w, h);
+    case 'painting': return painting(w, h, variant);
+    case 'clock': return clock(w, h);
+    case 'corkboard': return corkboard(w, h);
+    case 'poster': return poster(w, h, variant);
+    case 'floor-lamp': return centered(floorLamp(), w, h);
+    case 'cabinet': return centered(cabinet(facing), w, h);
+    case 'locker': return locker(w, h, facing);
+    case 'printer': return centered(printer(facing), w, h);
+    case 'bin': return centered(bin(), w, h);
+    case 'coat-rack': return centered(coatRack(), w, h);
+    case 'plant-tall': return centered(plantTall(), w, h);
+    case 'cactus': return centered(cactus(), w, h);
+    case 'foosball': return foosball(w, h, frame);
+    case 'vending': return centered(vending(), w, h);
+    case 'fridge': return centered(fridge(), w, h);
+    case 'arcade': return centered(arcade(variant), w, h);
   }
 }
 
@@ -1218,15 +1651,54 @@ function parquet(r: Raster, x: number, z: number, wood: Color4): void {
   }
 }
 
-/** Cella 16×16 ancorata all'angolo nord-ovest; piccole variazioni deterministiche in base a x, z. */
-export function tileImage(kind: TileKind, x: number, z: number, faceVisible: boolean): PixelImage {
+/** moquette a quadrotti con trama alterna, come quella da ufficio */
+function carpet(r: Raster, x: number, z: number, c: Color4): void {
+  for (let q = 0; q < 4; q++) {
+    const qx = (q % 2) * 8;
+    const qy = Math.floor(q / 2) * 8;
+    const odd = (x * 2 + (q % 2) + z * 2 + Math.floor(q / 2)) % 2 === 1;
+    r.rect(qx, qy, 8, 8, odd ? c[1] : c[2]);
+    for (let j = 0; j < 8; j++) {
+      for (let i = 0; i < 8; i++) {
+        if ((odd ? i : j) % 3 === 0) r.px(qx + i, qy + j, odd ? c[2] : c[1]);
+        if (hash2(x * TILE + qx + i, z * TILE + qy + j, 22) % 11 === 0) r.px(qx + i, qy + j, c[0]);
+      }
+    }
+  }
+}
+
+/** piastrelle a scacchi con la fuga */
+function checker(r: Raster, x: number, z: number, c: Color4): void {
+  for (let q = 0; q < 4; q++) {
+    const qx = (q % 2) * 8;
+    const qy = Math.floor(q / 2) * 8;
+    const dark = (x * 2 + (q % 2) + z * 2 + Math.floor(q / 2)) % 2 === 1;
+    r.rect(qx, qy, 8, 8, dark ? c[2] : c[0]);
+    r.hline(qx, qx + 7, qy + 7, dark ? c[3] : c[1]);
+    r.vline(qx + 7, qy, qy + 6, dark ? c[3] : c[1]);
+    if (!dark && hash2(x * 2 + (q % 2), z * 2 + Math.floor(q / 2), 23) % 3 === 0) r.px(qx + 2, qy + 2, '#ffffff');
+  }
+}
+
+/** facce delle pareti per stanza (PixelPlan.styles): cinque stanze istanza e la sala relax; altrove la crema */
+const WALL_FACES: readonly Color4[] = [
+  PALETTE.wallFace, PALETTE.wallMint, PALETTE.wallSky, PALETTE.wallPeach, PALETTE.wallLilac, PALETTE.wallButter,
+];
+
+/**
+ * Cella 16×16 ancorata all'angolo nord-ovest; piccole variazioni deterministiche in base a x, z. `style` è la tinta
+ * della stanza (PixelPlan.styles): pavimento delle stanze istanza e faccia delle pareti cambiano da stanza a stanza.
+ */
+export function tileImage(kind: TileKind, x: number, z: number, faceVisible: boolean, style = -1): PixelImage {
   const r = new Raster(TILE, TILE);
   switch (kind) {
     case 'void':
       r.rect(0, 0, TILE, TILE, PALETTE.void);
       break;
     case 'floor':
-      parquet(r, x, z, PALETTE.floor);
+      if (style === 2) carpet(r, x, z, PALETTE.carpet);
+      else if (style === 4) checker(r, x, z, PALETTE.tiles);
+      else parquet(r, x, z, style === 1 ? PALETTE.floorOak : style === 3 ? PALETTE.floorAsh : PALETTE.floor);
       break;
     case 'lounge': {
       // moquette con trama fine
@@ -1264,7 +1736,7 @@ export function tileImage(kind: TileKind, x: number, z: number, faceVisible: boo
         r.rect(0, 0, TILE, WALL_CAP, top[1]);
         r.hline(0, 15, 0, top[0]);
         r.hline(0, 15, WALL_CAP - 1, top[3]);
-        const f = PALETTE.wallFace;
+        const f = WALL_FACES[style] ?? PALETTE.wallFace;
         r.rect(0, WALL_CAP, TILE, 10, f[1]);
         r.hline(0, 15, WALL_CAP, f[3]);
         // carta da parati a righe tenui
@@ -1386,12 +1858,12 @@ export function characterSprite(look: PixelLook, pose: Pose, facing: Facing, fra
   return cachedImage(`c:${look.id}:${pose}:${facing}:${f}`, () => characterImage(look, pose, facing, f));
 }
 
-export function furnitureSprite(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0): Sprite {
+export function furnitureSprite(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0, variant = 0): Sprite {
   const n = FURNITURE_FRAMES[kind];
   const f = n && frame >= 0 ? frame % n : frame < 0 ? -1 : 0;
-  return cachedImage(`f:${kind}:${facing}:${w}x${h}:${f}`, () => furnitureImage(kind, facing, w, h, f));
+  return cachedImage(`f:${kind}:${facing}:${w}x${h}:${f}:${variant}`, () => furnitureImage(kind, facing, w, h, f, variant));
 }
 
-export function tileSprite(kind: TileKind, x: number, z: number, faceVisible: boolean): Sprite {
-  return cachedImage(`t:${kind}:${x}:${z}:${faceVisible ? 1 : 0}`, () => tileImage(kind, x, z, faceVisible));
+export function tileSprite(kind: TileKind, x: number, z: number, faceVisible: boolean, style = -1): Sprite {
+  return cachedImage(`t:${kind}:${x}:${z}:${faceVisible ? 1 : 0}:${style}`, () => tileImage(kind, x, z, faceVisible, style));
 }

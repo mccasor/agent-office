@@ -1,23 +1,29 @@
 /**
  * Anteprima degli sprite della vista 2D (#73) in un PNG, senza browser né dipendenze:
- *   npx tsx scripts/pixel-preview.ts [uscita.png] [scala]
- * Personaggi (tutte le pose, direzioni e fotogrammi), arredi, tile e una stanza di prova.
+ *   npx tsx scripts/pixel-preview.ts [uscita.png] [scala] [x,y,w,h | pianta] [x,y,w,h]
+ * Personaggi (tutte le pose, direzioni e fotogrammi), arredi, tile e una stanza di prova; con
+ * `pianta` l'ufficio intero con tutti gli arredi, agenti al lavoro e giocatori al biliardino.
  */
 import { writeFileSync } from 'node:fs';
 import { deflateSync, crc32 } from 'node:zlib';
+import { actorOps, cellKey, FLAT, furnitureOp, inFront, sceneFurniture, sortByDepth, wallFaceVisible, type DrawOp } from '../src/web/pixel/draw';
+import { createPlan } from '../src/web/pixel/plan';
+import { furnitureLook, type FurnitureUse } from '../src/web/pixel/screens';
 import {
-  bossLook, bubbleImage, characterImage, furnitureImage, pickLook, POSE_FRAMES, rgba, selectionImage, shadowImage, tileImage,
-  type PixelImage,
+  bossLook, bubbleImage, characterImage, FOOSBALL_FRAMES, furnitureImage, pickLook, POSE_FRAMES, rgba,
+  selectionImage, shadowImage, tileImage, type PixelImage,
 } from '../src/web/pixel/sprites';
-import type { Facing, FurnitureKind, Pose, TileKind } from '../src/web/pixel/types';
+import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from '../src/web/pixel/types';
 
 const out = process.argv[2] ?? 'pixel-preview.png';
 const SCALE = Number(process.argv[3] ?? 2);
+const PLAN_MODE = process.argv[4] === 'pianta';
 /** ritaglio facoltativo "x,y,w,h" (in pixel a scala 1) per guardare i dettagli */
-const crop = process.argv[4]?.split(',').map(Number);
+const crop = process.argv[PLAN_MODE ? 5 : 4]?.split(',').map(Number);
 
-const W = 470;
-const H = 860;
+const officePlan = createPlan();
+const W = PLAN_MODE ? officePlan.width * TILE : 470;
+const H = PLAN_MODE ? officePlan.depth * TILE : 1110;
 const sheet = new Uint8ClampedArray(W * H * 4);
 const bg = rgba('#3a3040');
 for (let i = 0; i < W * H; i++) sheet.set(bg, i * 4);
@@ -41,7 +47,7 @@ function blit(img: PixelImage, x: number, y: number): void {
 }
 
 const FACINGS: Facing[] = ['down', 'right', 'up', 'left'];
-const POSES: Pose[] = ['stand', 'walk', 'sit', 'type'];
+const POSES: Pose[] = ['stand', 'walk', 'sit', 'type', 'play'];
 // boss e un agente per ogni stile di capelli e accessorio (id scelti per coprire i preset)
 const looks = [bossLook(0), bossLook(1), ...['agent-2', 'agent-1', 'agent-8', 'agent-19', 'agent-4', 'agent-14', 'agent-15'].map(pickLook)];
 
@@ -57,7 +63,7 @@ for (const look of looks) {
         if (x > W - 10) break;
       }
     }
-    if (pose === 'walk') {
+    if (pose === 'walk' || pose === 'type') {
       x = 12;
       y += 28;
     }
@@ -72,6 +78,9 @@ const FURN: [FurnitureKind, Facing, number, number][] = [
   ['sofa', 'down', 2, 1], ['sofa', 'up', 2, 1], ['sofa', 'right', 1, 2], ['armchair', 'down', 1, 1], ['armchair', 'left', 1, 1],
   ['coffee-table', 'down', 2, 1], ['coffee-machine', 'down', 1, 1], ['water-cooler', 'down', 1, 1], ['bookshelf', 'down', 2, 1],
   ['rug', 'down', 3, 2], ['whiteboard', 'down', 2, 1], ['window', 'down', 2, 1],
+  ['floor-lamp', 'down', 1, 1], ['cabinet', 'down', 1, 1], ['cabinet', 'up', 1, 1], ['locker', 'down', 2, 1], ['printer', 'down', 1, 1],
+  ['printer', 'up', 1, 1], ['bin', 'down', 1, 1], ['coat-rack', 'down', 1, 1], ['plant-tall', 'down', 1, 1], ['cactus', 'down', 1, 1],
+  ['vending', 'down', 1, 1], ['fridge', 'down', 1, 1], ['foosball', 'down', 2, 1], ['clock', 'down', 1, 1], ['corkboard', 'down', 2, 1],
 ];
 let fx = 8;
 let fy = y + 26;
@@ -89,6 +98,18 @@ blit(furnitureImage('monitor', 'down', 1, 1, -1), fx + 20, fy);
 blit(bubbleImage(), fx + 48, fy + 12);
 blit(shadowImage(), fx + 66, fy + 12);
 blit(selectionImage(), fx + 90, fy + 12);
+
+// varianti: tappeti, quadri, poster, cabinati
+fy += 52;
+for (let v = 0; v < 4; v++) blit(furnitureImage('rug', 'down', 2, 1, 0, v), 8 + v * 36, fy);
+for (let v = 0; v < 6; v++) blit(furnitureImage('painting', 'down', 1, 1, 0, v), 156 + v * 18, fy - 2);
+for (let v = 0; v < 2; v++) blit(furnitureImage('poster', 'down', 1, 1, 0, v), 266 + v * 18, fy - 2);
+for (let v = 0; v < 2; v++) blit(furnitureImage('arcade', 'down', 1, 1, 0, v), 310 + v * 18, fy);
+
+// la partita al biliardino
+fy += 30;
+for (let f = 0; f < FOOSBALL_FRAMES; f++) blit(furnitureImage('foosball', 'down', 2, 1, f), 8 + f * 36, fy);
+fy += 10;
 
 // tile
 const TILES: [TileKind, boolean][] = [['floor', false], ['lounge', false], ['corridor', false], ['wall', true], ['wall', false], ['door', false], ['void', false]];
@@ -144,6 +165,53 @@ actor(7, 'stand', 'left', 16, 3);
 const [bx, by] = at(8, 4);
 blit(bubbleImage(), bx + 8, by - 10);
 place('coffee-machine', 'down', 15, 1);
+
+// pianta intera: pavimenti, arredi, agenti al lavoro con gli schermi a tema, biliardino in partita
+if (PLAN_MODE) {
+
+  for (let i = 0; i < W * H; i++) sheet.set(rgba('#2a2030'), i * 4);
+  const plan = officePlan;
+  for (let z = 0; z < plan.depth; z++) {
+    for (let x = 0; x < plan.width; x++) {
+      const kind = plan.tiles[z]![x]!;
+      blit(tileImage(kind, x, z, kind === 'wall' && wallFaceVisible(plan, x, z), plan.styles[z]![x]!), x * TILE, z * TILE);
+    }
+  }
+  const furniture = sceneFurniture(plan);
+  for (const f of furniture.filter((f) => FLAT.has(f.kind))) blit(furnitureImage(f.kind, f.facing, f.w, f.h, 0, f.variant), f.cell.x * TILE, f.cell.z * TILE);
+  const areas = ['backend', 'frontend', 'devops', 'test', 'design', 'docs', 'research', 'architecture', 'other'];
+  const use: FurnitureUse = { screens: new Map(), players: 0 };
+  const ops: DrawOp[] = [];
+  let n = 0;
+  for (const room of plan.rooms) {
+    // in ogni stanza istanza 6 agenti al lavoro con ruoli diversi e il boss
+    const spots = room.kind === 'lounge' ? room.seats.slice(0, 7) : [room.boss!, ...room.desks.slice(0, 6)];
+    for (const spot of spots) {
+      const working = room.kind !== 'lounge';
+      const pose: Pose = !working ? (spot.id.startsWith('foos-') ? 'play' : spot.seated ? 'sit' : 'stand') : 'type';
+      const area = spot.id.endsWith('-boss') ? 'architecture' : areas[n % areas.length]!;
+      if (pose === 'type') use.screens.set(cellKey(inFront(spot)), area);
+      if (pose === 'play') use.players++;
+      const look = spot.id.endsWith('-boss') ? bossLook(plan.rooms.indexOf(room)) : pickLook(`agent-${n}`);
+      ops.push(...actorOps({ id: spot.id, pos: spot.cell, look, pose, facing: spot.facing, frame: n, selected: false }));
+      n++;
+    }
+  }
+  const now = Number(process.env.T ?? 1.25);
+  for (const f of furniture.filter((f) => !FLAT.has(f.kind))) {
+    const { frame, variant } = furnitureLook(f, use, now);
+    ops.push(furnitureOp(f, frame, variant));
+  }
+  for (const op of sortByDepth(ops)) {
+    const s = op.sprite;
+    const img =
+      s.type === 'furniture' ? furnitureImage(s.kind, s.facing, s.w, s.h, s.frame, s.variant)
+      : s.type === 'character' ? characterImage(s.look, s.pose, s.facing, s.frame)
+      : s.type === 'shadow' ? shadowImage()
+      : selectionImage();
+    blit(img, op.x, op.y);
+  }
+}
 
 // PNG RGB scalato
 const [CX, CY, CW, CH] = crop && crop.length === 4 ? crop as [number, number, number, number] : [0, 0, W, H];

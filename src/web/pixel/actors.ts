@@ -95,16 +95,22 @@ export const isVisible = (m: ActorMotion): boolean => m.phase === 'walking' || m
 /** postazione o scrivania del boss: chi ci lavora digita */
 export const isDeskSpot = (spot: Spot): boolean => /-(desk-\d+|boss)$/.test(spot.id);
 
-/** Posa del personaggio: cammina, digita alla scrivania se lavora, seduto se inattivo o sul divano, altrimenti in piedi. */
+/** posto al biliardino: chi ci sta gioca */
+export const isFoosballSpot = (spot: Spot): boolean => spot.id.startsWith('foos-');
+
+/**
+ * Posa del personaggio: cammina, digita alla scrivania se lavora, seduto se inattivo o sul divano, gioca al
+ * biliardino, altrimenti in piedi.
+ */
 export function poseOf(actor: PixelActor, m: ActorMotion): Pose {
   if (m.phase !== 'arrived' || !m.at) return 'walk';
-  if (!m.at.seated) return 'stand';
+  if (!m.at.seated) return isFoosballSpot(m.at) ? 'play' : 'stand';
   const working = actor.agent.status === 'working' || actor.agent.status === 'entering';
   return working && isDeskSpot(m.at) ? 'type' : 'sit';
 }
 
 /** fotogrammi al secondo delle animazioni: passo e digitazione svelti, respiro lento */
-export const POSE_FPS: Record<Pose, number> = { walk: 8, type: 7, stand: 1.5, sit: 1.2 };
+export const POSE_FPS: Record<Pose, number> = { walk: 8, type: 7, stand: 1.5, sit: 1.2, play: 5 };
 
 /** fotogramma all'istante `t` (s); `seed` sfasa i personaggi tra loro */
 export function frameAt(pose: Pose, t: number, seed: number): number {
