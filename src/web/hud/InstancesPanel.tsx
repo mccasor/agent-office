@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, formatCost, formatTokens, percent } from './format';
 import { agentName, agentTask, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, RoleChip, SessionAlert, StatusDot } from './panels';
+import { DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -35,13 +35,17 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
   );
 }
 
-/** Corpo di un'istanza aperta: dati della sessione, Claude stesso e i suoi subagenti. */
-function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
+/**
+ * Corpo di un'istanza aperta: dati della sessione, Claude stesso e i suoi subagenti. Con `onPopOut` il pulsante
+ * per aprirlo in una finestra a sé (#92); la finestra della scheda usa lo stesso corpo.
+ */
+export function InstanceBody({ session: s, boss, agents, selected, onSelect, onPopOut }: {
   session: SessionState;
   boss: AgentState | undefined;
   agents: AgentState[];
   selected: string | null;
   onSelect: (agentId: string) => void;
+  onPopOut?: (sessionId: string) => void;
 }) {
   const now = useNow();
   const pct = percent(s.context.used, s.context.window);
@@ -53,11 +57,14 @@ function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
       {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : 'Un subagente') : null} />}
-      <p className="hud-instance__meta hud-muted">
-        {[s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
-          .filter(Boolean)
-          .join(' · ')}
-      </p>
+      <div className="hud-instance__tools">
+        <p className="hud-instance__meta hud-muted">
+          {[s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+        {onPopOut && <PopOutButton label={`Apri ${projectName(s)} in una finestra`} onClick={() => onPopOut(s.id)} />}
+      </div>
       {pct !== null && (
         <div className="list-session__context">
           <span className="hud-muted">{`Contesto ${pct}%`}</span>
@@ -91,7 +98,7 @@ function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
  * aperta mostra modello, contesto, token, diff e l'elenco dei suoi agenti (Claude stesso per primo).
  * Il clic su un agente apre la sua scheda. Aperta di default la sessione in evidenza o la più recente.
  */
-export function InstancesPanel({ sessions, agents, bosses, focus = null, selected = null, onSelect }: {
+export function InstancesPanel({ sessions, agents, bosses, focus = null, selected = null, onSelect, onPopOut }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** Claude stesso di ogni sessione attiva (id `boss:<sessionId>`) */
@@ -101,6 +108,8 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
   /** agente con la scheda aperta */
   selected?: string | null;
   onSelect: (agentId: string) => void;
+  /** apre le informazioni dell'istanza in una finestra a sé */
+  onPopOut?: (sessionId: string) => void;
 }) {
   const active = sessions.filter((s) => s.active);
   // aperta/chiusa scelta dall'utente; senza scelta è aperta solo `first`
@@ -152,6 +161,7 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
                 agents={own}
                 selected={selected}
                 onSelect={onSelect}
+                onPopOut={onPopOut}
               />
             )}
           </div>

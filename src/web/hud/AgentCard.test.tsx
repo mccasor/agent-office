@@ -110,4 +110,17 @@ describe('AgentCard', () => {
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(onClose).toHaveBeenCalledTimes(2);
   });
+
+  it('pulsante "apri in una finestra" (#92); senza onClose e onPopOut niente pulsanti né Esc', () => {
+    const onPopOut = vi.fn();
+    const { unmount } = render(<AgentCard agent={agent()} onClose={() => {}} onPopOut={onPopOut} />);
+    const btn = screen.getByRole('button', { name: 'Apri la scheda in una finestra' });
+    expect(btn.getAttribute('title')).toBe('Apri la scheda in una finestra');
+    fireEvent.click(btn);
+    expect(onPopOut).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<AgentCard agent={agent()} />);
+    expect(screen.queryByRole('button')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+  });
 });
