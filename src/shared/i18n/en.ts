@@ -75,6 +75,12 @@ export const en: Texts = {
   'panel.contextUsed': 'Context used',
   'panel.settings': 'Settings…',
   'panel.quit': 'Quit Agent Office',
+  // #100
+  'notify.alertStale': '{name} has been idle for {d}',
+  'notify.alertLoop': '{name} repeated {tool} {n} times in a row',
+  'notify.min': '{m}m',
+  'notify.h': '{h}h',
+  'notify.hm': '{h}h {m}m',
 
   'settings.startup': 'Startup and Notifications',
   'settings.autostart': 'Open at login',
@@ -158,6 +164,9 @@ export const en: Texts = {
   'setting.list.closedFinished': 'Finished in closed instances',
   'setting.today.list': 'Full "Today" bar',
   'setting.today.office': 'Compact "Today" bar',
+  // #100
+  'settings.notifyAlerts': 'Notify agent alerts',
+  'settings.notifyAlertsSub': 'When a subagent is stuck or looping',
 
   'turn.current': 'turn for {d}',
   'turn.last': 'last turn {d}',

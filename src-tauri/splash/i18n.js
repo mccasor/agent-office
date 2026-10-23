@@ -138,7 +138,9 @@ globalThis.AGENT_OFFICE_I18N = {
     "setting.list.finishedToday": "Terminati oggi, già usciti",
     "setting.list.closedFinished": "Terminati delle istanze chiuse",
     "setting.today.list": "Barra \"Oggi\" completa",
-    "setting.today.office": "Barra \"Oggi\" compatta"
+    "setting.today.office": "Barra \"Oggi\" compatta",
+    "settings.notifyAlerts": "Notifica gli avvisi degli agenti",
+    "settings.notifyAlertsSub": "Quando un subagente è fermo o in loop"
   },
   "en": {
     "format.decimal": ".",
@@ -278,7 +280,9 @@ globalThis.AGENT_OFFICE_I18N = {
     "setting.list.finishedToday": "Finished today, already gone",
     "setting.list.closedFinished": "Finished in closed instances",
     "setting.today.list": "Full \"Today\" bar",
-    "setting.today.office": "Compact \"Today\" bar"
+    "setting.today.office": "Compact \"Today\" bar",
+    "settings.notifyAlerts": "Notify agent alerts",
+    "settings.notifyAlertsSub": "When a subagent is stuck or looping"
   },
   "es": {
     "format.decimal": ",",
@@ -418,7 +422,9 @@ globalThis.AGENT_OFFICE_I18N = {
     "setting.list.finishedToday": "Terminados hoy que ya salieron",
     "setting.list.closedFinished": "Terminados de instancias cerradas",
     "setting.today.list": "Barra \"Hoy\" completa",
-    "setting.today.office": "Barra \"Hoy\" compacta"
+    "setting.today.office": "Barra \"Hoy\" compacta",
+    "settings.notifyAlerts": "Avisar de las alertas de los agentes",
+    "settings.notifyAlertsSub": "Cuando un subagente está detenido o en bucle"
   }
 };
 /** Testi della lingua `locale` (italiano se sconosciuta): t(chiave, parametri), t.n(chiave, n, parametri) per i plurali. */

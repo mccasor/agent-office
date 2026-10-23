@@ -3,7 +3,7 @@
 //! (anche quelle che non conosce, come le chiavi del server aggiunte in versioni future).
 //!
 //! Schema (chiavi mancanti o non valide valgono il default, lato app e lato server):
-//! - `notifyWaiting`, `notifyDone`: notifiche dell'app (notify.rs)
+//! - `notifyWaiting`, `notifyDone`, `notifyAlerts`: notifiche dell'app (notify.rs; `notifyAlerts` per gli avvisi, #100)
 //! - `activeWindowMinutes`: minuti dopo cui una sessione non è più attiva (server)
 //! - `staleAgentMinutes`, `loopRepeats`: soglie degli avvisi "fermo" e "in loop" sui subagenti (server, #97)
 //! - `language`: "system" | "it" | "en" | "es" (#93)
@@ -75,7 +75,7 @@ fn valid_item(key: &str) -> bool {
 pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(), String> {
     let invalid = || format!("valore non valido per {key}");
     match key {
-        "notifyWaiting" | "notifyDone" => {
+        "notifyWaiting" | "notifyDone" | "notifyAlerts" => {
             value.as_bool().ok_or_else(invalid)?;
         }
         "activeWindowMinutes" => {
@@ -217,6 +217,23 @@ mod tests {
         update_at(&file, |c| set(c, "loopRepeats", json!(3))).unwrap();
         assert!(update_at(&file, |c| set(c, "loopRepeats", json!(1))).is_err());
         assert_eq!(read_json(&file), json!({ "activeWindowMinutes": 30, "staleAgentMinutes": 15, "loopRepeats": 3 }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn notifica_degli_avvisi() {
+        // interruttore come le altre notifiche (#100): solo booleani
+        let mut c = Map::new();
+        assert!(set(&mut c, "notifyAlerts", json!(true)).is_ok());
+        for bad in [json!("true"), json!(1), json!(null)] {
+            assert!(set(&mut c, "notifyAlerts", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(Value::Object(c), json!({ "notifyAlerts": true }));
+        let dir = temp_dir("notify-alerts");
+        let file = dir.join("config.json");
+        std::fs::write(&file, "{\"notifyDone\":true}").unwrap();
+        update_at(&file, |c| set(c, "notifyAlerts", json!(false))).unwrap();
+        assert_eq!(read_json(&file), json!({ "notifyDone": true, "notifyAlerts": false }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

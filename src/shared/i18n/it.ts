@@ -90,6 +90,12 @@ export const it = {
   'panel.contextUsed': 'Contesto usato',
   'panel.settings': 'Impostazioni…',
   'panel.quit': 'Esci da Agent Office',
+  // #100
+  'notify.alertStale': '{name} è senza attività da {d}',
+  'notify.alertLoop': '{name} ripete {tool} {n} volte di fila',
+  'notify.min': '{m} min',
+  'notify.h': '{h} h',
+  'notify.hm': '{h} h {m} min',
 
   // --- finestra Impostazioni ---
   'settings.startup': 'Avvio e notifiche',
@@ -175,6 +181,9 @@ export const it = {
   'setting.list.closedFinished': 'Terminati delle istanze chiuse',
   'setting.today.list': 'Barra "Oggi" completa',
   'setting.today.office': 'Barra "Oggi" compatta',
+  // #100
+  'settings.notifyAlerts': 'Notifica gli avvisi degli agenti',
+  'settings.notifyAlertsSub': 'Quando un subagente è fermo o in loop',
 
   // --- ufficio, lista e schede (pagine web) ---
   'turn.current': 'turno da {d}',
