@@ -3,7 +3,7 @@ import { realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
-import type { Snapshot } from '../../shared/types.js';
+import type { HistoryReport, Snapshot } from '../../shared/types.js';
 
 export interface OfficeServer {
   url: string;
@@ -53,8 +53,17 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
   res.end(res.req.method === 'HEAD' ? undefined : body);
 }
 
-/** Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/events (SSE), statici da webDir. */
-export async function startServer(opts: { port: number; webDir: string; initial: Snapshot }): Promise<OfficeServer> {
+/**
+ * Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/events (SSE), GET /api/history (storico
+ * della giornata, se c'è `history`), statici da webDir.
+ */
+export async function startServer(opts: {
+  port: number;
+  webDir: string;
+  initial: Snapshot;
+  /** riepilogo di un giorno ("YYYY-MM-DD", null = oggi); null se il giorno non è valido */
+  history?: (day: string | null) => Promise<HistoryReport | null>;
+}): Promise<OfficeServer> {
   let current = opts.initial;
   // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
   let currentJson = JSON.stringify(current);
@@ -143,7 +152,7 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       return;
     }
 
-    const pathname = (req.url ?? '/').split('?')[0] ?? '/';
+    const [pathname = '/', query = ''] = (req.url ?? '/').split('?');
 
     if (pathname === '/api/snapshot') {
       // l'app della menu bar lo interroga ogni 2 s: senza cambiamenti risponde 304 senza corpo
@@ -188,6 +197,16 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       };
       req.on('close', drop);
       res.on('close', drop);
+      return;
+    }
+
+    if (pathname === '/api/history' && opts.history) {
+      const report = await opts.history(new URLSearchParams(query).get('day'));
+      if (!report) {
+        send(res, 400, 'Bad Request');
+        return;
+      }
+      send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       return;
     }
 

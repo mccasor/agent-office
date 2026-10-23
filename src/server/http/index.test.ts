@@ -224,3 +224,39 @@ describe('startServer', () => {
     }
   });
 });
+
+describe('GET /api/history', () => {
+  let webDir: string;
+  afterEach(async () => {
+    await rm(webDir, { recursive: true, force: true });
+  });
+
+  it('passa il giorno richiesto (null = oggi) e risponde 400 se non è valido; 404 senza storico', async () => {
+    webDir = await mkdtemp(join(tmpdir(), 'agent-office-http-history-'));
+    const asked: (string | null)[] = [];
+    const server = await startServer({
+      port: 0,
+      webDir,
+      initial: snap(1),
+      history: async (day) => {
+        asked.push(day);
+        if (day !== null && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+        return { day: day ?? '2026-10-23', days: ['2026-10-23'], events: [], waits: { count: 0, totalMs: 0, sessions: [] }, byType: [], files: [] };
+      },
+    });
+    const without = await startServer({ port: 0, webDir, initial: snap(1) });
+    try {
+      let res = await fetch(`${server.url}/api/history`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect((await res.json()).day).toBe('2026-10-23');
+      res = await fetch(`${server.url}/api/history?day=2026-10-20`);
+      expect((await res.json()).day).toBe('2026-10-20');
+      expect((await fetch(`${server.url}/api/history?day=../x`)).status).toBe(400);
+      expect(asked).toEqual([null, '2026-10-20', '../x']);
+      expect((await fetch(`${without.url}/api/history`)).status).toBe(404);
+    } finally {
+      await Promise.all([server.close(), without.close()]);
+    }
+  });
+});
