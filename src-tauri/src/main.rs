@@ -26,6 +26,7 @@ const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
+mod cards;
 mod instance;
 mod notify;
 mod panel;
@@ -344,6 +345,8 @@ fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
         .title("Agent Office")
         .inner_size(1200.0, 800.0)
         .min_inner_size(480.0, 360.0)
+        // schede staccabili (#92): window.open della pagina apre una finestra Tauri dedicata
+        .on_new_window(cards::on_new_window(app.clone(), PORT))
         .build();
     if let Ok(window) = window {
         let _ = window.set_focus();
@@ -596,8 +599,8 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // chiudere la finestra la nasconde: l'app resta nella menu bar
-            WindowEvent::CloseRequested { api, .. } => {
+            // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede si chiudono davvero
+            WindowEvent::CloseRequested { api, .. } if !cards::is_card(window.label()) => {
                 api.prevent_close();
                 let _ = window.hide();
             }

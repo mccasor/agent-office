@@ -3,6 +3,7 @@ import { AgentCard, HudOverlay, InstancesPanel, ListView, ViewToggle } from './h
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
+import { openCardWindow } from './hud/popout';
 import './app.css';
 
 export function App() {
@@ -16,6 +17,13 @@ export function App() {
   const selectedId = useOfficeStore((s) => s.selectedAgent);
   const select = useOfficeStore((s) => s.select);
   const closeCard = useCallback(() => select(null), [select]);
+  // scheda staccata in una finestra a sé: qui si chiude, l'ufficio resta libero
+  const popOutCard = useCallback(() => {
+    if (!selectedId) return;
+    openCardWindow('agent', selectedId);
+    select(null);
+  }, [selectedId, select]);
+  const popOutSession = useCallback((sessionId: string) => openCardWindow('session', sessionId), []);
   // l'ufficio mostra solo le sessioni scelte nella vista lista
   const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden), [fullSnapshot, hidden]);
   const agents = snapshot?.agents ?? [];
@@ -68,13 +76,14 @@ export function App() {
             focus={focusSession}
             selected={selectedId}
             onSelect={select}
+            onPopOut={popOutSession}
           />
         )}
       </HudOverlay>
       <HudOverlay side="right">
         <ViewToggle view={viewMode} onChange={setViewMode} />
         {!connected && <div className="hud-panel app-offline">Disconnesso: riconnessione…</div>}
-        {office && selected && <AgentCard agent={selected} session={selectedSession} onClose={closeCard} />}
+        {office && selected && <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} />}
       </HudOverlay>
     </>
   );

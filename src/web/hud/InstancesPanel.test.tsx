@@ -122,4 +122,11 @@ describe('InstancesPanel', () => {
     render(<InstancesPanel sessions={[]} agents={[]} bosses={[]} onSelect={() => {}} />);
     expect(screen.getByText('Nessuna istanza di Claude Code aperta')).toBeTruthy();
   });
+
+  it('istanza aperta: pulsante per aprirla in una finestra (#92)', () => {
+    const onPopOut = vi.fn();
+    render(<InstancesPanel sessions={[session()]} agents={[]} bosses={[boss('s1')]} onSelect={() => {}} onPopOut={onPopOut} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Apri agent-office in una finestra' }));
+    expect(onPopOut).toHaveBeenCalledWith('s1');
+  });
 });

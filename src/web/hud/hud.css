@@ -357,3 +357,63 @@
 }
 .list-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--hud-muted); }
 .list-session--focus { box-shadow: 0 0 0 2px var(--hud-accent), var(--hud-shadow); }
+
+/* ---- pulsante "apri in una finestra" (#92) ---- */
+.hud-popout {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--hud-muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.hud-popout:hover { background: var(--hud-track); color: var(--hud-fg); }
+.hud-popout:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+.hud-card__head .hud-popout { margin: -4px -2px 0 0; }
+.hud-instance__tools { display: flex; align-items: flex-start; gap: 6px; }
+.hud-instance__tools .hud-instance__meta { flex: 1; min-width: 0; }
+.hud-instance__tools .hud-popout { margin: -3px -4px 0 0; }
+
+/* ---- finestra di una scheda staccata: la scheda a tutta finestra, senza ufficio ---- */
+.card-window {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  font: 13px/1.4 var(--hud-font);
+  color: var(--hud-fg);
+  background: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  .card-window { background: #16191e; }
+}
+.card-window > .hud-panel {
+  width: auto;
+  max-height: none;
+  min-width: 0;
+  overflow: visible;
+  padding: 14px 16px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.card-window .hud-card .hud-title { font-size: 16px; }
+.card-window__instance { padding: 6px 8px 12px; }
+.card-window__head { cursor: default; }
+.card-window__head:hover { background: none; }
+.card-window__head::after { content: none; }
+.card-window__note,
+.card-window__offline {
+  margin: 12px 16px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--hud-muted);
+  background: var(--hud-track);
+}
+.card-window__note + .hud-panel { opacity: 0.75; }
+.card-window__offline { color: var(--hud-warn); font-weight: 600; }

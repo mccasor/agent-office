@@ -67,3 +67,15 @@ export function SessionAlert({ session, who = null }: {
 export function StatusDot({ status }: { status: OfficeStatus }) {
   return <span className={`list-dot list-dot--${status}`} role="img" aria-label={DOT_LABEL[status]} title={DOT_LABEL[status]} />;
 }
+
+/** Pulsante "apri in una finestra" (#92): una finestra con la freccia verso l'esterno. */
+export function PopOutButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="hud-popout" aria-label={label} title={label} onClick={onClick}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" />
+        <path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5" />
+      </svg>
+    </button>
+  );
+}

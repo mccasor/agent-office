@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { agentName, agentTask, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText } from './labels';
-import { DiffStat, RoleChip, Row, SessionAlert } from './panels';
+import { DiffStat, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
 import { useNow } from './useNow';
@@ -29,16 +29,19 @@ function SessionContext({ session }: { session: SessionState }) {
 /**
  * Scheda di un agente, a destra, aperta al clic sul personaggio o nell'elenco delle istanze: nome, descrizione,
  * tipo, stato, tool in uso, durata, modello, avanzamento, issue, costo e token. Per Claude stesso (`session`)
- * anche progetto, branch, motivo del blocco e contesto. Si chiude con il pulsante o con Esc.
+ * anche progetto, branch, motivo del blocco e contesto. Si chiude con il pulsante o con Esc; `onPopOut` la apre
+ * in una finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante.
  */
-export function AgentCard({ agent, session = null, onClose }: {
+export function AgentCard({ agent, session = null, onClose, onPopOut }: {
   agent: AgentState;
   /** sessione di cui l'agente è Claude stesso (il boss); null per i subagenti */
   session?: SessionState | null;
-  onClose: () => void;
+  onClose?: () => void;
+  onPopOut?: () => void;
 }) {
   const now = useNow();
   useEffect(() => {
+    if (!onClose) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -62,9 +65,12 @@ export function AgentCard({ agent, session = null, onClose }: {
           <span className="hud-title" title={name}>{name}</span>
           {task && <span className="hud-card__task hud-muted">{task}</span>}
         </span>
-        <button type="button" className="hud-card__close" aria-label="Chiudi la scheda" title="Chiudi (Esc)" onClick={onClose}>
-          ×
-        </button>
+        {onPopOut && <PopOutButton label="Apri la scheda in una finestra" onClick={onPopOut} />}
+        {onClose && (
+          <button type="button" className="hud-card__close" aria-label="Chiudi la scheda" title="Chiudi (Esc)" onClick={onClose}>
+            ×
+          </button>
+        )}
       </header>
       <div className="hud-card__chips">
         <RoleChip area={agent.area} />
