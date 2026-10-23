@@ -157,10 +157,18 @@
     const WAITING = { permission: 'aspetta un tuo permesso', question: 'ti ha fatto una domanda', plan: "aspetta l'ok al piano", input: 'aspetta un tuo input' };
     const waitingText = (s) => (WAITING[s.waitingKind] || WAITING.input) + (s.waitingSince ? ` · da ${minutes(Date.now() - s.waitingSince)}` : '');
     const toolText = (t) => (t ? (t.target ? `${t.name} ${t.target}` : t.name) : '');
+    // come activityText in labels.ts: tool in uso e da quanto ("Bash da 4 min"), un inattivo "fermo da 12 min"
+    const activity = (a) => {
+      if (a.status === 'done') return '';
+      if (a.tool) return toolText(a.tool) + (a.tool.since > 0 && Date.now() - a.tool.since >= 60000 ? ` da ${minutes(Date.now() - a.tool.since)}` : '');
+      return a.status === 'idle' && a.updatedAt ? `fermo da ${minutes(Date.now() - a.updatedAt)}` : '';
+    };
     // stesse etichette dell'ufficio (src/web/hud/labels.ts): stato di Claude stesso nell'istanza
     const SESSION_STATUS = { working: 'al lavoro', entering: 'in arrivo', idle: 'inattivo', done: 'pronto' };
 
     let state = null;
+    /** ultimo contenuto mostrato: se non cambia, niente DOM da rifare né ridimensionamento */
+    let shown = '';
 
     function render() {
       if (!state) return;
@@ -223,7 +231,7 @@
         const d = dotOf(s);
         const ctx = s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
         const ctxClass = ctx > 90 ? ' pill--danger' : ctx > 70 ? ' pill--warn' : '';
-        const line = s.waiting ? waitingText(s) : s.tool ? toolText(s.tool) : SESSION_STATUS[s.status] || '';
+        const line = s.waiting ? waitingText(s) : activity(s) || SESSION_STATUS[s.status] || '';
         html += `<button class="session" data-action="open-session" data-arg="${esc(s.id)}">
           <span class="session__head"><span class="dot dot--${d}"></span>
             <span class="session__name"><b>${esc(project(s))}</b>${s.branch ? ` <span>${esc(s.branch)}</span>` : ''}</span>
@@ -232,13 +240,15 @@
         for (const a of own) {
           const ad = busy(a.status) ? 'working' : 'idle';
           html += `<button class="agent" data-action="open-session" data-arg="${esc(s.id)}"><span class="dot dot--${ad}"></span>
-            <span class="agent__name" title="${esc(a.name)}">${a.nickname ? `<b>${esc(a.nickname)}</b> <span>${esc(a.name)}</span>` : esc(a.name)}</span><span class="agent__tool">${esc(toolText(a.tool) || (a.status === 'idle' ? 'inattivo' : ''))}</span></button>`;
+            <span class="agent__name" title="${esc(a.name)}">${a.nickname ? `<b>${esc(a.nickname)}</b> <span>${esc(a.name)}</span>` : esc(a.name)}</span><span class="agent__tool">${esc(activity(a))}</span></button>`;
         }
       }
 
       html += `<hr><button class="row" data-action="quit">${icon('quit')}<span class="row__label">Esci da Agent Office</span></button>
         <div class="footer">Agent Office ${esc(state.version)}</div>`;
 
+      if (html === shown) return;
+      shown = html;
       document.getElementById('root').innerHTML = html;
       invoke('panel_resize', { height: Math.ceil(document.documentElement.scrollHeight) });
     }
@@ -261,8 +271,8 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') invoke('panel_action', { action: 'close', arg: null });
     });
-    // tempi ("da 3 min") aggiornati anche senza nuovi snapshot, solo a pannello visibile
-    setInterval(() => { if (!document.hidden) refresh(); }, 2000);
+    // tempi ("da 3 min") aggiornati anche senza nuovi snapshot: l'app chiama agentPanelRefresh a ogni giro di polling,
+    // solo a pannello visibile (un timer qui raddoppierebbe le letture)
     refresh();
   </script>
 </body>

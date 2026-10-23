@@ -1,9 +1,10 @@
 import { readFile, stat } from 'node:fs/promises';
+import type { Stats } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { TranscriptSnapshot, Watcher } from '../../shared/types.js';
-import { aggregate, UNKNOWN_AGENT_TYPE, type AgentMeta } from './aggregate.js';
+import { aggregate, pruneMetas, UNKNOWN_AGENT_TYPE, type AgentMeta } from './aggregate.js';
 import { createForeignDiscovery } from './discovery.js';
 import { encodeProjectPath } from './encode.js';
 import { createAccumulator, type Accumulator } from './parser.js';
@@ -39,6 +40,14 @@ export interface TranscriptWatcherOptions {
 
 type Transcript = Exclude<Parsed, { kind: 'meta' }>;
 
+/**
+ * Come Watcher, ma onChange segnala soltanto che i transcript sono cambiati: lo snapshot lo calcola chi ascolta con
+ * current(), una volta per pubblicazione (gli stati che dipendono dal tempo li aggiorna il suo tick).
+ */
+export interface TranscriptWatcher extends Omit<Watcher<TranscriptSnapshot>, 'onChange'> {
+  onChange(listener: () => void): () => void;
+}
+
 interface TrackedFile {
   parsed: Transcript;
   reader: LineReader;
@@ -54,11 +63,13 @@ interface TrackedFile {
 
 /** ritardo con cui si accorpano le notifiche di una raffica di righe */
 const EMIT_DELAY_MS = 100;
+/** il tick ricontrolla solo i transcript recenti; tutti (anche quelli fermi da tempo) al più ogni FULL_RESYNC_MS */
+const FULL_RESYNC_MS = 60_000;
 /** cartelle di una sessione senza transcript: non serve osservarle */
 const SKIP_DIR_RE = /(?:^|\/)(?:tool-results|memory)(?:\/|$)/;
 
-/** Solo I/O: osserva i transcript, li legge in modo incrementale e notifica lo snapshot calcolato da `aggregate`. */
-export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher<TranscriptSnapshot> {
+/** Solo I/O: osserva i transcript, li legge in modo incrementale e ne notifica i cambiamenti; current() usa `aggregate`. */
+export function createTranscriptWatcher(opts: TranscriptWatcherOptions): TranscriptWatcher {
   const claudeHome = opts.claudeHome ?? join(homedir(), '.claude');
   const projectsRoot = join(claudeHome, 'projects');
   const projectDir = join(projectsRoot, encodeProjectPath(opts.cwd));
@@ -72,13 +83,13 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
 
   const files = new Map<string, TrackedFile>();
   const metas = new Map<string, AgentMeta>();
-  const listeners = new Set<(value: TranscriptSnapshot) => void>();
+  const listeners = new Set<() => void>();
   let fsWatcher: FSWatcher | null = null;
   /** cartelle da seguire trovate dalla discovery prima che il watcher principale esista */
   let pendingFollow: string[] = [];
   let timer: NodeJS.Timeout | null = null;
-  let lastEmitted = '';
   let running = false;
+  let lastFullResync = -Infinity;
   let emitTimer: NodeJS.Timeout | null = null;
   /** false durante la scansione iniziale: in modalità all i file vecchi non vengono letti */
   let started = false;
@@ -113,10 +124,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   };
 
   /**
-   * Notifica i listener se lo snapshot è cambiato. Le righe arrivano a raffiche (più file, più righe al secondo):
-   * un solo ricalcolo ogni EMIT_DELAY_MS; nessuno durante la scansione iniziale (start() calcola alla fine).
+   * Segnala ai listener che i dati letti sono cambiati, senza calcolare lo snapshot. Le righe arrivano a raffiche
+   * (più file, più righe al secondo): una sola notifica ogni EMIT_DELAY_MS; nessuna durante la scansione iniziale.
    */
-  const emitIfChanged = () => {
+  const changed = () => {
     if (!running || !started || emitTimer) return;
     emitTimer = setTimeout(emitNow, EMIT_DELAY_MS);
     emitTimer.unref();
@@ -124,14 +135,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   const emitNow = () => {
     emitTimer = null;
     if (!running) return;
-    const snapshot = compute();
-    const serialized = JSON.stringify(snapshot);
-    if (serialized === lastEmitted) return;
-    lastEmitted = serialized;
-    for (const listener of listeners) listener(snapshot);
+    for (const listener of listeners) listener();
   };
 
-  const readMeta = async (abs: string, p: Extract<Parsed, { kind: 'meta' }>) => {
+  const readMeta = async (abs: string, p: { sessionId: string; agentId: string }) => {
     try {
       const raw: unknown = JSON.parse(await readFile(abs, 'utf8'));
       if (typeof raw !== 'object' || raw === null) return;
@@ -145,18 +152,18 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
   };
 
-  const processFile = (abs: string): Promise<void> => {
+  /** `st`: stat già fatto da chokidar (evento add), evita di ripeterlo */
+  const processFile = (abs: string, st?: Stats): Promise<void> => {
     const p = parseAbs(abs);
     if (!p) return Promise.resolve();
-    if (p.kind === 'meta') return readMeta(abs, p).then(emitIfChanged);
+    // scansione iniziale in modalità all: i meta.json si leggono solo per i subagenti seguiti (alla loro prima lettura)
+    if (p.kind === 'meta') return all && !started ? Promise.resolve() : readMeta(abs, p).then(changed);
 
     const f = files.get(abs);
     if (!f && all && !started) {
       // scansione iniziale in modalità all: si leggono solo i transcript recenti
-      return stat(abs).then(
-        (st) => (st.mtimeMs >= now() - discoveryWindowMs ? track(abs, p) : undefined),
-        () => undefined,
-      );
+      const recent = (s: Stats) => (s.mtimeMs >= now() - discoveryWindowMs ? track(abs, p) : undefined);
+      return st ? Promise.resolve(recent(st)) : stat(abs).then(recent, () => undefined);
     }
     return track(abs, p, f);
   };
@@ -169,22 +176,29 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     }
     const tracked = f;
     tracked.queue = tracked.queue.then(async () => {
+      // si notifica solo se cambia qualcosa: righe nuove, file ripartito o mtime (entra in updatedAt)
+      let dirty = !tracked.loaded;
       // a blocchi: la prima lettura di un transcript grande non lo carica tutto in memoria
       for (let more = true; more; ) {
         const r = await tracked.reader.read();
         if (r.reset) tracked.acc = createAccumulator();
         for (const line of r.lines) tracked.acc.ingest(line);
+        dirty ||= r.reset || r.lines.length > 0;
         more = r.more;
       }
       try {
         const st = await stat(abs);
+        dirty ||= st.mtimeMs !== tracked.mtime;
         tracked.mtime = st.mtimeMs;
         tracked.size = st.size;
       } catch {
         // file rimosso nel frattempo
       }
+      // subagente appena seguito: il suo meta.json può essere stato sfoltito, o saltato all'avvio in modalità all
+      const meta = p.kind === 'agent' && !tracked.loaded && !metas.has(agentKey(p.sessionId, p.agentId));
+      if (meta) await readMeta(abs.replace(/\.jsonl$/, '.meta.json'), p);
       tracked.loaded = true;
-      emitIfChanged();
+      if (dirty) changed();
     }).catch(() => {
       // lettura fallita (file sparito o illeggibile): la catena resta viva, si riprova al prossimo evento
     });
@@ -193,22 +207,30 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
 
   /**
    * Rete di sicurezza: gli eventi del filesystem possono andare persi (FSEvents/chokidar sotto carico,
-   * file aggiunti al watcher durante la scansione iniziale). Rilegge i file cresciuti dall'ultima lettura.
+   * file aggiunti al watcher durante la scansione iniziale). Rilegge i file cresciuti dall'ultima lettura:
+   * a ogni tick quelli recenti, al più ogni FULL_RESYNC_MS anche quelli fermi da tempo (un progetto può averne migliaia).
    */
   const resync = async () => {
     const checks: Promise<unknown>[] = [];
+    const t = now();
+    const full = t - lastFullResync >= FULL_RESYNC_MS;
+    if (full) lastFullResync = t;
     for (const [abs, f] of files) {
+      if (!full && f.loaded && t - f.mtime > discoveryWindowMs) continue;
       checks.push(stat(abs).then((st) => (st.size !== f.size ? processFile(abs) : undefined), () => {}));
     }
     if (all) {
       // transcript fermi da più della finestra di scoperta: si dimenticano (se ripartono, si rileggono da capo)
-      const t = now();
+      let forgot = false;
       for (const [abs, f] of files) {
-        if (f.loaded && t - f.mtime > discoveryWindowMs) files.delete(abs);
+        if (f.loaded && t - f.mtime > discoveryWindowMs) forgot = files.delete(abs);
       }
+      if (forgot) changed();
     } else {
       checks.push(discovery.resync());
     }
+    // meta.json dei subagenti non più seguiti: si rileggono se il transcript riprende
+    pruneMetas(metas, files.values());
     await Promise.all(checks);
   };
 
@@ -217,7 +239,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
     if (!p) return;
     if (p.kind === 'meta') metas.delete(agentKey(p.sessionId, p.agentId));
     else files.delete(abs);
-    emitIfChanged();
+    changed();
   };
 
   // antenati di projects (path non ancora esistente) o file pertinenti
@@ -233,7 +255,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         // senza `depth` chokidar usa un solo watcher ricorsivo (FSEvents) invece di uno per cartella
         ignored: (abs, stats) => SKIP_DIR_RE.test(posixRel(projectsRoot, abs)) || (Boolean(stats?.isFile()) && !isRelevant(abs)),
       });
-      fsWatcher.on('add', (abs) => void pending.push(processFile(abs)));
+      fsWatcher.on('add', (abs, st) => void pending.push(processFile(abs, st)));
       fsWatcher.on('change', (abs) => void processFile(abs));
       fsWatcher.on('unlink', removeFile);
       fsWatcher.on('error', () => {
@@ -246,8 +268,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       fsWatcher.on('add', (abs) => void processFile(abs));
       pendingFollow = [];
       started = true;
-      lastEmitted = JSON.stringify(compute());
-      timer = setInterval(() => void resync().then(emitIfChanged), tickMs);
+      timer = setInterval(() => void resync(), tickMs);
       timer.unref();
     },
     async stop() {

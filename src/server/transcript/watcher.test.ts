@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TranscriptSnapshot } from '../../shared/types.js';
 import { createTranscriptWatcher } from './index.js';
 
 const FIXTURES = fileURLToPath(new URL('../../../test/fixtures/transcript', import.meta.url));
@@ -58,7 +57,7 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         model: 'claude-opus-4-5',
         effort: 'high',
         context: { used: 20 + 1200 + 100, window: 200_000 },
-        tokensUsed: { input: 49, output: 235, cacheRead: 6350, cacheCreation: 850, total: 7484 },
+        tokensUsed: { input: 49, output: 235, cacheRead: 6350, cacheCreation: 850, cacheCreation1h: 0, total: 7484 },
         startedAt: ts('2026-01-01T10:00:00.000Z'),
         updatedAt: T0,
         active: true,
@@ -72,6 +71,13 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         tool: null,
         // stima ai prezzi di listino, sommata file per file (sessione e subagenti)
         cost: expect.closeTo(0.0095745, 7),
+        // Claude stesso, senza i subagenti
+        ownTokens: { input: 30, output: 80, cacheRead: 2200, cacheCreation: 300, cacheCreation1h: 0, total: 2610 },
+        ownCost: expect.closeTo(0.005125, 7),
+        turnStartedAt: ts('2026-01-01T10:00:00.000Z'),
+        lastTurnMs: 302_000,
+        compactions: 1,
+        lastCompaction: { at: ts('2026-01-01T10:05:01.500Z'), trigger: 'auto', preTokens: 180_000, postTokens: 12_000 },
       },
     ]);
 
@@ -85,13 +91,14 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         area: 'research',
         status: 'done',
         model: 'claude-haiku-4-5',
-        tokens: { input: 10, output: 60, cacheRead: 1100, cacheCreation: 160, total: 1330 },
+        tokens: { input: 10, output: 60, cacheRead: 1100, cacheCreation: 160, cacheCreation1h: 0, total: 1330 },
         progress: null,
         issues: [],
         startedAt: ts('2026-01-01T10:00:03.500Z'),
         updatedAt: T0,
         tool: null,
         cost: expect.closeTo(0.00062, 7),
+        effort: null,
       },
       {
         id: 'a0000000000000002',
@@ -102,13 +109,14 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         area: 'frontend',
         status: 'working',
         model: 'claude-sonnet-4-5',
-        tokens: { input: 9, output: 95, cacheRead: 3050, cacheCreation: 390, total: 3544 },
+        tokens: { input: 9, output: 95, cacheRead: 3050, cacheCreation: 390, cacheCreation1h: 0, total: 3544 },
         progress: { completed: 1, total: 3 },
         issues: [],
         startedAt: ts('2026-01-01T10:01:00.000Z'),
         updatedAt: T0,
         tool: null,
         cost: expect.closeTo(0.0038295, 7),
+        effort: null,
       },
     ]);
   });
@@ -129,12 +137,15 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
     expect(snap.sessions[0]?.active).toBe(false);
   });
 
-  it('il tick periodico notifica i cambi di stato dovuti al tempo', async () => {
+  it('notifica solo i cambiamenti dei file: gli stati dovuti al tempo si leggono con current()', async () => {
     const w = await startWatcher({ idleAfterMs: 60_000 });
-    const seen: TranscriptSnapshot[] = [];
-    w.onChange((s) => seen.push(s));
+    const listener = vi.fn();
+    w.onChange(listener);
     clock = T0 + 2 * 60_000;
-    await vi.waitFor(() => expect(seen.at(-1)?.agents[1]?.status).toBe('idle'), { timeout: 3000, interval: 20 });
+    // diversi tick (50 ms) senza modifiche: nessuna notifica, lo snapshot non viene ricalcolato
+    await new Promise((r) => setTimeout(r, 300));
+    expect(listener).not.toHaveBeenCalled();
+    expect(w.current().agents[1]?.status).toBe('idle');
   });
 
   it('progetto inesistente: snapshot vuoto senza errori', async () => {
@@ -311,6 +322,22 @@ describe('createTranscriptWatcher – modalità all (menu bar)', () => {
     const snap = w.current();
     expect(snap.sessions.map((s) => [s.id, s.cwd])).toEqual([[SESSION, CWD]]);
     expect(snap.agents.map((a) => a.id).sort()).toEqual(['a0000000000000001', 'a0000000000000002']);
+  });
+
+  it('con all i meta.json si leggono alla prima lettura del subagente', async () => {
+    const w = await startWatcher({ cwd: '/qualunque', all: true });
+    expect(w.current().agents.map((a) => a.name)).toContain('Survey transcript format');
+  });
+
+  it('transcript dimenticati (meta sfoltiti): se riprendono si rileggono con il loro meta.json', async () => {
+    const w = await startWatcher({ cwd: '/qualunque', all: true, discoveryWindowMs: 60 * 60_000 });
+    clock = T0 + 2 * 60 * 60_000;
+    await vi.waitFor(() => expect(w.current()).toEqual({ sessions: [], agents: [] }), { timeout: 3000, interval: 20 });
+    // riprendono: mtime reale (successivo a clock), quindi recenti e attivi
+    const row = '{"type":"user","timestamp":"2026-01-01T12:00:00.000Z","message":{"role":"user","content":"[redacted]"}}\n';
+    await appendFile(join(projectDir(), `${SESSION}.jsonl`), row);
+    await appendFile(join(subDir(), 'agent-a0000000000000001.jsonl'), row);
+    await vi.waitFor(() => expect(w.current().agents.map((a) => a.name)).toEqual(['Survey transcript format']), { timeout: 5000, interval: 20 });
   });
 
   it('con all restano solo le sessioni attive e i loro subagenti', async () => {

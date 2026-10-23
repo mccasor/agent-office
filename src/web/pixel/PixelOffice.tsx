@@ -4,11 +4,13 @@ import { StartQueue } from './motion';
 import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
 import { agentName } from '../hud/labels';
 import { cameraViewport, type Camera } from './camera';
+import { AnimClock, nextWake } from './clock';
 import {
-  actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
+  actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sameFrame, sceneFurniture, sortByDepth,
   wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
-import { ALL_LABELS_ZOOM, drawLabel, labelText } from './labels';
+import { ALL_LABELS_ZOOM, drawLabel, labelText, labelTheme, type LabelSpec } from './labels';
+import { litZones, RoomLights } from './lights';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import { furnitureLook, type FurnitureUse } from './screens';
@@ -27,6 +29,8 @@ const plan = createPlan();
 const furniture = sceneFurniture(plan);
 const flat = furniture.filter((f) => FLAT.has(f.kind));
 const solid = furniture.filter((f) => !FLAT.has(f.kind));
+/** luci delle stanze (#99): accese con qualcuno dentro, penombra altrimenti */
+const lights = new RoomLights(plan);
 
 /** Pavimenti, pareti, porte e arredi piatti non cambiano mai: disegnati una volta in una canvas a scala 1. */
 let floorCanvas: SpriteCanvas | null = null;
@@ -92,11 +96,15 @@ interface Sim {
   fresh: boolean;
   rects: HitRect[];
   view: Viewport;
+  /** quanto è finito sul canvas all'ultimo disegno (vedi sameFrame) */
+  frame: unknown[] | null;
 }
 
 /**
  * Ufficio 2D in pixel art (#71): canvas a tutta finestra sotto l'HUD, a scala intera. Lo stato di movimento vive in
- * un ref e si aggiorna in un loop requestAnimationFrame limitato a MAX_FPS, fermo quando `active` è falso.
+ * un ref e si aggiorna in un loop requestAnimationFrame limitato a MAX_FPS, fermo quando `active` è falso. Quando
+ * niente si muove il loop dorme fino al prossimo scatto delle animazioni (nextWake) o fino a uno snapshot, un
+ * cambio di selezione, camera, dimensioni o tema.
  */
 export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   snapshot: Snapshot | null;
@@ -111,37 +119,77 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   const { model } = state;
 
   const canvas = useRef<HTMLCanvasElement>(null);
-  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
+  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 }, frame: null });
   // zoom e trascinamento (#87); un clic senza trascinamento seleziona il personaggio sotto il puntatore
-  const { cameraRef, handlers, dragging, controls } = useCamera(canvas, plan, {
+  const { camera, cameraRef, handlers, dragging, controls } = useCamera(canvas, plan, {
     pick: (x, y) => hitTest(sim.current.rects, x, y),
     onSelect,
   });
   const live = useRef<Live>({ model, selectedId });
+  /** risveglia il loop addormentato (no-op se gira già o se la vista è ferma) */
+  const wake = useRef(() => {});
   useEffect(() => {
     live.current = { model, selectedId };
+    wake.current();
   }, [model, selectedId]);
+  // zoom e trascinamento: la camera nuova è già in cameraRef
+  useEffect(() => wake.current(), [camera]);
 
   useEffect(() => {
     const el = canvas.current;
     const ctx = el?.getContext('2d');
     if (!el || !ctx || !active) return;
     let raf = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let last = -Infinity;
     let prevTime: number | null = null;
+    /** scatto (s) per cui il timer ha svegliato il loop: il vsync che segue può avere un istante appena precedente */
+    let due = 0;
 
     const frame = (t: number) => {
-      raf = requestAnimationFrame(frame);
+      raf = 0;
       // tolleranza di 2 ms: a 60 Hz un frame sì e uno no anche con piccole irregolarità del vsync
-      if (t - last < 1000 / MAX_FPS - 2) return;
+      if (t - last < 1000 / MAX_FPS - 2) {
+        raf = requestAnimationFrame(frame);
+        return;
+      }
       last = t;
-      const now = t / 1000;
+      const now = Math.max(t / 1000, due);
+      due = 0;
       const dt = prevTime === null ? 0 : now - prevTime;
-      prevTime = now;
-      render(el, ctx, sim.current, live.current, cameraRef.current, now, dt);
+      const at = render(el, ctx, sim.current, live.current, cameraRef.current, now, dt);
+      if (at <= now) {
+        prevTime = now;
+        raf = requestAnimationFrame(frame);
+        return;
+      }
+      // fermo: nessuno cammina, quindi al risveglio non c'è tempo da recuperare
+      prevTime = null;
+      if (Number.isFinite(at)) {
+        timer = setTimeout(() => {
+          start();
+          due = at;
+        }, (at - performance.now() / 1000) * 1000);
+      }
     };
-    raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    const start = () => {
+      clearTimeout(timer);
+      timer = undefined;
+      if (!raf) raf = requestAnimationFrame(frame);
+    };
+    wake.current = start;
+    // dimensioni (anche il dpr, spostando la finestra tra schermi) e tema chiaro/scuro cambiano il disegno
+    const scheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+    window.addEventListener('resize', start);
+    scheme?.addEventListener?.('change', start);
+    start();
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
+      wake.current = () => {};
+      window.removeEventListener('resize', start);
+      scheme?.removeEventListener?.('change', start);
+    };
   }, [active, cameraRef]);
 
   return (
@@ -152,10 +200,10 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   );
 }
 
-/** aggiorna i movimenti e disegna un fotogramma */
+/** aggiorna i movimenti e disegna un fotogramma; restituisce quando ridisegnare (vedi nextWake) */
 function render(
   el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, live: Live, camera: Camera, now: number, dt: number,
-): void {
+): number {
   const { model, selectedId } = live;
 
   // backing store in pixel fisici
@@ -184,6 +232,9 @@ function render(
     if (e.motion.phase === 'gone') s.entries.delete(id);
   }
   s.fresh = false;
+  // pose, schermi e biliardino avanzano a scatti comuni; camminate e luci restano fluide
+  const clock = new AnimClock(now);
+  let smooth = false;
 
   // chi digita alla propria scrivania accende il monitor che ha davanti (a tema col ruolo), chi gioca il biliardino
   const ops: DrawOp[] = [];
@@ -193,6 +244,8 @@ function render(
   // ingrandita abbastanza c'è posto per il nome di tutti (compatto, senza ruolo); altrimenti boss, bloccati e selezionato
   const everyone = view.scale / dpr >= ALL_LABELS_ZOOM;
   for (const e of s.entries.values()) {
+    // in cammino o in fila alla porta per entrare
+    if (e.motion.phase === 'walking' || e.motion.phase === 'queued') smooth = true;
     if (!isVisible(e.motion)) continue;
     const pose = poseOf(e.actor, e.motion);
     if (pose === 'type' && e.motion.at) use.screens.set(cellKey(inFront(e.motion.at)), e.actor.agent.area);
@@ -200,16 +253,46 @@ function render(
     const selected = e.actor.id === selectedId;
     ops.push(...actorOps({
       id: e.actor.id, pos: e.motion.pos, look: lookOf(e.actor, model), pose, facing: e.motion.facing,
-      frame: frameAt(pose, now, seedOf(e.actor.id)), selected,
+      frame: frameAt(pose, clock, seedOf(e.actor.id)), selected,
     }));
     rects.push(actorRect(e.actor.id, e.motion.pos));
     if (everyone || selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
+  // luci (#99): zone accese da chi c'è adesso; nelle stanze spente i monitor sono spenti
+  const occupants = [...s.entries.values()].filter((e) => isVisible(e.motion)).map((e) => ({ sessionId: e.actor.sessionId, pos: e.motion.pos }));
+  lights.update(litZones(lights.geometry, occupants, model.rooms, new Set(model.idle)), now);
+  lights.dimScreens(use.screens);
   for (const f of solid) {
-    const { frame, variant } = furnitureLook(f, use, now);
+    const { frame, variant } = furnitureLook(f, use, clock);
     ops.push(furnitureOp(f, frame, variant));
   }
   s.rects = rects;
+
+  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
+  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
+  const tags = [...labels].sort((a, b) => rank(a) - rank(b)).map(({ entry: { actor }, x, y }) => {
+    const selected = actor.id === selectedId;
+    const spec: LabelSpec = {
+      text: labelText(agentName(actor.agent)),
+      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
+      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
+      selected,
+      waiting: actor.waiting,
+    };
+    return { spec, x, y };
+  });
+  const sprites = sortByDepth(ops).map((op) => ({ sprite: spriteOf(op.sprite), x: op.x, y: op.y }));
+
+  // fotogramma identico al precedente (nessuno cammina, animazioni ferme tra due pose): niente da ridisegnare
+  const theme = labelTheme();
+  const frame: unknown[] = [bw, bh, dpr, view.scale, view.ox, view.oy, theme];
+  for (const d of sprites) frame.push(d.sprite, d.x, d.y);
+  for (const { spec, x, y } of tags) frame.push(spec.text, spec.area, spec.selected, spec.waiting, x, y);
+  // le luci in transizione cambiano il fotogramma anche se nessuno si muove
+  frame.push(...lights.levels);
+  const wakeAt = nextWake(now, smooth || lights.busy(now), clock);
+  if (sameFrame(s.frame, frame)) return wakeAt;
+  s.frame = frame;
 
   // disegno a scala intera: tutto allineato alla griglia dei pixel fisici
   const k = view.scale;
@@ -221,25 +304,17 @@ function render(
   ctx.drawImage(floor, view.ox, view.oy, floor.width * k, floor.height * k);
   const blit = (sp: Sprite, x: number, y: number) =>
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
-  for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
+  for (const d of sprites) blit(d.sprite, d.x, d.y);
+  lights.draw(ctx, view);
 
-  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
   const bubble = cachedImage('x:bubble', bubbleImage);
-  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
-  for (const { entry, x, y } of [...labels].sort((a, b) => rank(a) - rank(b))) {
-    const { actor } = entry;
+  for (const { spec, x, y } of tags) {
     let top = y - 21;
-    if (actor.waiting) {
+    if (spec.waiting) {
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }
-    const selected = actor.id === selectedId;
-    drawLabel(ctx, {
-      text: labelText(agentName(actor.agent)),
-      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
-      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
-      selected,
-      waiting: actor.waiting,
-    }, view.ox + x * view.scale, view.oy + top * view.scale, dpr);
+    drawLabel(ctx, spec, view.ox + x * view.scale, view.oy + top * view.scale, dpr, theme);
   }
+  return wakeAt;
 }

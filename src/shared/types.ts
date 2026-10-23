@@ -19,6 +19,8 @@ export interface TokenUsage {
   output: number;
   cacheRead: number;
   cacheCreation: number;
+  /** parte di cacheCreation scritta nella cache da 1 ora (prezzo 2x invece di 1,25x); assente nei client vecchi */
+  cacheCreation1h?: number;
   /** somma dei quattro campi */
   total: number;
 }
@@ -70,6 +72,19 @@ export interface AgentState {
   waiting?: boolean;
   waitingKind?: WaitingKind | null;
   waitingSince?: number | null;
+  /** effort dell'ultima richiesta del subagente ("low" ... "max"); null o assente se non dichiarato */
+  effort?: string | null;
+}
+
+/** Compattazione del contesto (riga compact_boundary del transcript): solo contatori e orario. */
+export interface Compaction {
+  /** epoch ms */
+  at: number;
+  /** "auto" o "manual" (/compact) */
+  trigger: string;
+  /** token del contesto prima e dopo */
+  preTokens: number;
+  postTokens: number;
 }
 
 export interface ContextState {
@@ -110,6 +125,16 @@ export interface SessionState {
   tool?: ToolInUse | null;
   /** costo stimato in dollari della sessione e dei suoi subagenti; null se nessun modello è nel listino */
   cost?: number | null;
+  /** token e costo della sola sessione principale (Claude stesso, senza i subagenti) */
+  ownTokens?: TokenUsage;
+  ownCost?: number | null;
+  /** inizio del turno: ultimo prompt dell'utente (epoch ms; dall'hook UserPromptSubmit o dal transcript), mai il testo */
+  turnStartedAt?: number | null;
+  /** durata dell'ultimo turno chiuso (riga turn_duration del transcript) */
+  lastTurnMs?: number | null;
+  /** compattazioni del contesto nella sessione e l'ultima */
+  compactions?: number;
+  lastCompaction?: Compaction | null;
   /** modifiche non committate nel repository del cwd (solo sessioni attive); null o assente se non disponibili */
   diff?: RepoDiff | null;
   /** pallino di stato della sessione (stessa regola dell'icona nella menu bar), calcolato dal server */

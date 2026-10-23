@@ -166,7 +166,10 @@ function resolveSessions(
 ): TranscriptSession[] {
   const endedAt = new Map<string, number>();
   const mainHook = new Map<string, HookEvent>();
+  /** ultimo prompt per sessione dall'hook (solo l'orario): arriva prima della riga nel transcript */
+  const promptAt = new Map<string, number>();
   for (const e of events) {
+    if (e.event === 'UserPromptSubmit') promptAt.set(e.sessionId, Math.max(promptAt.get(e.sessionId) ?? -Infinity, e.timestamp));
     if (e.event === 'SessionEnd') endedAt.set(e.sessionId, Math.max(endedAt.get(e.sessionId) ?? -Infinity, e.timestamp));
     if (e.agentId !== null || !(e.event in MAIN_HOOK_STATUS)) continue;
     const prev = mainHook.get(e.sessionId);
@@ -194,7 +197,9 @@ function resolveSessions(
       const waitingAgentId = agent?.id ?? null;
       const active = ended ? false : s.active;
       const diff = active && r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
-      return { ...s, status, issues, waiting, waitingKind, waitingSince, waitingAgentId, active, diff };
+      const prompted = Math.max(s.turnStartedAt ?? -Infinity, promptAt.get(s.id) ?? -Infinity);
+      const turnStartedAt = Number.isFinite(prompted) ? prompted : null;
+      return { ...s, status, issues, waiting, waitingKind, waitingSince, waitingAgentId, active, diff, turnStartedAt };
     })
     .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
 }

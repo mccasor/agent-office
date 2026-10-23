@@ -202,6 +202,11 @@ fn fetch_overview(etag: &mut Option<String>) -> Option<Overview> {
     }
 }
 
+/// Icona da aggiornare: al primo giro o se cambiano lo stato o l'aspetto della barra (non a ogni snapshot).
+fn icon_changed(last: Option<&(Overview, bool)>, status: Status, dark: bool) -> bool {
+    last.is_none_or(|(o, d)| o.status != status || *d != dark)
+}
+
 /// Barra dei menu scura: icona bianca invece che nera. Si legge l'aspetto effettivo del pulsante dell'icona
 /// (su macOS 26 la barra è trasparente e segue lo sfondo); se non disponibile, il tema di sistema.
 fn dark_menu_bar(handle: &AppHandle) -> bool {
@@ -588,8 +593,8 @@ fn main() {
                         }
                         seen = Some(overview.facts.clone());
                     }
-                    let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
-                    if changed {
+                    // l'icona dipende solo da stato e aspetto della barra: non va ridisegnata a ogni snapshot nuovo
+                    if icon_changed(last.as_ref(), overview.status, dark) {
                         if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                             if let Ok(icon) = Image::from_bytes(overview.status.tray_icon(dark)) {
                                 let _ = tray.set_icon(Some(icon));
@@ -597,6 +602,9 @@ fn main() {
                             }
                             let _ = tray.set_tooltip(Some(format!("Agent Office: {}", overview.status.label())));
                         }
+                    }
+                    let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
+                    if changed {
                         *handle.state::<Ui>().snapshot.lock().unwrap() = overview.snapshot.clone();
                         last = Some((overview, dark));
                     }
@@ -674,6 +682,15 @@ mod tests {
         assert_eq!(overview_from("non json"), Overview::offline());
         let o = overview_from(r#"{"status":"idle","sessions":[],"agents":[]}"#);
         assert_eq!((o.status, o.facts.len()), (Status::Idle, 0));
+    }
+
+    #[test]
+    fn icona_aggiornata_solo_se_cambiano_stato_o_aspetto() {
+        let working = (overview_from(r#"{"status":"working","sessions":[]}"#), false);
+        assert!(icon_changed(None, Status::Working, false));
+        assert!(!icon_changed(Some(&working), Status::Working, false));
+        assert!(icon_changed(Some(&working), Status::Waiting, false));
+        assert!(icon_changed(Some(&working), Status::Working, true));
     }
 
     #[test]

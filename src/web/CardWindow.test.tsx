@@ -26,10 +26,35 @@ const push = (s: Snapshot) => act(() => useOfficeStore.getState().setSnapshot(s)
 beforeEach(() => {
   useOfficeStore.setState({ snapshot: null, connected: true });
   document.title = 'Agent Office';
+  vi.spyOn(window, 'resizeBy').mockImplementation(() => {});
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  history.replaceState(null, '', '/');
+});
 
 describe('CardWindow', () => {
+  it('a misura del contenuto: nel browser il popup si ridimensiona, il titolo resta il nome', () => {
+    render(<CardWindow kind="agent" id="a1" />);
+    expect(document.documentElement.classList.contains('card-window-root')).toBe(true);
+    // contenuto vuoto in jsdom: l'altezza minima, dalla finestra di 768px
+    expect(window.resizeBy).toHaveBeenCalledWith(0, 280 - window.innerHeight);
+    push(snap());
+    expect(document.title).toBe('Marta Commit');
+    cleanup();
+    expect(document.documentElement.classList.contains('card-window-root')).toBe(false);
+  });
+
+  it('nell\'app (app=1) l\'altezza viaggia nel titolo, dopo il nome', () => {
+    history.replaceState(null, '', '/?card=agent&id=a1&app=1');
+    render(<CardWindow kind="agent" id="a1" />);
+    expect(window.resizeBy).not.toHaveBeenCalled();
+    expect(document.title).toBe('Agent Office280-1');
+    push(snap());
+    expect(document.title).toBe('Marta Commit280-1');
+  });
+
   it('scheda di un agente: solo la scheda, titolo della finestra = nome, senza pulsanti di chiusura', () => {
     render(<CardWindow kind="agent" id="a1" />);
     expect(screen.getByText('Connessione all\'ufficio…')).toBeTruthy();
@@ -46,7 +71,8 @@ describe('CardWindow', () => {
     render(<CardWindow kind="agent" id="a1" />);
     push(snap());
     push(snap({ agents: [agent({ status: 'idle' })] }));
-    expect(screen.getByText('inattivo')).toBeTruthy();
+    // inattivo: da quanto è fermo (B1)
+    expect(screen.getByText(/^fermo da /)).toBeTruthy();
     push(snap({ agents: [] }));
     expect(screen.getByRole('status').textContent).toMatch(/Uscito dall'ufficio/);
     expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { HookEvent, Watcher } from '../../shared/types.js';
 import { createAllHookEventsWatcher, createHookEventsWatcher, eventsFilePath } from './index.js';
-import { INITIAL_TAIL_BYTES, MERGE_WINDOW_MS } from './watcher.js';
+import { createEventsTail, INITIAL_TAIL_BYTES, MERGE_WINDOW_MS } from './watcher.js';
 
 const ev = (i: number): HookEvent => ({
   event: 'PreToolUse',
@@ -143,6 +143,27 @@ describe('createAllHookEventsWatcher', () => {
       expect(w.current().map((e) => e.timestamp)).toEqual([MERGE_WINDOW_MS + 10]);
     } finally {
       await w.stop();
+      await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('createEventsTail: prune', () => {
+  it('dimentica gli eventi precedenti alla finestra, in qualunque ordine siano nel file', async () => {
+    const dataDir = await mkdtemp(join(tmpdir(), 'agent-office-tail-'));
+    const f = eventsFilePath('/a', { dataDir });
+    await mkdir(dirname(f), { recursive: true });
+    await writeFile(f, line(5) + line(1) + line(9) + line(2));
+    try {
+      const tail = await createEventsTail(f);
+      await tail.read();
+      tail.prune(5);
+      expect(tail.events().map((e) => e.timestamp)).toEqual([5, 9]);
+      // le letture successive continuano dal punto giusto
+      await appendFile(f, line(10));
+      expect(await tail.read()).toBe(true);
+      expect(tail.events().map((e) => e.timestamp)).toEqual([5, 9, 10]);
+    } finally {
       await rm(dataDir, { recursive: true, force: true });
     }
   });

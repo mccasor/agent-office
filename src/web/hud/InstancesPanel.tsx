@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
-import { contextLevel, formatCost, formatTokens, percent } from './format';
-import { agentName, agentTask, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
-import { ProgressBar } from './ProgressBar';
+import { byUrgency, formatCost, formatTokens } from './format';
+import {
+  agentName, agentTask, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
+} from './labels';
+import { ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -29,15 +30,29 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
           {agent.agentType !== 'main' && <RoleChip area={agent.area} />}
         </span>
         {agentTask(agent) && <span className="hud-muted hud-instance__agent-task" title={agent.name}>{agent.name}</span>}
-        <span className="hud-muted hud-instance__agent-status">{status}</span>
+        <span className="hud-muted hud-instance__agent-status" title={status}>{status}</span>
       </button>
     </li>
   );
 }
 
+/** Riga meta della sessione: modello, effort, token generati e costo (sessione con i subagenti). */
+export const sessionMeta = (s: SessionState): string =>
+  [s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
+    .filter(Boolean)
+    .join(' · ');
+
+/** Contatore per stato dei subagenti nella testata dell'istanza ("3 al lavoro · 12 terminati"), al posto del totale. */
+export function StateCounts({ agents }: { agents: AgentState[] }) {
+  const text = stateCounts(agents);
+  return text ? <span className="hud-instance__count hud-muted" title="Subagenti">{text}</span> : null;
+}
+
 /**
- * Corpo di un'istanza aperta: dati della sessione, Claude stesso e i suoi subagenti. Con `onPopOut` il pulsante
- * per aprirlo in una finestra a sé (#92); la finestra della scheda usa lo stesso corpo.
+ * Corpo di un'istanza aperta: dati della sessione, Claude stesso e i suoi subagenti dal più urgente (in attesa, al
+ * lavoro, inattivi), i terminati in un gruppo richiudibile. Con la scheda di Claude aperta accanto, riga meta e contesto
+ * restano solo lì. Con `onPopOut` il pulsante per aprirlo in una finestra a sé (#92); la finestra della scheda usa
+ * lo stesso corpo.
  */
 export function InstanceBody({ session: s, boss, agents, selected, onSelect, onPopOut }: {
   session: SessionState;
@@ -48,46 +63,40 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
   onPopOut?: (sessionId: string) => void;
 }) {
   const now = useNow();
-  const pct = percent(s.context.used, s.context.window);
   // bloccata da un subagente: il motivo va sulla sua riga, Claude resta col suo stato
   const blocker = s.waitingAgentId ? agents.find((a) => a.id === s.waitingAgentId) : undefined;
-  const bossStatus = s.waiting && !s.waitingAgentId
-    ? waitingText(s.waitingKind, s.waitingSince, now)
-    : [SESSION_STATUS_LABEL[s.status], s.tool ? toolText(s.tool) : null].filter(Boolean).join(' · ');
+  const bossStatus = [statusText({ ...s, waiting: s.waiting && !s.waitingAgentId }, now, SESSION_STATUS_LABEL), turnText(s, now)]
+    .filter(Boolean)
+    .join(' · ');
+  // la scheda di Claude aperta mostra già modello, costo e contesto
+  const inCard = boss !== undefined && selected === boss.id;
+  const sorted = byUrgency(agents);
+  const live = sorted.filter((a) => a.status !== 'done');
+  const done = sorted.filter((a) => a.status === 'done');
+  const row = (a: AgentState) => (
+    <AgentRow key={a.id} agent={a} status={statusText(a, now)} waiting={a.waiting === true} selected={selected === a.id} onSelect={onSelect} />
+  );
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
       {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : 'Un subagente') : null} />}
       <div className="hud-instance__tools">
-        <p className="hud-instance__meta hud-muted">
-          {[s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
+        {!inCard && <p className="hud-instance__meta hud-muted">{sessionMeta(s)}</p>}
+        {!inCard && <ContextGauge session={s} slot="inline" />}
         {onPopOut && <PopOutButton label={`Apri ${projectName(s)} in una finestra`} onClick={() => onPopOut(s.id)} />}
       </div>
-      {pct !== null && (
-        <div className="list-session__context">
-          <span className="hud-muted">{`Contesto ${pct}%`}</span>
-          <ProgressBar value={pct} label={`Contesto usato ${projectName(s)}`} level={contextLevel(pct)} className="hud-bar--small" />
-        </div>
-      )}
+      {!inCard && <ContextGauge session={s} slot="block" />}
       {s.diff && <DiffStat diff={s.diff} />}
       <ul className="hud-instance__agents" aria-label={`Agenti di ${projectName(s)}`}>
         {boss && <AgentRow agent={boss} status={bossStatus} waiting={s.waiting && !s.waitingAgentId} selected={selected === boss.id} onSelect={onSelect} />}
-        {agents.map((a) => (
-          <AgentRow
-            key={a.id}
-            agent={a}
-            status={
-              a.waiting
-                ? waitingText(a.waitingKind, a.waitingSince, now)
-                : [STATUS_LABEL[a.status], a.tool && a.status !== 'done' ? toolText(a.tool) : null].filter(Boolean).join(' · ')
-            }
-            waiting={a.waiting === true}
-            selected={selected === a.id}
-            onSelect={onSelect}
-          />
-        ))}
+        {live.map(row)}
+        {done.length > 0 && (
+          <li>
+            <details className="hud-done-group">
+              <summary>{doneGroupLabel(done.length)}</summary>
+              <ul>{done.map(row)}</ul>
+            </details>
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -150,9 +159,10 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
               <span className="hud-instance__name">
                 <span className="hud-title">{projectName(s)}</span>
                 {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}
+                {/* sotto il nome, per non stringere progetto e branch */}
+                <StateCounts agents={own} />
               </span>
               {s.issues.length > 0 && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
-              <span className="hud-instance__count hud-muted" title="Subagenti">{own.length}</span>
             </button>
             {isOpen && (
               <InstanceBody
