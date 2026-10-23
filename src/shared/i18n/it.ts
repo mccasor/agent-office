@@ -96,6 +96,27 @@ export const it = {
   'notify.min': '{m} min',
   'notify.h': '{h} h',
   'notify.hm': '{h} h {m} min',
+  // #103: errori di config.json e dei comandi dell'app (Impostazioni), riga di comando e server.log
+  'error.invalidValue': 'valore non valido per {key}',
+  'error.unknownSetting': 'impostazione sconosciuta: {key}',
+  'error.configInvalid': 'config.json non è un oggetto JSON valido',
+  'error.noHome': 'cartella home sconosciuta',
+  'error.settingsOnly': 'comando riservato alla finestra Impostazioni',
+  'error.unknownAction': 'azione sconosciuta: {action}',
+  /** riga di comando (src/cli.ts): lingua di config.json, altrimenti quella del terminale */
+  'cli.usage': 'Uso: agent-office [--port N] [--no-open] [--cwd DIR | --all] | install-hooks [--global] | uninstall-hooks [--global]',
+  'cli.help': '  --port N     porta del server (predefinita {port})\n  --no-open    non apre il browser\n  --cwd DIR    cartella da monitorare (predefinita quella corrente)\n  --all        tutte le sessioni attive, di qualunque cartella\n  --global     hook nelle impostazioni globali di Claude Code\n  --help       mostra questo aiuto',
+  'cli.badPort': 'Porta non valida: {value}',
+  'cli.unknownArg': 'Argomento sconosciuto: {arg}',
+  'cli.serving': 'Agent Office: {url}  ({scope})',
+  'cli.allSessions': 'tutte le sessioni attive',
+  'cli.watchedFolder': 'cartella monitorata: {cwd}',
+  'cli.hooksInstalled': 'Hook installati in {file}',
+  'cli.hooksPresent': 'Hook già presenti in {file}',
+  'cli.hooksRemoved': 'Hook rimossi da {file}',
+  'cli.noHooks': 'Nessun hook agent-office da rimuovere',
+  'cli.notAnObject': '{file}: atteso un oggetto JSON',
+  'cli.unhandled': 'agent-office: errore non gestito:',
 
   // --- finestra Impostazioni ---
   'settings.startup': 'Avvio e notifiche',

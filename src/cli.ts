@@ -11,18 +11,23 @@ import {
   installHooksIn,
   uninstallHooks,
   uninstallHooksIn,
+  NotAnObjectError,
 } from './server/hooks/index.js';
-import { displaySettings, loadConfig, watchConfig } from './server/config.js';
+import { displaySettings, loadConfig, systemLanguages, watchConfig, type ServerConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
 import { createHistory } from './server/history/index.js';
+import { resolveLocale, setLocale, t } from './shared/i18n/index.js';
 import type { Snapshot } from './shared/types.js';
 
+// per bin/agent-office.mjs: l'errore non gestito nella lingua dei messaggi
+export { t };
+
 export interface CliOptions {
-  command: 'serve' | 'install-hooks' | 'uninstall-hooks';
+  command: 'serve' | 'install-hooks' | 'uninstall-hooks' | 'help';
   port: number;
   open: boolean;
   cwd: string;
@@ -67,15 +72,16 @@ export function parseArgs(argv: string[], cwd: string): CliOptions {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === 'install-hooks' || arg === 'uninstall-hooks') opts.command = arg;
+    else if (arg === '--help' || arg === '-h') opts.command = 'help';
     else if (arg === '--no-open') opts.open = false;
     else if (arg === '--all' || arg === '--global') opts.all = true;
     else if (arg === '--exit-with-stdin') opts.exitWithStdin = true;
     else if (arg === '--port') {
       const port = Number(argv[++i]);
-      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`Porta non valida: ${argv[i]}`);
+      if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(t('cli.badPort', { value: String(argv[i]) }));
       opts.port = port;
     } else if (arg === '--cwd' && argv[i + 1]) opts.cwd = argv[++i]!;
-    else throw new Error(`Argomento sconosciuto: ${arg}\nUso: agent-office [--port N] [--no-open] [--cwd DIR | --all] | install-hooks [--global] | uninstall-hooks [--global]`);
+    else throw new Error(`${t('cli.unknownArg', { arg: String(arg) })}\n${t('cli.usage')}`);
   }
   return opts;
 }
@@ -85,9 +91,7 @@ function openBrowser(url: string): void {
   execFile(cmd, [url], () => {});
 }
 
-async function serve(opts: CliOptions): Promise<RunningOffice> {
-  const dataDir = process.env.AGENT_OFFICE_DATA_DIR || undefined;
-  const config = await loadConfig(dataDir);
+async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | undefined): Promise<RunningOffice> {
   const transcript = createTranscriptWatcher({
     cwd: opts.cwd,
     all: opts.all,
@@ -167,6 +171,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   // config.json cambiato (finestra Impostazioni dell'app, #94): vale subito, senza riavvio
   const unwatchConfig = await watchConfig(
     (next) => {
+      setLocale(resolveLocale(next.language, systemLanguages()));
       transcript.setActiveWindowMs(next.activeWindowMinutes * 60_000);
       Object.assign(alerts, { staleMs: next.staleAgentMinutes * 60_000, loopRepeats: next.loopRepeats });
       server.setSettings(displaySettings(next));
@@ -189,28 +194,45 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   };
 }
 
+/** Impostazioni di Claude Code che non sono un oggetto JSON: l'errore nella lingua dei messaggi (#103). */
+const translated = (err: unknown): unknown => (err instanceof NotAnObjectError ? new Error(t('cli.notAnObject', { file: err.file })) : err);
+
 /**
  * Entry point: `agent-office [--port N] [--no-open] [--cwd DIR | --all]` ·
- * `agent-office install-hooks [--global]` · `agent-office uninstall-hooks [--global]`
+ * `agent-office install-hooks [--global]` · `agent-office uninstall-hooks [--global]` · `agent-office --help`
  */
 export async function main(argv: string[]): Promise<RunningOffice | void> {
+  const dataDir = process.env.AGENT_OFFICE_DATA_DIR || undefined;
+  const config = await loadConfig(dataDir);
+  // lingua dei messaggi (#103): quella di config.json, altrimenti quella del sistema (LANG, LC_*, o le lingue di
+  // macOS passate dall'app), come per le pagine; vale anche per server.log, che l'app mostra se il server si chiude
+  setLocale(resolveLocale(config.language, systemLanguages()));
   const opts = parseArgs(argv, process.cwd());
 
+  if (opts.command === 'help') {
+    console.log(`${t('cli.usage')}\n\n${t('cli.help', { port: DEFAULT_PORT })}`);
+    return;
+  }
   if (opts.command === 'install-hooks') {
     // l'app passa il Node che usa (es. /opt/homebrew/bin/node, stabile tra gli aggiornamenti di brew)
     const command = hookCommand(process.env.AGENT_OFFICE_NODE || process.execPath, HOOK_BIN);
-    const { changed, file } = opts.all ? await installHooksIn(globalSettingsFile(), command) : await installHooks(opts.cwd, command);
-    console.log(changed ? `Hook installati in ${file}` : `Hook già presenti in ${file}`);
+    const { changed, file } = await (opts.all ? installHooksIn(globalSettingsFile(), command) : installHooks(opts.cwd, command)).catch((err) => {
+      throw translated(err);
+    });
+    console.log(t(changed ? 'cli.hooksInstalled' : 'cli.hooksPresent', { file }));
     return;
   }
   if (opts.command === 'uninstall-hooks') {
-    const { changed, file } = opts.all ? await uninstallHooksIn(globalSettingsFile()) : await uninstallHooks(opts.cwd);
-    console.log(changed ? `Hook rimossi da ${file}` : 'Nessun hook agent-office da rimuovere');
+    const { changed, file } = await (opts.all ? uninstallHooksIn(globalSettingsFile()) : uninstallHooks(opts.cwd)).catch((err) => {
+      throw translated(err);
+    });
+    console.log(changed ? t('cli.hooksRemoved', { file }) : t('cli.noHooks'));
     return;
   }
 
-  const office = await serve(opts);
-  console.log(`Agent Office: ${office.url}  (${opts.all ? 'tutte le sessioni attive' : `cartella monitorata: ${opts.cwd}`})`);
+  const office = await serve(opts, config, dataDir);
+  const scope = opts.all ? t('cli.allSessions') : t('cli.watchedFolder', { cwd: opts.cwd });
+  console.log(t('cli.serving', { url: office.url, scope }));
   if (opts.open) openBrowser(office.url);
   if (opts.exitWithStdin) {
     // l'app tiene aperta la pipe di stdin finché vive: se termina (anche con un segnale) la pipe si chiude

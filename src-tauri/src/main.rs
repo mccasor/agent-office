@@ -287,6 +287,8 @@ fn run_hooks(app: &AppHandle, command: &'static str) {
                 .args([command, "--global"])
                 // gli hook useranno lo stesso Node, con percorso assoluto
                 .env("AGENT_OFFICE_NODE", &node)
+                // lingue di macOS, come per il server: l'errore della CLI arriva nell'esito nella lingua dell'app (#103)
+                .env("AGENT_OFFICE_LANGUAGES", i18n::system_languages().join(","))
                 .stdin(Stdio::null())
                 .output()
                 .map_err(|e| e.to_string())?;
@@ -564,7 +566,7 @@ fn settings_action(window: WebviewWindow, app: AppHandle, action: String) -> Res
         "close" => {
             let _ = window.close();
         }
-        _ => return Err(format!("azione sconosciuta: {action}")),
+        _ => return Err(i18n::tf("error.unknownAction", &[("action", &action)])),
     }
     Ok(())
 }

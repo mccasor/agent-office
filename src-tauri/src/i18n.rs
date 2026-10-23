@@ -1,4 +1,4 @@
-//! Lingua dell'app (#93): icona, tooltip, notifiche, aggiornamenti, esito degli hook, errori del server e titolo
+//! Lingua dell'app (#93): icona, tooltip, notifiche, aggiornamenti, esito degli hook, errori del server e delle impostazioni (#103) e titolo
 //! della finestra Impostazioni. I testi stanno in `i18n.json`, generato da src/shared/i18n (`npm run
 //! settings:catalog`, un test controlla che sia aggiornato) e incluso in compilazione: una sola fonte con le pagine.
 //!
@@ -42,7 +42,32 @@ static TEXTS: LazyLock<Value> = LazyLock::new(|| serde_json::from_str(include_st
 static CURRENT: AtomicU8 = AtomicU8::new(0);
 
 pub fn current() -> Locale {
-    Locale::ALL[usize::from(CURRENT.load(Ordering::Relaxed)).min(Locale::ALL.len() - 1)]
+    test_locale().unwrap_or_else(|| Locale::ALL[usize::from(CURRENT.load(Ordering::Relaxed)).min(Locale::ALL.len() - 1)])
+}
+
+#[cfg(test)]
+thread_local! {
+    /// lingua del solo thread di un test (with_locale): i test girano in parallelo e CURRENT è di tutti
+    static TEST_LOCALE: std::cell::Cell<Option<Locale>> = const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn test_locale() -> Option<Locale> {
+    TEST_LOCALE.get()
+}
+
+#[cfg(not(test))]
+fn test_locale() -> Option<Locale> {
+    None
+}
+
+/// Esegue `f` con la lingua `locale`, solo nel thread del test.
+#[cfg(test)]
+pub fn with_locale<R>(locale: Locale, f: impl FnOnce() -> R) -> R {
+    TEST_LOCALE.set(Some(locale));
+    let result = f();
+    TEST_LOCALE.set(None);
+    result
 }
 
 fn set(locale: Locale) {
@@ -134,6 +159,7 @@ mod tests {
             include_str!("updates.rs"),
             include_str!("server.rs"),
             include_str!("settings.rs"),
+            include_str!("config.rs"),
             include_str!("i18n.rs"),
         ];
         let mut keys = vec![];
