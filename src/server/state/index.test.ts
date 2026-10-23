@@ -311,6 +311,13 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
       now: NOW,
     }).sessions[0]!;
 
+  it('inizio del turno: il più recente tra il prompt nel transcript e l\'hook UserPromptSubmit', () => {
+    expect(build({ turnStartedAt: NOW - 5_000 }).turnStartedAt).toBe(NOW - 5_000);
+    expect(build({ turnStartedAt: NOW - 5_000 }, [hook('UserPromptSubmit', NOW - 200, { agentId: null })]).turnStartedAt).toBe(NOW - 200);
+    expect(build({ turnStartedAt: NOW - 5_000 }, [hook('UserPromptSubmit', NOW - 9_000, { agentId: null })]).turnStartedAt).toBe(NOW - 5_000);
+    expect(build({}, [hook('UserPromptSubmit', NOW - 200, { agentId: null, sessionId: 'altra' })]).turnStartedAt).toBeNull();
+  });
+
   it('stato dagli hook senza agentId più recenti del transcript', () => {
     expect(build({ status: 'done' }, [hook('UserPromptSubmit', NOW - 100, { agentId: null })]).status).toBe('working');
     expect(build({ status: 'working' }, [hook('Stop', NOW - 100, { agentId: null })]).status).toBe('done');
