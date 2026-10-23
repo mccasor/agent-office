@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
 import { AgentActor, AlertBubble, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
 import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
-import { AgentCard, AgentLabel, HudOverlay, InstancesPanel, type Waiting, ListView, RepoPanel, ViewToggle } from './hud';
+import { AgentCard, AgentLabel, agentWaiting, HudOverlay, InstancesPanel, type Waiting, ListView, RepoPanel, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
 import { BOSS_PREFIX, EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
@@ -72,9 +72,9 @@ export function App() {
 
   const { layout } = model;
   const drawing = viewMode === 'office' && pageVisible;
-  // motivo e inizio del blocco delle sessioni bloccate, per Claudio Code
+  // motivo e inizio del blocco delle sessioni bloccate, per Claudio Code se tocca a lui (non a un suo subagente)
   const waiting = new Map(
-    (snapshot?.sessions ?? []).filter((s) => s.active && s.waiting).map((s) => [s.id, { kind: s.waitingKind ?? null, since: s.waitingSince ?? null }]),
+    (snapshot?.sessions ?? []).filter((s) => s.active && s.waiting && !s.waitingAgentId).map((s) => [s.id, { kind: s.waitingKind ?? null, since: s.waitingSince ?? null }]),
   );
   // agente della scheda: in ufficio o già uscito (ultimo stato noto); sparito anche da lì, la scheda si chiude
   const selected = selectedId
@@ -116,6 +116,7 @@ export function App() {
             card={board[agent.id] ?? null}
             onCard={onCard}
             queue={queue}
+            waiting={agentWaiting(agent)}
             selected={agent.id === selectedId}
             onSelect={select}
           />
@@ -184,7 +185,7 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue, wait
   card?: TaskCard | null;
   onCard?: (id: string, place: CardPlace) => void;
   queue?: StartQueue;
-  /** sessione bloccata in attesa dell'utente: fumetto "!" ed etichetta in rosso */
+  /** bloccato in attesa dell'utente (la sessione per Claudio Code, sé stesso per un subagente): fumetto "!" ed etichetta in rosso */
   waiting?: Waiting | null;
   /** scheda aperta: etichetta evidenziata */
   selected?: boolean;

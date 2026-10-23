@@ -119,7 +119,7 @@ export interface PixelActor {
   boss: boolean;
   /** dove deve andare: un posto, oppure null = esce dall'ingresso */
   target: Spot | null;
-  /** la sessione è bloccata in attesa dell'utente: fumetto "!" sopra il boss */
+  /** bloccato in attesa dell'utente (il boss per la sessione, il subagente per sé): fumetto "!" sopra */
   waiting: boolean;
 }
 

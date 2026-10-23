@@ -73,7 +73,8 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
   const spotById = new Map<string, Spot>(
     [...plan.rooms.flatMap((r) => [...r.desks, ...(r.boss ? [r.boss] : []), ...r.seats]), ...plan.overflow].map((s) => [s.id, s]),
   );
-  const waiting = new Set(active.filter((s) => s.waiting).map((s) => s.id));
+  // il boss solo se è Claude stesso a essere bloccato; un subagente bloccato ha il suo fumetto
+  const waiting = new Set(active.filter((s) => s.waiting && !s.waitingAgentId).map((s) => s.id));
   const actors: PixelActor[] = [...agents, ...bosses].map((a) => {
     const boss = a.id.startsWith(BOSS_PREFIX);
     const spot = spots[a.id];
@@ -83,7 +84,7 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
       sessionId: a.sessionId,
       boss,
       target: spot === undefined ? null : (spotById.get(spot) ?? null),
-      waiting: boss && waiting.has(a.sessionId),
+      waiting: boss ? waiting.has(a.sessionId) : a.waiting === true,
     };
   });
   return { plan, rooms, spots, actors, roomless };

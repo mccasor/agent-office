@@ -66,7 +66,9 @@ export function AgentCard({ agent, session = null, onClose }: {
         {agent.issues.length > 0 && <span className="hud-label__issue">{agent.issues.map((n) => `#${n}`).join(' ')}</span>}
       </div>
       {agent.description && agent.description !== agent.name && <p className="hud-card__desc">{agent.description}</p>}
-      {session?.waiting && <SessionAlert session={session} />}
+      {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
+      {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? 'Un subagente' : null} />}
+      {!session && agent.waiting && !done && <SessionAlert session={agent} />}
       {session && (
         <dl>
           <Row label="Progetto">{projectName(session)}</Row>

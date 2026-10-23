@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentState } from '../../shared/types';
-import { AgentLabelContent } from './AgentLabelContent';
+import { AgentLabelContent, agentWaiting } from './AgentLabelContent';
 
 afterEach(cleanup);
 
@@ -80,6 +80,13 @@ describe('AgentLabelContent', () => {
     const { container } = render(<AgentLabelContent agent={agent()} waiting={{ kind: 'permission', since: t - 2 * 60_000 }} />);
     expect(screen.getByTestId('agent-time').textContent).toBe('aspetta un tuo permesso · da 2 min');
     expect(container.firstElementChild?.className).toContain('hud-label--waiting');
+  });
+
+  it('agentWaiting: motivo e inizio del blocco del subagente, null se non aspetta o ha terminato', () => {
+    const t = Date.now();
+    expect(agentWaiting(agent())).toBeNull();
+    expect(agentWaiting(agent({ waiting: true, waitingKind: 'permission', waitingSince: t }))).toEqual({ kind: 'permission', since: t });
+    expect(agentWaiting(agent({ waiting: true, status: 'done' }))).toBeNull();
   });
 
   it('tool in uso accanto alla durata; Claudio Code a fine turno è pronto', () => {
