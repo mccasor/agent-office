@@ -4,11 +4,11 @@ import { AgentCard } from './hud/AgentCard';
 import { appTitle, followHeight, inApp, MAX_SCREEN_FRACTION } from './hud/fit';
 import { InstanceBody, StateCounts } from './hud/InstancesPanel';
 import { projectName } from './hud/labels';
-import { DismissedNote, StatusDot } from './hud/panels';
+import { StatusDot } from './hud/panels';
 import { openCardWindow, type CardKind } from './hud/popout';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { t } from '../shared/i18n';
-import { connectSnapshotStream, isDismissed, useLocale, useOfficeStore, useShown, watchDismissed } from './store';
+import { connectSnapshotStream, isMarkedDone, useLocale, useOfficeStore, useShown, watchMarkedDone } from './store';
 
 interface AgentView {
   agent: AgentState;
@@ -61,29 +61,29 @@ interface WindowProps {
 function AgentWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findAgent(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
-  const dismissed = useOfficeStore((s) => s.dismissed);
-  const dismiss = useOfficeStore((s) => s.dismiss);
-  const restore = useOfficeStore((s) => s.restore);
+  const marked = useOfficeStore((s) => s.markedDone);
+  const markDone = useOfficeStore((s) => s.markDone);
+  const unmarkDone = useOfficeStore((s) => s.unmarkDone);
   const name = shown ? (shown.agent.nickname ?? shown.agent.name) : null;
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
   if (!shown) return <Note>{t('cardWindow.agentMissing')}</Note>;
-  // Claude stesso non esce; un subagente si può far uscire anche da qui (#101): sparisce da ufficio, lista e altre
-  // schede (watchDismissed), e qui resta la scheda con "Fallo rientrare"
+  // Claude stesso non si controlla; un subagente sì, anche da qui (#104): "Segna come terminato" lo toglie da ufficio,
+  // lista e altre schede (watchMarkedDone), e qui resta la scheda con "Annulla"
   if (current?.session) return <AgentCard agent={current.agent} session={current.session} />;
-  if (current && isDismissed(current.agent, dismissed)) {
+  if (current && isMarkedDone(current.agent, marked)) {
     return (
       <>
         <div className="card-window__note card-window__note--out" role="status">
-          <span>{t('cardWindow.dismissed')}</span>
-          <button type="button" className="hud-alert__dismiss" onClick={() => restore([id])}>{t('cardWindow.restore')}</button>
+          <span>{t('cardWindow.marked')}</span>
+          <button type="button" className="hud-action" title={t('marked.undoHint')} onClick={() => unmarkDone([id])}>{t('marked.undo')}</button>
         </div>
-        <AgentCard agent={current.agent} session={null} />
+        <AgentCard agent={{ ...current.agent, status: 'done', tool: null }} session={null} />
       </>
     );
   }
-  if (current) return <AgentCard agent={current.agent} session={null} onDismiss={() => dismiss(id)} />;
+  if (current) return <AgentCard agent={current.agent} session={null} onMarkDone={() => markDone(id)} />;
   // sparito dallo snapshot: ultimo stato noto, senza tool in uso né attese
   const isBoss = shown.session !== null;
   const agent: AgentState = { ...shown.agent, status: isBoss ? shown.agent.status : 'done', tool: undefined, waiting: false };
@@ -100,17 +100,15 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findSession(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
   const show = useShown();
-  const dismissed = useOfficeStore((s) => s.dismissed);
-  const restore = useOfficeStore((s) => s.restore);
+  const marked = useOfficeStore((s) => s.markedDone);
   const name = shown ? projectName(shown.session) : null;
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
   if (!shown) return <Note>{t('cardWindow.sessionMissing')}</Note>;
   const { session: s, boss } = shown;
-  // come nell'ufficio, senza i subagenti fatti uscire (#101), che si possono far rientrare da qui
-  const out = shown.agents.filter((a) => isDismissed(a, dismissed));
-  const agents = out.length > 0 ? shown.agents.filter((a) => !out.includes(a)) : shown.agents;
+  // come nell'ufficio, senza i subagenti segnati come terminati (#104): rientrano dalla lista o dalla loro scheda
+  const agents = shown.agents.filter((a) => !isMarkedDone(a, marked));
   return (
     <>
       {!current && <Note>{t('cardWindow.sessionClosed')}</Note>}
@@ -132,7 +130,6 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
           // il clic su un agente apre la sua scheda in un'altra finestra
           onSelect={(agentId) => openCardWindow('agent', agentId)}
         />
-        <DismissedNote agents={out} onRestore={restore} />
       </section>
     </>
   );
@@ -184,8 +181,8 @@ export function CardWindow({ kind, id }: { kind: CardKind; id: string }) {
   useLocale();
   useFitWindow(ref, name);
   useEffect(() => connectSnapshotStream(), []);
-  // agenti fatti uscire o rientrati nell'ufficio o in un'altra scheda (#101)
-  useEffect(() => watchDismissed(), []);
+  // agenti segnati come terminati o rientrati nell'ufficio o in un'altra scheda (#101)
+  useEffect(() => watchMarkedDone(), []);
   return (
     <main className="card-window" ref={ref}>
       {!snapshot ? (

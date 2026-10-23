@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentCard, HudOverlay, InstancesPanel, ListView, ViewToggle } from './hud';
 import { t } from '../shared/i18n';
-import { connectSnapshotStream, isDismissed, useLocale, useOfficeStore, visibleSnapshot, watchDismissed } from './store';
+import { connectSnapshotStream, isMarkedDone, useLocale, useOfficeStore, visibleSnapshot, watchMarkedDone } from './store';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
 import { openCardWindow } from './hud/popout';
@@ -19,9 +19,9 @@ export function App() {
   const focusSession = useOfficeStore((s) => s.focusSession);
   const selectedId = useOfficeStore((s) => s.selectedAgent);
   const select = useOfficeStore((s) => s.select);
-  const dismissed = useOfficeStore((s) => s.dismissed);
-  const dismiss = useOfficeStore((s) => s.dismiss);
-  const restore = useOfficeStore((s) => s.restore);
+  const marked = useOfficeStore((s) => s.markedDone);
+  const markDone = useOfficeStore((s) => s.markDone);
+  const unmarkDone = useOfficeStore((s) => s.unmarkDone);
   const closeCard = useCallback(() => select(null), [select]);
   // lingua (#93): cambiandola si ridisegna tutto, senza ricaricare (posizioni, schede aperte e filtri restano)
   useLocale();
@@ -32,12 +32,12 @@ export function App() {
     select(null);
   }, [selectedId, select]);
   const popOutSession = useCallback((sessionId: string) => openCardWindow('session', sessionId), []);
-  // l'ufficio mostra solo le sessioni scelte nella vista lista; ufficio e lista non mostrano chi è stato fatto uscire
-  const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden, dismissed), [fullSnapshot, hidden, dismissed]);
-  const listed = useMemo(() => visibleSnapshot(fullSnapshot, [], dismissed), [fullSnapshot, dismissed]);
-  const dismissSelected = useCallback(() => selectedId && dismiss(selectedId), [selectedId, dismiss]);
-  // fatti uscire a mano: nella lista "N fatti uscire · Mostra" per farli rientrare (#101)
-  const dismissedAgents = useMemo(() => fullSnapshot?.agents.filter((a) => isDismissed(a, dismissed)) ?? [], [fullSnapshot, dismissed]);
+  // l'ufficio mostra solo le sessioni scelte nella vista lista; ufficio e lista non mostrano chi è segnato come terminato
+  const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden, marked), [fullSnapshot, hidden, marked]);
+  const listed = useMemo(() => visibleSnapshot(fullSnapshot, [], marked), [fullSnapshot, marked]);
+  const markSelected = useCallback(() => selectedId && markDone(selectedId), [selectedId, markDone]);
+  // segnati come terminati: nella lista tra i terminati di oggi, con "Annulla" per farli rientrare (#104)
+  const markedAgents = useMemo(() => fullSnapshot?.agents.filter((a) => isMarkedDone(a, marked)) ?? [], [fullSnapshot, marked]);
   const agents = snapshot?.agents ?? [];
   // Claude stesso, uno per sessione attiva; con più sessioni il nome porta il progetto
   const bosses = useMemo(() => {
@@ -46,8 +46,8 @@ export function App() {
   }, [snapshot]);
 
   useEffect(() => connectSnapshotStream(), []);
-  // chi viene fatto uscire (o rientra) da una scheda staccata sparisce (o ricompare) anche qui (#101)
-  useEffect(() => watchDismissed(), []);
+  // chi viene segnato come terminato (o rientra) da una scheda staccata sparisce (o ricompare) anche qui (#101)
+  useEffect(() => watchMarkedDone(), []);
   // finestra nascosta (app della menu bar) o scheda in background: niente frame da disegnare
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
   useEffect(() => {
@@ -77,13 +77,13 @@ export function App() {
           agents={listed?.agents ?? []}
           finished={listed?.finished ?? []}
           closedFinished={fullSnapshot?.closedFinished}
-          dismissed={dismissedAgents}
+          marked={markedAgents}
           hidden={hidden}
           onToggle={toggleSession}
           focus={focusSession}
           today={fullSnapshot?.today}
-          onDismiss={dismiss}
-          onRestore={restore}
+          onMarkDone={markDone}
+          onUnmark={unmarkDone}
         />
       )}
       {viewMode === 'history' && <HistoryView />}
@@ -106,7 +106,7 @@ export function App() {
         {/* cruscotto della giornata (#97), in breve: nella lista è in alto, per esteso */}
         {office && fullSnapshot?.today && <TodayBar today={fullSnapshot.today} compact />}
         {office && selected && (
-          <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} onDismiss={dismissSelected} />
+          <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} onMarkDone={markSelected} />
         )}
       </HudOverlay>
     </>

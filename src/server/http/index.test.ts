@@ -284,3 +284,38 @@ describe('GET /api/history', () => {
     }
   });
 });
+
+describe('GET /api/agents/<id>/status (#104)', () => {
+  let webDir: string;
+  afterEach(async () => {
+    await rm(webDir, { recursive: true, force: true });
+  });
+
+  it('verdetto in JSON senza cache, 404 per un agente sconosciuto o un id non valido; solo GET', async () => {
+    webDir = await mkdtemp(join(tmpdir(), 'agent-office-http-status-'));
+    const asked: string[] = [];
+    const server = await startServer({
+      port: 0,
+      webDir,
+      initial: snap(1),
+      agentStatus: async (id) => {
+        asked.push(id);
+        return id === 'a1' ? { kind: 'silent', checkedAt: 5, tool: null, waiting: null, background: 0, lastOutputAt: null, claude: 'idle' } : null;
+      },
+    });
+    const without = await startServer({ port: 0, webDir, initial: snap(1) });
+    try {
+      const res = await fetch(`${server.url}/api/agents/a1/status`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect(await res.json()).toEqual({ kind: 'silent', checkedAt: 5, tool: null, waiting: null, background: 0, lastOutputAt: null, claude: 'idle' });
+      expect((await fetch(`${server.url}/api/agents/zz/status`)).status).toBe(404);
+      expect((await raw(server.url, '/api/agents/..%2Fx/status')).status).toBe(404);
+      expect((await raw(server.url, '/api/agents/a1/status', { method: 'POST' })).status).toBe(405);
+      expect(asked).toEqual(['a1', 'zz']);
+      expect((await fetch(`${without.url}/api/agents/a1/status`)).status).toBe(404);
+    } finally {
+      await Promise.all([server.close(), without.close()]);
+    }
+  });
+});

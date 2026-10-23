@@ -127,7 +127,7 @@ describe('voci da mostrare: lista (#94)', () => {
   const s = session({ title: 'Rifare il pannello', issues: [7], lastTurnMs: 60_000, cost: 1.5 });
   const list = (over: Partial<Parameters<typeof ListView>[0]> = {}) => (
     <ListView
-      sessions={[s]} agents={[busy, failed]} finished={[failed]} hidden={[]} onToggle={() => {}} today={today} onDismiss={() => {}}
+      sessions={[s]} agents={[busy, failed]} finished={[failed]} hidden={[]} onToggle={() => {}} today={today} onMarkDone={() => {}}
       closedFinished={[{ id: 'a9', sessionId: 's9', project: 'vecchio', nickname: 'Ada Plan', agentType: 'Plan', area: 'docs', startedAt: 0, endedAt: 60_000, outputTokens: 10, cost: null }]}
       {...over}
     />

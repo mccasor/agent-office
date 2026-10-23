@@ -29,8 +29,11 @@ export interface OfficeStoreState {
   selectedAgent: string | null;
   /** preferenze di visualizzazione da config.json (#94), dal server; i default finché non arrivano */
   settings: DisplaySettings;
-  /** subagenti fatti uscire a mano ("Fallo uscire", #97) e quando: nascosti finché non hanno attività più recente */
-  dismissed: Record<string, number>;
+  /**
+   * subagenti segnati a mano come terminati ("Segna come terminato" dopo "Controlla stato", #104) e quando: nascosti da
+   * ufficio e lista finché non hanno attività più recente
+   */
+  markedDone: Record<string, number>;
   setSnapshot(snapshot: Snapshot): void;
   setSettings(settings: DisplaySettings): void;
   /** mostra la vista e, se indicata, evidenzia la sessione */
@@ -39,10 +42,10 @@ export interface OfficeStoreState {
   setView(view: OfficeView): void;
   toggleSession(sessionId: string): void;
   select(agentId: string | null): void;
-  /** fa uscire un subagente fermo: sparisce da ufficio e lista finché non torna attivo */
-  dismiss(agentId: string): void;
-  /** fa rientrare a mano i subagenti fatti uscire (#101) */
-  restore(agentIds: readonly string[]): void;
+  /** segna un subagente come terminato: sparisce da ufficio e lista finché non torna attivo */
+  markDone(agentId: string): void;
+  /** annulla: i subagenti rientrano subito */
+  unmarkDone(agentIds: readonly string[]): void;
 }
 
 const PREFS_KEY = 'agent-office.prefs';
@@ -69,15 +72,16 @@ function savePrefs(prefs: Pick<OfficeStoreState, 'view' | 'hiddenSessions'>): vo
   }
 }
 
-const DISMISSED_KEY = 'agent-office.dismissed';
+/** chiave nuova (#104): i "fatti uscire" di #101 erano agenti solo fermi, non segnati come terminati */
+const MARKED_KEY = 'agent-office.markedDone';
 
 /**
- * Subagenti fatti uscire, salvati nel browser come le sessioni nascoste: è una scelta di chi guarda, non uno stato
- * dell'agente, e il server resta in sola lettura. Senza storage valgono solo per questa pagina.
+ * Subagenti segnati come terminati, salvati nel browser come le sessioni nascoste: è una scelta di chi guarda, non
+ * uno stato dell'agente, e il server resta in sola lettura. Senza storage valgono solo per questa pagina.
  */
-function loadDismissed(): Record<string, number> {
+function loadMarked(): Record<string, number> {
   try {
-    const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(DISMISSED_KEY) ?? '{}');
+    const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(MARKED_KEY) ?? '{}');
     if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
     return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number'));
   } catch {
@@ -85,24 +89,25 @@ function loadDismissed(): Record<string, number> {
   }
 }
 
-function saveDismissed(dismissed: Record<string, number>): void {
+function saveMarked(marked: Record<string, number>): void {
   try {
-    globalThis.localStorage?.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+    globalThis.localStorage?.setItem(MARKED_KEY, JSON.stringify(marked));
   } catch {
     // storage non disponibile: si resta sui valori in memoria
   }
 }
 
 /**
- * Segue i subagenti fatti uscire nelle altre finestre (#101): ufficio e schede staccate hanno ognuna il suo store ma
- * la stessa origine, quindi lo stesso localStorage, e l'evento `storage` arriva alle altre finestre a ogni scrittura.
- * Al ritorno in primo piano si rilegge comunque, nel caso una finestra nascosta l'abbia perso. Ritorna la funzione di chiusura.
+ * Segue i subagenti segnati come terminati nelle altre finestre (#101): ufficio e schede staccate hanno ognuna il suo
+ * store ma la stessa origine, quindi lo stesso localStorage, e l'evento `storage` arriva alle altre finestre a ogni
+ * scrittura. Al ritorno in primo piano si rilegge comunque, nel caso una finestra nascosta l'abbia perso. Ritorna la
+ * funzione di chiusura.
  */
-export function watchDismissed(): () => void {
-  const reload = () => useOfficeStore.setState({ dismissed: loadDismissed() });
+export function watchMarkedDone(): () => void {
+  const reload = () => useOfficeStore.setState({ markedDone: loadMarked() });
   const onStorage = (e: StorageEvent) => {
     // key null: storage svuotato
-    if (e.key === DISMISSED_KEY || e.key === null) reload();
+    if (e.key === MARKED_KEY || e.key === null) reload();
   };
   const onVisible = () => {
     if (document.visibilityState === 'visible') reload();
@@ -115,9 +120,9 @@ export function watchDismissed(): () => void {
   };
 }
 
-/** Fatto uscire e da allora senza attività: resta fuori. Torna attivo (updatedAt più recente): rientra. */
-export const isDismissed = (a: Pick<AgentState, 'id' | 'updatedAt'>, dismissed: Readonly<Record<string, number>>): boolean =>
-  Object.hasOwn(dismissed, a.id) && a.updatedAt <= dismissed[a.id]!;
+/** Segnato come terminato e da allora senza attività: resta fuori. Torna attivo (updatedAt più recente): rientra. */
+export const isMarkedDone = (a: Pick<AgentState, 'id' | 'updatedAt'>, marked: Readonly<Record<string, number>>): boolean =>
+  Object.hasOwn(marked, a.id) && a.updatedAt <= marked[a.id]!;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const idOf = (v: unknown): unknown => (isObject(v) ? v.id : undefined);
@@ -162,7 +167,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   selectedAgent: null,
   settings: DEFAULT_DISPLAY,
-  dismissed: loadDismissed(),
+  markedDone: loadMarked(),
   setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
   // stessi oggetti se nulla cambia: i componenti che leggono una voce non si ridisegnano. La lingua (#93) va impostata
   // prima di avvisare i componenti: i testi (src/shared/i18n) la leggono mentre si ridisegnano
@@ -191,18 +196,18 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
     savePrefs({ view: get().view, hiddenSessions: next });
   },
   select: (agentId) => set({ selectedAgent: agentId }),
-  dismiss: (agentId) => {
+  markDone: (agentId) => {
     // si tengono solo gli agenti ancora nello snapshot, così l'elenco non cresce all'infinito
     const live = new Set([...(get().snapshot?.agents ?? []), ...(get().snapshot?.finished ?? [])].map((a) => a.id));
-    const kept = Object.entries(get().dismissed).filter(([id]) => live.has(id));
+    const kept = Object.entries(get().markedDone).filter(([id]) => live.has(id));
     const next = { ...Object.fromEntries(kept), [agentId]: Date.now() };
-    set({ dismissed: next, selectedAgent: get().selectedAgent === agentId ? null : get().selectedAgent });
-    saveDismissed(next);
+    set({ markedDone: next, selectedAgent: get().selectedAgent === agentId ? null : get().selectedAgent });
+    saveMarked(next);
   },
-  restore: (agentIds) => {
-    const next = Object.fromEntries(Object.entries(get().dismissed).filter(([id]) => !agentIds.includes(id)));
-    set({ dismissed: next });
-    saveDismissed(next);
+  unmarkDone: (agentIds) => {
+    const next = Object.fromEntries(Object.entries(get().markedDone).filter(([id]) => !agentIds.includes(id)));
+    set({ markedDone: next });
+    saveMarked(next);
   },
 }));
 
@@ -225,20 +230,20 @@ export function useShown(): (key: SettingKey) => boolean {
 }
 
 /**
- * Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti fatti uscire. I
- * terminati già usciti (`finished`) restano anche se fatti uscire: sono il resoconto della giornata, non l'ufficio. Pura.
+ * Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti segnati come terminati.
+ * I terminati già usciti (`finished`) restano: sono il resoconto della giornata, non l'ufficio. Pura.
  */
 export function visibleSnapshot(
   snapshot: Snapshot | null,
   hidden: readonly string[],
-  dismissed: Readonly<Record<string, number>> = {},
+  marked: Readonly<Record<string, number>> = {},
 ): Snapshot | null {
-  if (!snapshot || (hidden.length === 0 && Object.keys(dismissed).length === 0)) return snapshot;
+  if (!snapshot || (hidden.length === 0 && Object.keys(marked).length === 0)) return snapshot;
   const h = new Set(hidden);
   return {
     ...snapshot,
     sessions: snapshot.sessions.filter((s) => !h.has(s.id)),
-    agents: snapshot.agents.filter((a) => !h.has(a.sessionId) && !isDismissed(a, dismissed)),
+    agents: snapshot.agents.filter((a) => !h.has(a.sessionId) && !isMarkedDone(a, marked)),
     finished: snapshot.finished?.filter((a) => !h.has(a.sessionId)),
   };
 }

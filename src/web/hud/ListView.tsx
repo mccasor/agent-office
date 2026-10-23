@@ -8,8 +8,9 @@ import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
 import { finishedAsAgent } from './HistoryView';
-import { AlertMark, ContextGauge, DiffStat, DismissedNote, OutcomeTag, RoleChip, StatusDot } from './panels';
+import { AlertMark, ContextGauge, DiffStat, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
+import { CheckButton, useStatusCheck, VerdictNote } from './StatusCheck';
 import { TodayBar } from './TodayBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -102,14 +103,35 @@ function RoleCell({ area, shown }: { area: AgentState['area']; shown: boolean })
   return shown ? <RoleChip area={area} /> : <span />;
 }
 
-/** Agenti della sessione (o delle istanze chiuse, `title`) terminati oggi: nome, esito, durata, costo ed errori. Chiusa di default. */
-const FinishedToday = memo(function FinishedToday({ agents, title = 'finished.today' }: { agents: AgentState[]; title?: TextKey }) {
+/**
+ * Agenti della sessione (o delle istanze chiuse, `title`) terminati oggi: nome, esito, durata, costo ed errori. Chiusa
+ * di default. Prima quelli segnati da te come terminati (#104), con "Annulla" per farli rientrare nell'ufficio.
+ */
+const FinishedToday = memo(function FinishedToday({ agents, marked = NONE, onUnmark, title = 'finished.today' }: {
+  agents: AgentState[];
+  marked?: AgentState[];
+  onUnmark?: (agentIds: string[]) => void;
+  title?: TextKey;
+}) {
   const show = useShown();
-  if (agents.length === 0) return null;
+  if (agents.length + marked.length === 0) return null;
   return (
     <details className="list-finished">
-      <summary>{`${t(title)} (${agents.length})`}</summary>
+      <summary>{`${t(title)} (${agents.length + marked.length})`}</summary>
       <ul className="list-agents">
+        {marked.map((a) => (
+          <li key={a.id} className="list-agent list-agent--done list-agent--marked">
+            <span className="list-agent__name" title={a.name}><AgentName agent={a} /></span>
+            <RoleCell area={a.area} shown={show('agent.role')} />
+            <span className="list-agent__status hud-muted">{show('agent.duration') && t('dur.in', { d: formatDuration(a.updatedAt - a.startedAt) })}</span>
+            <span className="list-agent__end">
+              <span className="hud-muted">{t('marked.label')}</span>
+              {onUnmark && (
+                <button type="button" className="hud-action" title={t('marked.undoHint')} onClick={() => onUnmark([a.id])}>{t('marked.undo')}</button>
+              )}
+            </span>
+          </li>
+        ))}
         {agents.map((a) => {
           const text = [
             show('agent.duration') && t('dur.in', { d: formatDuration(a.updatedAt - a.startedAt) }),
@@ -137,11 +159,12 @@ const FinishedToday = memo(function FinishedToday({ agents, title = 'finished.to
 
 /**
  * Riga di un subagente: nome, issue, ruolo, stato (o attesa, tool, da quanto è fermo), durata e avanzamento; per un
- * terminato esito e costo; l'avviso se è fermo o in loop ("!" giallo, con "Fallo uscire" se è fermo); gli errori.
- * Con `onDismiss` "Fallo uscire" anche per un terminato ancora in area relax (#101), che altrimenti aspetta gli altri.
+ * terminato esito e costo; l'avviso se è fermo o in loop ("!" giallo); gli errori. Se è fermo, "Controlla stato"
+ * (#104) nell'ultima colonna e il verdetto a tutta riga sotto, con "Segna come terminato" se c'è `onMarkDone`.
  */
-const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent: AgentState; now: number; onDismiss?: (id: string) => void }) {
+const AgentLine = memo(function AgentLine({ agent: a, now, onMarkDone }: { agent: AgentState; now: number; onMarkDone?: (id: string) => void }) {
   const show = useShown();
+  const { result, loading, check } = useStatusCheck(a.id);
   const pct = a.progress && show('agent.progress') ? percent(a.progress.completed, a.progress.total) : null;
   const done = a.status === 'done';
   const alert = !done && a.alert && show('agent.alerts') ? alertShort(a.alert, now) : null;
@@ -156,16 +179,9 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
     .join(' · ');
   let last = pct === null ? <span /> : <ProgressBar value={pct} label={t('card.progressOf', { name: agentName(a) })} className="hud-bar--small" />;
   if (done && a.outcome && show('agent.outcome')) last = <OutcomeTag outcome={a.outcome} />;
-  if (done && onDismiss) {
-    last = (
-      <span className="list-agent__end">
-        {a.outcome && show('agent.outcome') && <OutcomeTag outcome={a.outcome} />}
-        <button type="button" className="hud-alert__dismiss" title={t('alert.dismissDoneHint')} onClick={() => onDismiss(a.id)}>{t('alert.dismiss')}</button>
-      </span>
-    );
-  } else if (alert && a.alert?.kind === 'stale' && onDismiss) {
-    last = <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={() => onDismiss(a.id)}>{t('alert.dismiss')}</button>;
-  }
+  // fermo: al posto della barra "Controlla stato"; il verdetto resta anche se l'avviso sparisce (es. chiuso, esce)
+  const checking = alert !== null && a.alert?.kind === 'stale';
+  if (checking) last = <CheckButton loading={loading} onClick={check} />;
   return (
     <li className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}${alert ? ' list-agent--alert' : ''}`}>
       <span className="list-agent__name" title={a.name}>
@@ -179,6 +195,7 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
         <ToolErrorsNote agent={a} lead />
       </span>
       {last}
+      {result && <VerdictNote result={result} onMarkDone={onMarkDone && (() => onMarkDone(a.id))} />}
     </li>
   );
 });
@@ -187,19 +204,19 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
  * Scheda di un'istanza nella lista: si ridisegna solo se cambiano la sessione, i suoi agenti, il filtro dei
  * terminati, la casella, l'evidenza o l'ora corrente (useNow, ogni 15 s, per gli orari relativi).
  */
-const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, dismissed, hideDone, shown, focused, now, onToggle, onDismiss, onRestore }: {
+const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, marked, hideDone, shown, focused, now, onToggle, onMarkDone, onUnmark }: {
   session: SessionState;
   agents: AgentState[];
   finished: AgentState[];
-  /** subagenti della sessione fatti uscire a mano (#101) */
-  dismissed: AgentState[];
+  /** subagenti della sessione segnati da te come terminati (#104), tra i terminati di oggi */
+  marked: AgentState[];
   hideDone: boolean;
   shown: boolean;
   focused: boolean;
   now: number;
   onToggle: (sessionId: string) => void;
-  onDismiss?: (agentId: string) => void;
-  onRestore?: (agentIds: string[]) => void;
+  onMarkDone?: (agentId: string) => void;
+  onUnmark?: (agentIds: string[]) => void;
 }) {
   const show = useShown();
   const own = hideDone || !show('instances.done') ? all.filter((a) => a.status !== 'done') : all;
@@ -243,15 +260,15 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         <ContextGauge session={s} slot="inline" />
       </div>
       <ContextGauge session={s} slot="block" />
-      {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} onDismiss={onDismiss} />)}</ul>}
+      {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} onMarkDone={onMarkDone} />)}</ul>}
       {done.length > 0 && (
         <details className="list-finished">
           <summary>{doneGroupLabel(done.length)}</summary>
-          <ul className="list-agents">{done.map((a) => <AgentLine key={a.id} agent={a} now={now} onDismiss={onDismiss} />)}</ul>
+          <ul className="list-agents">{done.map((a) => <AgentLine key={a.id} agent={a} now={now} />)}</ul>
         </details>
       )}
-      {onRestore && <DismissedNote agents={dismissed} onRestore={onRestore} />}
-      {show('list.finishedToday') && <FinishedToday agents={finished} />}
+      {/* i segnati da te anche con i terminati di oggi spenti: è l'unico posto della lista da cui farli rientrare */}
+      <FinishedToday agents={show('list.finishedToday') ? finished : NONE} marked={marked} onUnmark={onUnmark} />
     </section>
   );
 }, sameProps);
@@ -280,25 +297,25 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
  * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
-export function ListView({ sessions, agents, finished = [], closedFinished, dismissed = NONE, hidden, onToggle, focus = null, today, onDismiss, onRestore }: {
+export function ListView({ sessions, agents, finished = [], closedFinished, marked = NONE, hidden, onToggle, focus = null, today, onMarkDone, onUnmark }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** terminati oggi e già usciti dall'ufficio */
   finished?: AgentState[];
   /** terminati oggi delle istanze già chiuse (dallo storico del server) */
   closedFinished?: FinishedAgent[];
-  /** subagenti fatti uscire a mano (#101), tolti da `agents` */
-  dismissed?: AgentState[];
+  /** subagenti segnati da te come terminati (#104), tolti da `agents` */
+  marked?: AgentState[];
   hidden: readonly string[];
   onToggle: (sessionId: string) => void;
   /** sessione da evidenziare e portare in vista */
   focus?: string | null;
   /** cruscotto della giornata (#97); assente con un server vecchio */
   today?: DayStats;
-  /** fa uscire un subagente fermo, o un terminato ancora in area relax */
-  onDismiss?: (agentId: string) => void;
-  /** fa rientrare i subagenti fatti uscire (#101) */
-  onRestore?: (agentIds: string[]) => void;
+  /** segna un subagente come terminato, dopo il verdetto di "Controlla stato" */
+  onMarkDone?: (agentId: string) => void;
+  /** fa rientrare i subagenti segnati come terminati */
+  onUnmark?: (agentIds: string[]) => void;
 }) {
   const now = useNow();
   const show = useShown();
@@ -317,7 +334,7 @@ export function ListView({ sessions, agents, finished = [], closedFinished, dism
   const active = useMemo(() => sessions.filter((s) => s.active), [sessions]);
   const agentsBy = useMemo(() => bySession(agents), [agents]);
   const finishedBy = useMemo(() => bySession(finished), [finished]);
-  const dismissedBy = useMemo(() => bySession(dismissed), [dismissed]);
+  const markedBy = useMemo(() => bySession(marked), [marked]);
   const closed = useMemo(() => closedFinished?.map(finishedAsAgent) ?? NONE, [closedFinished]);
   const shown = useMemo(
     () => active
@@ -356,14 +373,14 @@ export function ListView({ sessions, agents, finished = [], closedFinished, dism
           session={s}
           agents={all}
           finished={finishedBy.get(s.id) ?? NONE}
-          dismissed={dismissedBy.get(s.id) ?? NONE}
+          marked={markedBy.get(s.id) ?? NONE}
           hideDone={filter.hideDone}
           shown={!hidden.includes(s.id)}
           focused={s.id === focus}
           now={now}
           onToggle={onToggle}
-          onDismiss={onDismiss}
-          onRestore={onRestore}
+          onMarkDone={onMarkDone}
+          onUnmark={onUnmark}
         />
       ))}
       {closed.length > 0 && show('list.closedFinished') && (

@@ -8,6 +8,7 @@ import {
 } from './labels';
 import { AgentAlertNote, CONTEXT_BAR_FROM, DiffStat, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
+import { StatusCheck } from './StatusCheck';
 import { TokenSummary } from './TokenBreakdown';
 import { useNow } from './useNow';
 import './hud.css';
@@ -44,17 +45,18 @@ function SessionContext({ session }: { session: SessionState }) {
  * Per Claude stesso (`session`) anche progetto, branch, motivo del blocco, contesto, turno corrente e ultimo, e i
  * token suoi separati da quelli con i subagenti. Si chiude con il pulsante o con Esc; `onPopOut` la apre in una
  * finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante. Dal cruscotto (#97): l'avviso se è fermo
- * o in loop (con "Fallo uscire" se c'è `onDismiss`), l'esito di un terminato e gli errori dei tool. Le voci spente
- * nelle impostazioni (#94) non ci sono, righe e sezioni comprese.
+ * o in loop, l'esito di un terminato e gli errori dei tool. Per un subagente non terminato "Controlla stato" (#104),
+ * con "Segna come terminato" se c'è `onMarkDone` e il verdetto lo propone. Le voci spente nelle impostazioni (#94)
+ * non ci sono, righe e sezioni comprese.
  */
-export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss }: {
+export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone }: {
   agent: AgentState;
   /** sessione di cui l'agente è Claude stesso (il boss); null per i subagenti */
   session?: SessionState | null;
   onClose?: () => void;
   onPopOut?: () => void;
-  /** fa uscire un subagente fermo (nasconderlo finché non torna attivo) */
-  onDismiss?: () => void;
+  /** segna il subagente come terminato (lo nasconde finché non torna attivo), dopo il verdetto di "Controlla stato" */
+  onMarkDone?: () => void;
 }) {
   const now = useNow();
   const show = useShown();
@@ -108,7 +110,8 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss 
       {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
       {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? t('card.someSubagent') : null} />}
       {!session && agent.waiting && !done && <SessionAlert session={agent} />}
-      {!session && agent.alert && !done && show('agent.alerts') && <AgentAlertNote alert={agent.alert} onDismiss={onDismiss} />}
+      {!session && agent.alert && !done && show('agent.alerts') && <AgentAlertNote alert={agent.alert} />}
+      {!session && <StatusCheck agentId={agent.id} done={done} onMarkDone={onMarkDone} />}
       {session && (
         <dl>
           <Row label={t('card.project')}>{projectName(session)}</Row>

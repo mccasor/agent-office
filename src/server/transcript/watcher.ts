@@ -49,6 +49,11 @@ export interface TranscriptWatcher extends Omit<Watcher<TranscriptSnapshot>, 'on
   /** basename dei file letti o modificati da un subagente (o da Claude stesso con agentId null), per lo storico */
   filesOf(sessionId: string, agentId: string | null): string[];
   /**
+   * Comandi in background aperti di un subagente e i loro file di output (#104, solo per l'mtime: mai il contenuto,
+   * e i percorsi non escono dal server); null se il transcript non è seguito.
+   */
+  backgroundOf(sessionId: string, agentId: string): { count: number; outputs: string[] } | null;
+  /**
    * Nuova finestra di attività (config.json cambiato, #94): vale dal prossimo current(). I transcript più vecchi della
    * finestra di discovery all'avvio restano non letti fino al riavvio.
    */
@@ -297,6 +302,15 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
         return [...new Set(f.acc.state.filePaths.map((path) => basename(path)))];
       }
       return [];
+    },
+    backgroundOf(sessionId, agentId) {
+      // chiamato solo da "Controlla stato": basta scorrere i file seguiti
+      for (const f of files.values()) {
+        const p = f.parsed;
+        if (p.kind !== 'agent' || p.sessionId !== sessionId || p.agentId !== agentId) continue;
+        return { count: f.acc.state.backgroundTasks, outputs: [...f.acc.state.backgroundOutputs] };
+      }
+      return null;
     },
     setActiveWindowMs(ms) {
       activeWindowMs = ms;

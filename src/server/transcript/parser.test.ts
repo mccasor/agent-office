@@ -247,6 +247,19 @@ describe('task in background', () => {
     expect(acc.state.backgroundTasks).toBe(0);
   });
 
+  it('ricorda il file di output dei comandi in background aperti, solo se è tasks/<id>.output (#104)', () => {
+    const acc = createAccumulator();
+    const out = '/private/tmp/claude-501/-p/s1/tasks/bb3oeq1oy.output';
+    acc.ingest(toolUse('b1', 'Bash', { command: 'sleep 60', run_in_background: true }));
+    acc.ingest(toolResult(`Command running in background with ID: bb3oeq1oy. Output is being written to: ${out}. If it exits...`, 'b1'));
+    acc.ingest(toolUse('b2', 'Bash', { command: 'sleep 61', run_in_background: true }));
+    acc.ingest(toolResult('Command running in background with ID: bzz. Output is being written to: /etc/passwd.output', 'b2'));
+    expect(acc.state.backgroundTasks).toBe(2);
+    expect(acc.state.backgroundOutputs).toEqual([out]);
+    acc.ingest(JSON.stringify({ type: 'user', message: { role: 'user', content: '<task-notification>\n<task-id>bb3oeq1oy</task-id>\n<status>completed</status>' } }));
+    expect(acc.state.backgroundOutputs).toEqual([]);
+  });
+
   it('non scambia per un task il testo di un file letto o di un comando in primo piano', () => {
     const acc = createAccumulator();
     acc.ingest(toolUse('r1', 'Read', { file_path: '/p/types.ts' }));

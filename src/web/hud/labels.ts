@@ -1,5 +1,6 @@
 import type {
-  AgentAlert, AgentOutcome, AgentState, AgentStatus, Compaction, OfficeStatus, SessionState, ToolErrors, ToolInUse, WaitingKind, WorkArea,
+  AgentAlert, AgentOutcome, AgentState, AgentStatus, AgentVerdict, Compaction, OfficeStatus, SessionState, ToolErrors, ToolInUse, VerdictDetails,
+  WaitingKind, WorkArea,
 } from '../../shared/types';
 import { clock, t, tn, type TextKey } from '../../shared/i18n';
 import { formatDuration, formatTokens, urgency } from './format';
@@ -176,4 +177,36 @@ export function alertShort(alert: AgentAlert, now: number): string {
   return alert.kind === 'stale'
     ? t('alert.staleShort', { d: formatDuration(now - alert.since, true) })
     : t('alert.loopShort', { tool: alert.tool, n: alert.count });
+}
+
+const capitalize = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+/**
+ * Cosa sta facendo secondo il transcript, per il verdetto: "Aspetta Bash da 1 h 12 min · aspetta 2 comandi in
+ * background (ultimo output 3 min fa)"; null se niente.
+ */
+export function verdictDetails(d: VerdictDetails, now: number): string | null {
+  const output = d.lastOutputAt === null ? t('verdict.noOutput') : t('verdict.lastOutput', { d: formatDuration(now - d.lastOutputAt, true) });
+  const parts = [
+    d.tool && t('verdict.tool', { tool: d.tool.name, d: formatDuration(now - d.tool.since, true) }),
+    d.waiting && waitingText(d.waiting, null, now),
+    d.background > 0 && `${tn('verdict.background', d.background)} (${output})`,
+  ].filter((p): p is string => typeof p === 'string');
+  return parts.length > 0 ? capitalize(parts.join(' · ')) : null;
+}
+
+/** Verdetto di "Controlla stato" (#104): titolo e frasi, nella lingua corrente. */
+export function verdictText(v: AgentVerdict, now: number): { title: string; lines: string[] } {
+  switch (v.kind) {
+    case 'closed':
+      return { title: t('verdict.closed.title'), lines: [t('verdict.closed')] };
+    case 'done':
+      return { title: t('verdict.done.title'), lines: [t('verdict.done', { outcome: OUTCOME_LABEL[v.outcome] })] };
+    case 'running':
+      return { title: t('verdict.running.title'), lines: [verdictDetails(v, now) ?? ''].filter(Boolean) };
+    case 'silent':
+      return { title: t('verdict.silent.title'), lines: [t('verdict.silent'), v.claude === 'idle' ? t('verdict.claudeIdle') : ''].filter(Boolean) };
+    case 'unknown':
+      return { title: t('verdict.unknown.title'), lines: [t('verdict.unknown'), verdictDetails(v, now) ?? ''].filter(Boolean) };
+  }
 }
