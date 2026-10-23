@@ -380,10 +380,16 @@
 .hud-instance__tools .hud-popout { margin: -3px -4px 0 0; }
 
 /* ---- finestra di una scheda staccata: la scheda a tutta finestra, senza ufficio ---- */
+/* a misura del contenuto: la finestra prende l'altezza di .card-window (fit.ts), oltre il massimo scorre la pagina */
+html.card-window-root,
+html.card-window-root body,
+html.card-window-root #root { height: auto; }
+html.card-window-root body { overflow-y: auto; background: #fff; }
+@media (prefers-color-scheme: dark) {
+  html.card-window-root body { background: #16191e; }
+}
 .card-window {
-  position: fixed;
-  inset: 0;
-  overflow-y: auto;
+  display: flow-root;
   font: 13px/1.4 var(--hud-font);
   color: var(--hud-fg);
   background: #fff;
