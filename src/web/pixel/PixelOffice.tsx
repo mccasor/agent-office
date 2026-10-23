@@ -5,10 +5,10 @@ import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } f
 import { agentName } from '../hud/labels';
 import { cameraViewport, type Camera } from './camera';
 import {
-  actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
+  actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sameFrame, sceneFurniture, sortByDepth,
   wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
-import { ALL_LABELS_ZOOM, drawLabel, labelText } from './labels';
+import { ALL_LABELS_ZOOM, drawLabel, labelText, labelTheme, type LabelSpec } from './labels';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import { furnitureLook, type FurnitureUse } from './screens';
@@ -92,6 +92,8 @@ interface Sim {
   fresh: boolean;
   rects: HitRect[];
   view: Viewport;
+  /** quanto è finito sul canvas all'ultimo disegno (vedi sameFrame) */
+  frame: unknown[] | null;
 }
 
 /**
@@ -111,7 +113,7 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   const { model } = state;
 
   const canvas = useRef<HTMLCanvasElement>(null);
-  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
+  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 }, frame: null });
   // zoom e trascinamento (#87); un clic senza trascinamento seleziona il personaggio sotto il puntatore
   const { cameraRef, handlers, dragging, controls } = useCamera(canvas, plan, {
     pick: (x, y) => hitTest(sim.current.rects, x, y),
@@ -211,6 +213,29 @@ function render(
   }
   s.rects = rects;
 
+  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
+  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
+  const tags = [...labels].sort((a, b) => rank(a) - rank(b)).map(({ entry: { actor }, x, y }) => {
+    const selected = actor.id === selectedId;
+    const spec: LabelSpec = {
+      text: labelText(agentName(actor.agent)),
+      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
+      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
+      selected,
+      waiting: actor.waiting,
+    };
+    return { spec, x, y };
+  });
+  const sprites = sortByDepth(ops).map((op) => ({ sprite: spriteOf(op.sprite), x: op.x, y: op.y }));
+
+  // fotogramma identico al precedente (nessuno cammina, animazioni ferme tra due pose): niente da ridisegnare
+  const theme = labelTheme();
+  const frame: unknown[] = [bw, bh, dpr, view.scale, view.ox, view.oy, theme];
+  for (const d of sprites) frame.push(d.sprite, d.x, d.y);
+  for (const { spec, x, y } of tags) frame.push(spec.text, spec.area, spec.selected, spec.waiting, x, y);
+  if (sameFrame(s.frame, frame)) return;
+  s.frame = frame;
+
   // disegno a scala intera: tutto allineato alla griglia dei pixel fisici
   const k = view.scale;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -221,25 +246,15 @@ function render(
   ctx.drawImage(floor, view.ox, view.oy, floor.width * k, floor.height * k);
   const blit = (sp: Sprite, x: number, y: number) =>
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
-  for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
+  for (const d of sprites) blit(d.sprite, d.x, d.y);
 
-  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
   const bubble = cachedImage('x:bubble', bubbleImage);
-  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
-  for (const { entry, x, y } of [...labels].sort((a, b) => rank(a) - rank(b))) {
-    const { actor } = entry;
+  for (const { spec, x, y } of tags) {
     let top = y - 21;
-    if (actor.waiting) {
+    if (spec.waiting) {
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }
-    const selected = actor.id === selectedId;
-    drawLabel(ctx, {
-      text: labelText(agentName(actor.agent)),
-      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
-      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
-      selected,
-      waiting: actor.waiting,
-    }, view.ox + x * view.scale, view.oy + top * view.scale, dpr);
+    drawLabel(ctx, spec, view.ox + x * view.scale, view.oy + top * view.scale, dpr, theme);
   }
 }

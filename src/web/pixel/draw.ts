@@ -163,3 +163,11 @@ export function hitTest(rects: readonly HitRect[], px: number, py: number): stri
   }
   return best?.id ?? null;
 }
+
+/**
+ * Due fotogrammi uguali: stessi elementi (sprite in cache confrontati per identità, posizioni, etichette, superficie).
+ * Il canvas tiene il fotogramma precedente: ridisegnarlo uguale costa CPU, GPU e compositore senza cambiare nulla.
+ */
+export function sameFrame(prev: readonly unknown[] | null, next: readonly unknown[]): boolean {
+  return prev !== null && prev.length === next.length && prev.every((x, i) => Object.is(x, next[i]));
+}
