@@ -51,9 +51,11 @@ describe('InstancesPanel', () => {
     );
     expect(head(/agent-office/).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText(/claude-opus-5-5 · high · 2.3k token generati/)).toBeTruthy();
-    // sotto il 50% il contesto è una pillola, senza barra
-    expect(screen.getByText('Contesto 25%').className).toBe('hud-pill');
-    expect(screen.queryByRole('progressbar', { name: /Contesto usato/ })).toBeNull();
+    // contesto: percentuale e barra con le zone, nel colore della zona raggiunta
+    expect(screen.getByText('25%')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).closest('.hud-ctx')!.getAttribute('data-level')).toBe('ok');
+    // branch e diff nella sezione Git dell'istanza aperta
+    expect(within(screen.getByRole('region', { name: 'Git' })).getByText('+12')).toBeTruthy();
     expect(screen.getByText('+12')).toBeTruthy();
     expect(screen.getByText('al lavoro · Edit parser.ts')).toBeTruthy();
     fireEvent.click(head(/agent-office/));
@@ -87,7 +89,7 @@ describe('InstancesPanel', () => {
     expect(within(head(/agent-office/)).getByText('1 al lavoro · 1 in attesa · 1 inattivo · 2 terminati')).toBeTruthy();
     expect(screen.getByText('fermo da 12 min')).toBeTruthy();
     // oltre il 90% la barra e il suggerimento di compattare
-    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('danger');
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).closest('.hud-ctx')!.getAttribute('data-level')).toBe('danger');
     expect(screen.getByText('conviene /compact')).toBeTruthy();
   });
 

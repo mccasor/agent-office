@@ -93,7 +93,7 @@ describe('AgentCard', () => {
     // lo stato è coerente con l'attesa
     expect(screen.getByText('aspetta un tuo permesso · da 3 min')).toBeTruthy();
     expect(screen.getByText('75%')).toBeTruthy();
-    expect(screen.getByRole('progressbar', { name: 'Contesto usato' }).getAttribute('data-level')).toBe('warn');
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).closest('.hud-ctx')!.getAttribute('data-level')).toBe('warn');
     expect(screen.getByText('+12')).toBeTruthy();
     // niente ruolo né tipo per Claude stesso
     expect(screen.queryByText('architect')).toBeNull();
@@ -125,12 +125,12 @@ describe('AgentCard', () => {
     expect(screen.getByText('Compattato 2 volte · ultima 254k → 7.6k (auto)')).toBeTruthy();
     expect(screen.getByText('conviene /compact')).toBeTruthy();
     unmount();
-    // pronto: il turno è chiuso, resta l'ultimo; contesto sotto il 50% senza barra
+    // pronto: il turno è chiuso, resta l'ultimo; il contesto ha sempre la sua barra
     render(<AgentCard agent={boss} session={session({ status: 'done', turnStartedAt: t - 60_000, lastTurnMs: 60_000, context: { used: 20_000, window: 200_000 } })} />);
     expect(screen.getByText('pronto')).toBeTruthy();
     expect(screen.queryByText('Turno')).toBeNull();
     expect(screen.getByText('Ultimo turno')).toBeTruthy();
-    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).closest('.hud-ctx')!.getAttribute('data-level')).toBe('ok');
   });
 
   it('subagente bloccato: motivo del blocco; Claude bloccato da un subagente lo dice', () => {

@@ -7,7 +7,7 @@ import { byUrgency, formatCost, formatTokens } from './format';
 import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
 } from './labels';
-import { AlertMark, ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
+import { AlertMark, ContextMeter, GitSection, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -101,11 +101,10 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
       {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : t('card.someSubagent')) : null} />}
       <div className="hud-instance__tools">
         {meta && <p className="hud-instance__meta hud-muted">{meta}</p>}
-        {!inCard && <ContextGauge session={s} slot="inline" />}
         {onPopOut && <PopOutButton label={t('popout.session', { project: projectName(s) })} onClick={() => onPopOut(s.id)} />}
       </div>
-      {!inCard && <ContextGauge session={s} slot="block" />}
-      {s.diff && <DiffStat diff={s.diff} />}
+      {!inCard && <ContextMeter session={s} />}
+      <GitSection session={s} />
       <ul className="hud-instance__agents" aria-label={t('instance.agentsOf', { project: projectName(s) })}>
         {boss && <AgentRow agent={boss} status={bossStatus} waiting={s.waiting && !s.waitingAgentId} selected={selected === boss.id} onSelect={onSelect} />}
         {live.map(row)}
@@ -179,11 +178,12 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
               <StatusDot status={s.dot} />
               <span className="hud-instance__name">
                 <span className="hud-title">{projectName(s)}</span>
-                {s.branch && show('session.branch') && <span className="hud-session__branch hud-muted">{s.branch}</span>}
+                {/* aperta, branch e issue stanno nella sezione Git */}
+                {!isOpen && s.branch && show('session.branch') && <span className="hud-session__branch hud-muted">{s.branch}</span>}
                 {/* sotto il nome, per non stringere progetto e branch */}
                 <StateCounts agents={own} />
               </span>
-              {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
+              {!isOpen && s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
             </button>
             {isOpen && (
               <InstanceBody
