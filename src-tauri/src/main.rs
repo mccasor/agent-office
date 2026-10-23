@@ -53,8 +53,6 @@ struct Ui {
 
 const NOTICE_FOR: Duration = Duration::from_secs(60);
 
-/// versione dell'app (Cargo.toml, allineata a package.json e tauri.conf.json da scripts/release.mjs)
-const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// ricerca automatica degli aggiornamenti: poco dopo l'avvio e poi a questo intervallo
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
@@ -384,6 +382,11 @@ fn send_notifications(app: &AppHandle, prev: &[SessionFacts], next: &[SessionFac
     }
 }
 
+/// Versione dell'app: quella di package.json, letta da tauri.conf.json in compilazione (Cargo.toml resta fisso).
+fn version(app: &AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
 /// Cerca versioni più recenti (se non è già in corso una ricerca o un aggiornamento).
 fn check_updates(app: &AppHandle) {
     if !update_state(app).enabled() {
@@ -391,7 +394,7 @@ fn check_updates(app: &AppHandle) {
     }
     set_update_state(app, UpdateState::Checking);
     let app = app.clone();
-    thread::spawn(move || set_update_state(&app, updates::check(VERSION)));
+    thread::spawn(move || set_update_state(&app, updates::check(&version(&app))));
 }
 
 /// Clic su "Aggiornamenti": con una versione nuova la installa, altrimenti cerca.
@@ -406,7 +409,7 @@ fn on_updates_click(app: &AppHandle) {
     thread::spawn(move || match updates::upgrade() {
         // se riesce brew chiude l'app prima di finire; se l'app è ancora qui l'aggiornamento non è avvenuto
         Upgrade::Brew(mut child) => match child.wait() {
-            Ok(status) if status.success() => set_update_state(&app, updates::check(VERSION)),
+            Ok(status) if status.success() => set_update_state(&app, updates::check(&version(&app))),
             _ => set_update_state(&app, UpdateState::UpgradeFailed),
         },
         Upgrade::Page => set_update_state(&app, state),
@@ -414,7 +417,7 @@ fn on_updates_click(app: &AppHandle) {
     });
 }
 
-fn update_json(update: &UpdateState) -> Value {
+fn update_json(update: &UpdateState, current: &str) -> Value {
     let (kind, latest, behind) = match update {
         UpdateState::Unknown => ("unknown", None, 0),
         UpdateState::Checking => ("checking", None, 0),
@@ -424,7 +427,7 @@ fn update_json(update: &UpdateState) -> Value {
         UpdateState::Failed => ("failed", None, 0),
         UpdateState::UpgradeFailed => ("upgradefailed", None, 0),
     };
-    json!({ "kind": kind, "label": update.label(VERSION), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
+    json!({ "kind": kind, "label": update.label(current), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
 }
 
 /// Tutto quello che mostra il pannello: snapshot del server, aggiornamenti, avvisi, impostazioni.
@@ -434,10 +437,10 @@ fn panel_state(app: AppHandle) -> Value {
     let prefs = *ui.prefs.lock().unwrap();
     let notice = ui.notice.lock().unwrap().clone().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text);
     json!({
-        "version": VERSION,
+        "version": version(&app),
         "snapshot": ui.snapshot.lock().unwrap().clone(),
         "serverError": app.state::<Server>().0.lock().unwrap().error(),
-        "update": update_json(&ui.update.lock().unwrap()),
+        "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": notice,
         "prefs": { "notifyWaiting": prefs.notify_waiting, "notifyDone": prefs.notify_done },
         "autostart": autostart_enabled(),

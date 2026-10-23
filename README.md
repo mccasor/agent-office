@@ -80,6 +80,13 @@ npm run app:dev      # sviluppo
 agent-office install-hooks --global   # hook per tutte le sessioni (servono per il pallino rosso)
 ```
 
+Release: la versione sta solo in `package.json` (`src-tauri/tauri.conf.json` la legge da lì, `Cargo.toml` resta a `0.0.0`).
+
+```bash
+npm version minor --no-git-tag-version   # alza la versione (anche patch o major)
+npm run app:release -- --publish         # build universale, release nel tap e cask aggiornato
+```
+
 ## Impostazioni
 
 Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quando cambi le notifiche):
