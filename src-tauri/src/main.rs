@@ -410,9 +410,13 @@ fn on_updates_click(app: &AppHandle) {
     set_update_state(app, UpdateState::Upgrading);
     let app = app.clone();
     thread::spawn(move || match updates::upgrade() {
-        // se riesce brew chiude l'app prima di finire; se l'app è ancora qui l'aggiornamento non è avvenuto
+        // riuscito: si avvia la versione nuova, che chiude questa; se non parte, si ricontrolla
         Upgrade::Brew(mut child) => match child.wait() {
-            Ok(status) if status.success() => set_update_state(&app, updates::check(&version(&app))),
+            Ok(status) if status.success() => {
+                if !updates::relaunch(&version(&app)) {
+                    set_update_state(&app, updates::check(&version(&app)));
+                }
+            }
             _ => set_update_state(&app, UpdateState::UpgradeFailed),
         },
         Upgrade::Page => set_update_state(&app, state),
@@ -526,6 +530,11 @@ fn main() {
                 wake: Mutex::new(wake),
             });
             panel::create(&handle)?;
+            // prima apertura dopo un aggiornamento dal pannello: esito nel pannello e in una notifica
+            if let Some(text) = updates::take_updated_from().and_then(|from| updates::updated_message(&from, &version(&handle))) {
+                set_notice(&handle, text.clone());
+                let _ = handle.notification().builder().title("Agent Office").body(text).show();
+            }
 
             let initial = Overview::offline();
             TrayIconBuilder::with_id(TRAY_ID)

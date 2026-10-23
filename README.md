@@ -93,7 +93,7 @@ The menu bar icon (a desk) has a status dot: **green** when Claude is working, *
 
 | Section | Content |
 |---|---|
-| Update banner | shown when a newer version exists; blue arrow, red "!" when 4 or more versions behind. Clicking it updates via Homebrew (the app quits and reopens); if the app was not installed with Homebrew it opens the release page |
+| Update banner | shown when a newer version exists; blue arrow, red "!" when 4 or more versions behind. Clicking it updates via Homebrew (only this tap is refreshed), then the new version starts, closes the old one and says "Aggiornata alla versione X" (Updated to version X) in the panel and in a notification; if the app was not installed with Homebrew it opens the release page |
 | Status | what Claude is doing (working, waiting for you, idle), how many instances are open, or why the server is unreachable |
 | "Impostazioni" (Settings) | "Apri ufficio" (Open office), "Avvia al login" (Launch at login), "Notifica quando Claude aspetta" / "Notifica quando Claude è pronto" (notify when Claude is waiting / done), "Hook di Claude Code" with "Installa" / "Rimuovi" (install / remove the global hooks), "Cerca aggiornamenti" (Check for updates) |
 | "Istanze aperte" (Open instances) | each active instance with project, branch and context used; below it, its agents with the tool in use. Clicking one opens the list view on that instance |
