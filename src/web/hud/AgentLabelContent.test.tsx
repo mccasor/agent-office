@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentState } from '../../shared/types';
 import { AgentLabelContent } from './AgentLabelContent';
 
@@ -24,56 +24,41 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
 });
 
 describe('AgentLabelContent', () => {
-  it('compatta di default: solo nome e barra, niente dettaglio', () => {
+  it('sempre compatta: nome e barra, niente dettaglio (sta nella scheda)', () => {
     render(<AgentLabelContent agent={agent()} />);
     expect(screen.getByText('Implementa HUD')).toBeTruthy();
-    expect(screen.getByRole('progressbar')).toBeTruthy();
+    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('25');
     expect(screen.queryByText('frontend')).toBeNull();
     expect(screen.queryByText('12.3k')).toBeNull();
-    expect(screen.queryByText(/al lavoro/i)).toBeNull();
     expect(screen.queryByText('1/4 · 25%')).toBeNull();
   });
 
-  it('hover sull\'etichetta mostra il dettaglio e notifica', () => {
-    const changes: boolean[] = [];
-    const { container } = render(<AgentLabelContent agent={agent()} onHoverChange={(h) => changes.push(h)} />);
+  it('niente hover: il passaggio del mouse non cambia l\'etichetta', () => {
+    const { container } = render(<AgentLabelContent agent={agent()} />);
     const label = container.firstElementChild!;
+    const before = label.innerHTML;
     fireEvent.mouseEnter(label);
-    expect(screen.getByText('frontend')).toBeTruthy();
-    expect(label.className).toContain('hud-label--expanded');
-    fireEvent.mouseLeave(label);
+    expect(label.innerHTML).toBe(before);
     expect(screen.queryByText('frontend')).toBeNull();
-    expect(changes).toEqual([true, false]);
   });
 
-  it('ripartizione token nel dettaglio', () => {
-    render(
-      <AgentLabelContent
-        expanded
-        agent={agent({ tokens: { input: 1_200, output: 3_400, cacheRead: 17_700_000, cacheCreation: 90_000, total: 17_794_600 } })}
-      />,
-    );
-    expect(screen.getByText('17.8M')).toBeTruthy();
-    expect(screen.getByTestId('tokens-input').textContent).toBe('1.2k');
-    expect(screen.getByTestId('tokens-output').textContent).toBe('3.4k');
-    expect(screen.getByTestId('tokens-cacheRead').textContent).toBe('17.7M');
-    expect(screen.getByTestId('tokens-cacheCreation').textContent).toBe('90k');
+  it('clic o Invio selezionano l\'agente; selezionata evidenziata', () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(<AgentLabelContent agent={agent()} onSelect={onSelect} />);
+    const label = screen.getByRole('button', { name: /Implementa HUD/ });
+    expect(label.getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(label);
+    fireEvent.keyDown(label, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenCalledWith('a1');
+    rerender(<AgentLabelContent agent={agent()} onSelect={onSelect} selected />);
+    expect(label.className).toContain('hud-label--selected');
+    expect(label.getAttribute('aria-pressed')).toBe('true');
   });
 
-  it('expanded (hover dalla scena): nome, chip area, token, stato', () => {
-    render(<AgentLabelContent agent={agent()} expanded />);
-    expect(screen.getByText('Implementa HUD')).toBeTruthy();
-    const chip = screen.getByText('frontend');
-    expect(chip.getAttribute('data-area')).toBe('frontend');
-    expect(screen.getByText('12.3k')).toBeTruthy();
-    expect(screen.getByText(/al lavoro/i)).toBeTruthy();
-  });
-
-  it('barra determinata completed/total con %', () => {
-    render(<AgentLabelContent agent={agent()} expanded />);
-    const bar = screen.getByRole('progressbar');
-    expect(bar.getAttribute('aria-valuenow')).toBe('25');
-    expect(screen.getByText('1/4 · 25%')).toBeTruthy();
+  it('senza onSelect non è un pulsante', () => {
+    render(<AgentLabelContent agent={agent()} />);
+    expect(screen.queryByRole('button')).toBeNull();
   });
 
   it('niente barra senza todo list (progress null o total 0)', () => {
@@ -116,8 +101,7 @@ describe('AgentLabelContent', () => {
   });
 
   it('idle attenuato', () => {
-    const { container } = render(<AgentLabelContent agent={agent({ status: 'idle' })} expanded />);
+    const { container } = render(<AgentLabelContent agent={agent({ status: 'idle' })} />);
     expect(container.firstElementChild!.className).toContain('hud-label--idle');
-    expect(screen.getByText(/inattivo/i)).toBeTruthy();
   });
 });

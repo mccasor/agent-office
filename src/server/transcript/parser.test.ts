@@ -205,14 +205,18 @@ describe('cwd, branch e domande in attesa', () => {
 });
 
 describe('task in background', () => {
-  const toolResult = (text: string) =>
-    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: text }] } });
+  const toolUse = (id: string, name: string, input: Record<string, unknown> = {}) =>
+    JSON.stringify({ type: 'assistant', message: { id: `m-${id}`, role: 'assistant', content: [{ type: 'tool_use', id, name, input }], stop_reason: 'tool_use' } });
+  const toolResult = (text: string, id = 't1') =>
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: text }] } });
   const endTurn = JSON.stringify({ type: 'assistant', message: { id: 'm9', role: 'assistant', content: [{ type: 'text', text: 'aspetto' }], stop_reason: 'end_turn' } });
 
   it('conta i comandi e gli agenti avviati in background finché non arriva la loro notifica', () => {
     const acc = createAccumulator();
-    acc.ingest(toolResult('Command running in background with ID: bxqc4zf1o. Output is being written to: /tmp/x'));
-    acc.ingest(toolResult('Async agent launched successfully.\nagentId: a816d6b49e4346d22 (internal ID)'));
+    acc.ingest(toolUse('b1', 'Bash', { command: 'npm run dev', run_in_background: true }));
+    acc.ingest(toolResult('Command running in background with ID: bxqc4zf1o. Output is being written to: /tmp/x', 'b1'));
+    acc.ingest(toolUse('a1', 'Agent', { prompt: 'x' }));
+    acc.ingest(toolResult('Async agent launched successfully.\nagentId: a816d6b49e4346d22 (internal ID)', 'a1'));
     expect(acc.state.backgroundTasks).toBe(2);
     acc.ingest(endTurn);
     expect(acc.state.finished).toBe('confirmed');
@@ -220,6 +224,26 @@ describe('task in background', () => {
     expect(acc.state.backgroundTasks).toBe(1);
     acc.ingest(JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: '<task-id>a816d6b49e4346d22</task-id>' }] } }));
     expect(acc.state.backgroundTasks).toBe(0);
+  });
+
+  it('chiude un task anche con la notifica messa in coda (queue-operation)', () => {
+    const acc = createAccumulator();
+    acc.ingest(toolUse('a1', 'Agent', { prompt: 'x', run_in_background: true }));
+    acc.ingest(toolResult('Async agent launched successfully.\nagentId: a816d6b49e4346d22 (internal ID)', 'a1'));
+    expect(acc.state.backgroundTasks).toBe(1);
+    acc.ingest(JSON.stringify({ type: 'queue-operation', operation: 'enqueue', content: '<task-notification>\n<task-id>a816d6b49e4346d22</task-id>' }));
+    expect(acc.state.backgroundTasks).toBe(0);
+  });
+
+  it('non scambia per un task il testo di un file letto o di un comando in primo piano', () => {
+    const acc = createAccumulator();
+    acc.ingest(toolUse('r1', 'Read', { file_path: '/p/types.ts' }));
+    acc.ingest(toolResult('export interface AgentState {\n  agentId: string;', 'r1'));
+    acc.ingest(toolUse('b1', 'Bash', { command: 'cat parser.ts' }));
+    acc.ingest(toolResult('const RE = /running in background with ID: ([\\w-]+)/', 'b1'));
+    expect(acc.state.backgroundTasks).toBe(0);
+    acc.ingest(endTurn);
+    expect(acc.state.finished).toBe('confirmed');
   });
 });
 

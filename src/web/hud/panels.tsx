@@ -1,14 +1,9 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
-import { contextLevel, formatCost, formatTokens, percent } from './format';
-import { ProgressBar } from './ProgressBar';
-import { TokenBreakdown } from './TokenBreakdown';
-import { DOT_LABEL, toolText, waitingText } from './labels';
+import { DOT_LABEL, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
-
-const DASH = '—';
 
 /** Contenitore fisso unico (in body) per tutti gli overlay: affiancati su desktop, impilati sotto 680px. */
 function hudStack(): HTMLElement {
@@ -26,7 +21,7 @@ export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; 
   return createPortal(<div className={`hud-overlay hud-overlay--${side}`}>{children}</div>, hudStack());
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="hud-row">
       <dt>{label}</dt>
@@ -50,7 +45,7 @@ export function DiffStat({ diff }: { diff: RepoDiff }) {
 }
 
 /** Avviso della sessione bloccata: motivo e da quanto ("Aspetta un tuo permesso · da 3 min"). */
-function SessionAlert({ session }: { session: SessionState }) {
+export function SessionAlert({ session }: { session: SessionState }) {
   const now = useNow();
   const text = waitingText(session.waitingKind, session.waitingSince, now);
   return <p className="hud-session__alert">{text.charAt(0).toUpperCase() + text.slice(1)}</p>;
@@ -59,60 +54,6 @@ function SessionAlert({ session }: { session: SessionState }) {
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
 export function StatusDot({ status }: { status: OfficeStatus }) {
   return <span className={`list-dot list-dot--${status}`} role="img" aria-label={DOT_LABEL[status]} title={DOT_LABEL[status]} />;
-}
-
-/**
- * Pannello overlay della sessione mostrata: progetto con pallino di stato e branch, modello, effort, issue,
- * contesto (barra), token generati e ripartizione completa.
- */
-export function SessionPanel({ session, status = 'idle' }: { session: SessionState | null; status?: OfficeStatus }) {
-  if (!session) {
-    return (
-      <section className="hud-panel hud-panel--empty" aria-label="Sessione">
-        Nessuna sessione attiva
-      </section>
-    );
-  }
-  const { used, window } = session.context;
-  const pct = percent(used, window);
-  return (
-    <section className="hud-panel" aria-label="Sessione">
-      <header className="hud-session">
-        <StatusDot status={status} />
-        <span className="hud-title">{projectName(session)}</span>
-        {session.branch && <span className="hud-muted hud-session__branch">{session.branch}</span>}
-      </header>
-      {session.waiting && <SessionAlert session={session} />}
-      {session.diff && <DiffStat diff={session.diff} />}
-      <dl>
-        <Row label="Modello">{session.model ?? DASH}</Row>
-        <Row label="Effort">{session.effort ?? DASH}</Row>
-        <Row label="Issue">{session.issues.length > 0 ? session.issues.map((n) => `#${n}`).join(' ') : DASH}</Row>
-        {session.tool && <Row label="In uso">{toolText(session.tool)}</Row>}
-      </dl>
-      <div className="hud-context">
-        <div className="hud-context__head">
-          <span className="hud-muted">Contesto</span>
-          <span>{`${formatTokens(used)} / ${window === null ? '?' : formatTokens(window)}`}</span>
-          {pct !== null && <span className="hud-context__pct">{`${pct}%`}</span>}
-        </div>
-        {pct !== null && <ProgressBar value={pct} label="Contesto usato" level={contextLevel(pct)} />}
-      </div>
-      <dl>
-        {/* il totale comprende le letture dalla cache e cresce a ogni richiesta: sta nella ripartizione */}
-        <Row label="Costo stimato">
-          <span data-testid="session-cost">{formatCost(session.cost)}</span>
-        </Row>
-        <Row label="Token generati">
-          <span data-testid="tokens-generated">{formatTokens(session.tokensUsed.output)}</span>
-        </Row>
-      </dl>
-      <details className="hud-details">
-        <summary>Ripartizione token</summary>
-        <TokenBreakdown tokens={session.tokensUsed} />
-      </details>
-    </section>
-  );
 }
 
 /** Pannello overlay: progetto, branch, +righe / -righe, file modificati. */

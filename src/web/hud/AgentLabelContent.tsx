@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import type { AgentState, WaitingKind } from '../../shared/types';
-import { elapsed, formatCost, formatDuration, percent, truncate } from './format';
+import { elapsed, formatDuration, percent, truncate } from './format';
 import { ProgressBar } from './ProgressBar';
-import { TokenBreakdown } from './TokenBreakdown';
-import { STATUS_LABEL, toolText, waitingText } from './labels';
+import { toolText, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -26,35 +24,26 @@ export function activityText(agent: AgentState, waiting: Waiting | null, now: nu
 
 interface AgentLabelContentProps {
   agent: AgentState;
-  /** dettaglio forzato (es. hover sul personaggio nella scena) */
-  expanded?: boolean;
-  /** notifica l'hover sull'etichetta stessa */
-  onHoverChange?: (hovered: boolean) => void;
   /** la sessione è bloccata in attesa dell'utente (solo per Claudio Code) */
   waiting?: Waiting | null;
+  /** la sua scheda è aperta */
+  selected?: boolean;
+  /** clic sull'etichetta: apre la scheda dell'agente */
+  onSelect?: (agentId: string) => void;
 }
 
 /**
- * Contenuto DOM puro dell'etichetta agente (testabile senza Canvas).
- * Compatta di default (nome, da quanto lavora, barra solo con una todo list); dettaglio (area, token, stato)
- * con `expanded` o hover. In rosso quando la sessione aspetta un input dell'utente.
+ * Contenuto DOM puro dell'etichetta agente (testabile senza Canvas), sempre compatto: nome, da quanto lavora,
+ * barra solo con una todo list. Il dettaglio è nella scheda (AgentCard) che si apre al clic.
+ * In rosso quando la sessione aspetta un input dell'utente.
  */
-export function AgentLabelContent({ agent, expanded = false, onHoverChange, waiting = null }: AgentLabelContentProps) {
+export function AgentLabelContent({ agent, waiting = null, selected = false, onSelect }: AgentLabelContentProps) {
   const now = useNow();
-  const [hovered, setHovered] = useState(false);
-  const hover = (h: boolean) => {
-    setHovered(h);
-    onHoverChange?.(h);
-  };
-  const open = expanded || hovered;
   const { progress } = agent;
   const pct = progress ? percent(progress.completed, progress.total) : null;
-  return (
-    <div
-      className={`hud-label hud-label--${agent.status}${waiting ? ' hud-label--waiting' : ''}${open ? ' hud-label--expanded' : ''}`}
-      onMouseEnter={() => hover(true)}
-      onMouseLeave={() => hover(false)}
-    >
+  const className = `hud-label hud-label--${agent.status}${waiting ? ' hud-label--waiting' : ''}${selected ? ' hud-label--selected' : ''}`;
+  const content = (
+    <>
       <div className="hud-label__name" title={agent.name}>
         {truncate(agent.name, NAME_MAX_CHARS)}
         {agent.issues.length > 0 && (
@@ -65,21 +54,28 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange, wait
         {activityText(agent, waiting, now)}
       </div>
       {pct !== null && <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} className="hud-bar--small" />}
-      {open && (
-        <>
-          <div className="hud-label__meta">
-            <span className={`hud-chip hud-chip--${agent.area}`} data-area={agent.area}>
-              {agent.area}
-            </span>
-            <span className="hud-label__status">{STATUS_LABEL[agent.status]}</span>
-          </div>
-          <div className="hud-label__progress" data-testid="agent-cost">{`Costo ${formatCost(agent.cost)}`}</div>
-          {progress && pct !== null && (
-            <div className="hud-label__progress">{`${progress.completed}/${progress.total} · ${pct}%`}</div>
-          )}
-          <TokenBreakdown tokens={agent.tokens} />
-        </>
-      )}
+    </>
+  );
+  if (!onSelect) return <div className={className}>{content}</div>;
+  // div e non <button>: dentro ci sono blocchi (la barra), non ammessi in un pulsante
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={className}
+      aria-pressed={selected}
+      onClick={(e) => {
+        // nella scena 3D il clic non deve arrivare al canvas (lo leggerebbe come clic sul vuoto)
+        e.stopPropagation();
+        onSelect(agent.id);
+      }}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        onSelect(agent.id);
+      }}
+    >
+      {content}
     </div>
   );
 }

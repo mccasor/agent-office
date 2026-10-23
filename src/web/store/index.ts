@@ -1,23 +1,30 @@
 import { create } from 'zustand';
 import type { Snapshot } from '../../shared/types';
 
-export type OfficeView = 'office' | 'list';
+/** office = ufficio 3D, pixel = ufficio 2D in pixel art, list = lista delle sessioni */
+export type OfficeView = 'office' | 'pixel' | 'list';
+
+const VIEWS: readonly string[] = ['office', 'pixel', 'list'] satisfies OfficeView[];
+const isView = (v: unknown): v is OfficeView => typeof v === 'string' && VIEWS.includes(v);
 
 export interface OfficeStoreState {
   snapshot: Snapshot | null;
   connected: boolean;
-  /** vista mostrata: ufficio 3D o lista delle sessioni */
+  /** vista mostrata: ufficio 3D, ufficio 2D o lista delle sessioni */
   view: OfficeView;
   /** sessioni escluse dall'ufficio (scelta nella vista lista); le nuove sono visibili */
   hiddenSessions: string[];
   /** sessione da evidenziare (aperta dal pannello della menu bar); null = nessuna */
   focusSession: string | null;
+  /** agente (o `boss:<sessionId>`) di cui è aperta la scheda; null = nessuna. Non salvato tra le visite */
+  selectedAgent: string | null;
   setSnapshot(snapshot: Snapshot): void;
   /** mostra la vista e, se indicata, evidenzia la sessione */
   focus(view: OfficeView, sessionId: string | null): void;
   setConnected(connected: boolean): void;
   setView(view: OfficeView): void;
   toggleSession(sessionId: string): void;
+  select(agentId: string | null): void;
 }
 
 const PREFS_KEY = 'agent-office.prefs';
@@ -28,9 +35,9 @@ function loadPrefs(): Pick<OfficeStoreState, 'view' | 'hiddenSessions'> {
     const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(PREFS_KEY) ?? '{}');
     const p = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const hidden = Array.isArray(p.hiddenSessions) ? p.hiddenSessions.filter((x): x is string => typeof x === 'string') : [];
-    // ?view=list|office (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
+    // ?view=office|pixel|list (es. dal menu dell'app nella menu bar) prevale sulla preferenza salvata
     const asked = new URLSearchParams(globalThis.location?.search ?? '').get('view');
-    const view = asked === 'list' || asked === 'office' ? asked : p.view === 'list' ? 'list' : 'office';
+    const view = isView(asked) ? asked : isView(p.view) ? p.view : 'office';
     return { view, hiddenSessions: hidden };
   } catch {
     return { view: 'office', hiddenSessions: [] };
@@ -52,6 +59,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   ...loadPrefs(),
   // ?session=<id> (dal pannello della menu bar alla prima apertura)
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
+  selectedAgent: null,
   setSnapshot: (snapshot) => set({ snapshot }),
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
@@ -72,6 +80,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
     set({ hiddenSessions: next });
     savePrefs({ view: get().view, hiddenSessions: next });
   },
+  select: (agentId) => set({ selectedAgent: agentId }),
 }));
 
 /** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti). Pura. */

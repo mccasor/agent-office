@@ -7,12 +7,15 @@ const DIRS: readonly Cell[] = [
   { x: -1, z: 0 },
 ];
 
-export function isWalkable(layout: OfficeLayout, c: Cell): boolean {
+/** quanto serve ai percorsi: anche la pianta della vista 2D (PixelPlan) */
+type Grid = Pick<OfficeLayout, 'width' | 'walkable'>;
+
+export function isWalkable(layout: Grid, c: Cell): boolean {
   return Number.isInteger(c.x) && Number.isInteger(c.z) && layout.walkable[c.z]?.[c.x] === true;
 }
 
 /** A* su griglia 4-direzioni (euristica manhattan); [] se irraggiungibile. Include from e to. */
-export function findPath(layout: OfficeLayout, from: Cell, to: Cell): Cell[] {
+export function findPath(layout: Grid, from: Cell, to: Cell): Cell[] {
   if (!isWalkable(layout, from) || !isWalkable(layout, to)) return [];
   const w = layout.width;
   const idx = (c: Cell) => c.z * w + c.x;
@@ -60,7 +63,7 @@ export function findPath(layout: OfficeLayout, from: Cell, to: Cell): Cell[] {
  * Path da una posizione anche frazionaria (a metà di un segmento tra due celle) a `to`: parte dalla più
  * conveniente delle due celle vicine, così chi cambia meta a metà strada non fa un passo indietro. [] se irraggiungibile.
  */
-export function planFrom(layout: OfficeLayout, pos: Cell, to: Cell): Cell[] {
+export function planFrom(layout: Grid, pos: Cell, to: Cell): Cell[] {
   const lo = { x: Math.floor(pos.x), z: Math.floor(pos.z) };
   const hi = { x: Math.ceil(pos.x), z: Math.ceil(pos.z) };
   let best: Cell[] = [];

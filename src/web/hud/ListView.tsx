@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AgentState, AgentStatus, OfficeStatus, SessionState } from '../../shared/types';
+import type { OfficeView } from '../store';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
 import { DiffStat, projectName, StatusDot } from './panels';
@@ -87,16 +88,21 @@ function ContextBar({ session }: { session: SessionState }) {
   );
 }
 
-/** Pulsante a due stati in alto a destra: ufficio 3D o lista delle sessioni. */
-export function ViewToggle({ view, onChange }: { view: 'office' | 'list'; onChange: (view: 'office' | 'list') => void }) {
+const VIEW_LABEL: [OfficeView, string, string][] = [
+  ['office', '3D', 'Ufficio 3D'],
+  ['pixel', '2D', 'Ufficio 2D in pixel art'],
+  ['list', 'Lista', 'Lista delle sessioni'],
+];
+
+/** Selettore a tre segmenti in alto a destra: ufficio 3D, ufficio 2D o lista delle sessioni. */
+export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
     <div className="hud-toggle" role="group" aria-label="Vista">
-      <button type="button" aria-pressed={view === 'office'} onClick={() => onChange('office')}>
-        Ufficio
-      </button>
-      <button type="button" aria-pressed={view === 'list'} onClick={() => onChange('list')}>
-        Lista
-      </button>
+      {VIEW_LABEL.map(([value, label, title]) => (
+        <button key={value} type="button" title={title} aria-pressed={view === value} onClick={() => onChange(value)}>
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

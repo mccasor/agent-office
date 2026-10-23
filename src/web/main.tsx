@@ -1,13 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
-import { useOfficeStore } from './store';
+import { useOfficeStore, type OfficeView } from './store';
 
 declare global {
   interface Window {
     /** usate dall'app della menu bar per cambiare vista (ed evidenziare una sessione) senza ricaricare la pagina */
-    agentOfficeSetView?: (view: 'office' | 'list') => void;
-    agentOfficeFocus?: (view: 'office' | 'list', sessionId: string) => void;
+    agentOfficeSetView?: (view: OfficeView) => void;
+    agentOfficeFocus?: (view: OfficeView, sessionId: string) => void;
   }
 }
 window.agentOfficeSetView = (view) => useOfficeStore.getState().setView(view);

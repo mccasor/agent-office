@@ -35,7 +35,7 @@ export const EMPTY_SEATING: Seating = { seats: {}, lounge: {}, bossDesks: {}, ca
 const projectOf = (s: SessionState): string | null => s.cwd?.split('/').filter(Boolean).at(-1) ?? null;
 
 /** Una sessione principale vista come un agente: stessi comportamenti, posto nella stanza del boss. */
-function bossOf(session: SessionState, named: boolean): AgentState {
+export function bossOf(session: SessionState, named: boolean): AgentState {
   const project = projectOf(session);
   return {
     id: `${BOSS_PREFIX}${session.id}`,

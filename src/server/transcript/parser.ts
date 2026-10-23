@@ -100,14 +100,18 @@ function toolResultIds(row: Json): string[] {
   return content.filter((b): b is Json => isObj(b) && b.type === 'tool_result').map((b) => str(b.tool_use_id) ?? '');
 }
 
-/** testo dei blocchi di una riga utente (stringa, text, tool_result), solo per cercarvi degli id */
-function userTexts(row: Json): string[] {
+/**
+ * Testo dei blocchi di una riga utente (stringa, text, tool_result), solo per cercarvi degli id; con `results`,
+ * solo dei tool_result che rispondono a quei tool_use.
+ */
+function userTexts(row: Json, results?: ReadonlySet<string>): string[] {
   const content = isObj(row.message) ? row.message.content : null;
-  if (typeof content === 'string') return [content];
+  if (typeof content === 'string') return results ? [] : [content];
   if (!Array.isArray(content)) return [];
   const out: string[] = [];
   for (const b of content) {
     if (!isObj(b)) continue;
+    if (results && !(b.type === 'tool_result' && results.has(str(b.tool_use_id) ?? ''))) continue;
     if (typeof b.text === 'string') out.push(b.text);
     if (typeof b.content === 'string') out.push(b.content);
     else if (Array.isArray(b.content)) for (const c of b.content) if (isObj(c) && typeof c.text === 'string') out.push(c.text);
@@ -115,7 +119,7 @@ function userTexts(row: Json): string[] {
   return out;
 }
 
-/** avvio di un comando o di un agente in background (tool_result di Bash/Agent) */
+/** avvio di un comando o di un agente in background, cercato solo nel tool_result del Bash o dell'Agent che lo lancia */
 const BACKGROUND_STARTED_RE = /(?:running in background with ID|agentId): ([\w-]+)/g;
 /** notifica di fine di un task in background */
 const BACKGROUND_DONE_RE = /<task-id>([\w-]+)<\/task-id>/g;
@@ -170,6 +174,11 @@ export function createAccumulator(): Accumulator {
   /** id dei task in background ancora aperti (solo gli id, mai il testo dei messaggi) */
   const background = new Set<string>();
   /**
+   * tool_use che possono avviare un task in background (Bash con run_in_background, Agent), in attesa del risultato:
+   * l'id si cerca solo lì, non nel testo di un file letto che contiene per caso "agentId: string"
+   */
+  const launches = new Set<string>();
+  /**
    * Usage già conteggiato per message.id. Claude Code scrive una riga per blocco di contenuto
    * (thinking, text, tool_use) dello stesso messaggio ripetendo l'usage, a volte con output_tokens
    * crescente: si sottrae il precedente e si somma l'ultimo.
@@ -210,6 +219,7 @@ export function createAccumulator(): Accumulator {
       pendingTools.set(id, { name, target: toolTarget(name, input), since: at ?? state.lastAt ?? 0 });
       updateTool();
     }
+    if (id && ((name === 'Bash' && input.run_in_background === true) || name === 'Agent' || name === 'Task')) launches.add(id);
     if (FILE_TOOLS.has(name ?? '')) {
       const path = str(input.file_path) ?? str(input.notebook_path);
       if (path && filePaths.size < MAX_FILE_PATHS && !filePaths.has(path)) {
@@ -338,10 +348,9 @@ export function createAccumulator(): Accumulator {
         }
         updateAwaiting();
         updateTool();
-        for (const text of userTexts(row)) {
-          for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
-          for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
-        }
+        for (const text of userTexts(row, launches)) for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
+        for (const text of userTexts(row)) for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+        for (const id of toolResultIds(row)) launches.delete(id);
         state.backgroundTasks = background.size;
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) state.finished = false;
@@ -350,6 +359,11 @@ export function createAccumulator(): Accumulator {
       }
       case 'attachment':
         onAttachment(row);
+        break;
+      case 'queue-operation':
+        // notifiche di fine messe in coda mentre Claude lavora: arrivano qui anche senza una riga utente
+        if (typeof row.content === 'string') for (const m of row.content.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+        state.backgroundTasks = background.size;
         break;
     }
   };
