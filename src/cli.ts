@@ -14,6 +14,8 @@ import { loadConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
+import { createThrottle } from './server/throttle.js';
+import type { Snapshot } from './shared/types.js';
 
 export interface CliOptions {
   command: 'serve' | 'install-hooks' | 'uninstall-hooks';
@@ -36,8 +38,10 @@ const DEFAULT_PORT = 4317;
 const GIT_POLL_MS = 3000;
 /** ricalcolo periodico: gli stati entering/idle/done dipendono dal tempo */
 const TICK_MS = 5000;
-/** le modifiche arrivano a raffiche (transcript, hook, git): una sola pubblicazione ogni PUBLISH_DELAY_MS */
+/** le modifiche arrivano a raffiche (transcript, hook, git): dopo una pausa si pubblica PUBLISH_DELAY_MS dopo la prima */
 const PUBLISH_DELAY_MS = 150;
+/** sotto carico al più una pubblicazione (SSE, /api/snapshot) ogni PUBLISH_INTERVAL_MS, l'ultima sempre */
+const PUBLISH_INTERVAL_MS = 1000;
 
 // risolti rispetto a src/cli.ts (tsx) e a dist/cli.js (build): entrambi puntano alla root del pacchetto
 const WEB_DIR = fileURLToPath(new URL('../dist/web', import.meta.url));
@@ -103,44 +107,47 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
       now: Date.now(),
     });
 
-  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: snapshot() });
+  const first = snapshot();
+  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first });
 
+  /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
   let last = '';
   /** ultimo updatedAt visto per sessione: se cambia, il suo repository va riletto */
   const seenAt = new Map<string, number>();
-  const publishNow = () => {
-    pending = null;
-    const next = snapshot();
+  const publishNow = (next: Snapshot) => {
     const active = next.sessions.filter((s) => s.active && s.cwd);
     if (opts.all) repos.follow(active.map((s) => s.cwd!));
+    const ids = new Set<string>();
     for (const s of next.sessions) {
+      ids.add(s.id);
       if (seenAt.get(s.id) === s.updatedAt) continue;
       seenAt.set(s.id, s.updatedAt);
       repos.touch(opts.all ? (s.cwd ?? '') : opts.cwd);
     }
-    for (const id of seenAt.keys()) if (!next.sessions.some((s) => s.id === id)) seenAt.delete(id);
-    const key = JSON.stringify({ ...next, generatedAt: 0 });
-    if (key === last) return;
-    last = key;
-    server.publish(next);
+    for (const id of seenAt.keys()) if (!ids.has(id)) seenAt.delete(id);
+    // una sola serializzazione: senza generatedAt per il confronto, poi lo stesso testo (con generatedAt) ai client
+    const { generatedAt, ...rest } = next;
+    const body = JSON.stringify(rest);
+    if (body === last) return;
+    last = body;
+    server.publish(next, `${body.slice(0, -1)},"generatedAt":${generatedAt}}`);
   };
-  let pending: NodeJS.Timeout | null = null;
-  const publish = () => {
-    pending ??= setTimeout(publishNow, PUBLISH_DELAY_MS);
-  };
+  // un solo snapshot (aggregate + buildSnapshot) per pubblicazione, al più uno al secondo sotto carico
+  const throttle = createThrottle(() => publishNow(snapshot()), { delayMs: PUBLISH_DELAY_MS, intervalMs: PUBLISH_INTERVAL_MS });
+  const publish = () => throttle.schedule();
   const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish)];
   const tick = setInterval(publish, TICK_MS);
   const gitPoll = setInterval(() => {
     void repos.poll(Date.now()).then((changed) => changed && publish());
   }, GIT_POLL_MS);
-  publishNow();
+  publishNow(first);
 
   return {
     url: server.url,
     async close() {
       clearInterval(tick);
       clearInterval(gitPoll);
-      if (pending) clearTimeout(pending);
+      throttle.cancel();
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
       await server.close();

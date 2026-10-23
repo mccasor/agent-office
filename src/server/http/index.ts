@@ -7,7 +7,8 @@ import type { Snapshot } from '../../shared/types.js';
 
 export interface OfficeServer {
   url: string;
-  publish(snapshot: Snapshot): void;
+  /** `json`: lo snapshot già serializzato da chi pubblica (altrimenti lo serializza il server) */
+  publish(snapshot: Snapshot, json?: string): void;
   close(): Promise<void>;
 }
 
@@ -223,9 +224,9 @@ export async function startServer(opts: { port: number; webDir: string; initial:
 
   return {
     url: `http://${HOST}:${port}`,
-    publish(snapshot) {
+    publish(snapshot, json = JSON.stringify(snapshot)) {
       current = snapshot;
-      currentJson = JSON.stringify(snapshot);
+      currentJson = json;
       version++;
       for (const res of clients) sseWrite(res, currentJson);
     },
