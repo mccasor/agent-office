@@ -443,6 +443,9 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
   background: var(--hud-track);
 }
 .card-window__note + .hud-panel { opacity: 0.75; }
+/* fatto uscire (#101): la frase e "Fallo rientrare" */
+.card-window__note--out { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.card-window__instance > .hud-dismissed { margin: 6px 8px 0; }
 .card-window__offline { color: var(--hud-warn); font-weight: 600; }
 
 /* ---- cruscotto della giornata (#97) ---- */
@@ -529,6 +532,21 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
 .hud-alert__dismiss:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
 .list-agent > .hud-alert__dismiss { padding: 2px 6px; font-size: 11px; }
 .list-agent--alert { background: color-mix(in srgb, var(--hud-warn) 9%, transparent); }
+/* terminato ancora in area relax (#101): esito e "Fallo uscire" nell'ultima colonna */
+.list-agent__end { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.list-agent__end > .hud-alert__dismiss { padding: 2px 6px; font-size: 11px; }
+/* subagenti fatti uscire a mano (#101): quanti e "Mostra", come un link */
+.hud-dismissed { margin: 6px 0 0; font-size: 12px; }
+.hud-dismissed__show {
+  font: inherit;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hud-accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.hud-dismissed__show:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
 
 /* esito dei terminati */
 .hud-outcome { font-size: 12px; font-weight: 600; white-space: nowrap; justify-self: end; }

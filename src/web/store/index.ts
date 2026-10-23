@@ -41,6 +41,8 @@ export interface OfficeStoreState {
   select(agentId: string | null): void;
   /** fa uscire un subagente fermo: sparisce da ufficio e lista finché non torna attivo */
   dismiss(agentId: string): void;
+  /** fa rientrare a mano i subagenti fatti uscire (#101) */
+  restore(agentIds: readonly string[]): void;
 }
 
 const PREFS_KEY = 'agent-office.prefs';
@@ -89,6 +91,28 @@ function saveDismissed(dismissed: Record<string, number>): void {
   } catch {
     // storage non disponibile: si resta sui valori in memoria
   }
+}
+
+/**
+ * Segue i subagenti fatti uscire nelle altre finestre (#101): ufficio e schede staccate hanno ognuna il suo store ma
+ * la stessa origine, quindi lo stesso localStorage, e l'evento `storage` arriva alle altre finestre a ogni scrittura.
+ * Al ritorno in primo piano si rilegge comunque, nel caso una finestra nascosta l'abbia perso. Ritorna la funzione di chiusura.
+ */
+export function watchDismissed(): () => void {
+  const reload = () => useOfficeStore.setState({ dismissed: loadDismissed() });
+  const onStorage = (e: StorageEvent) => {
+    // key null: storage svuotato
+    if (e.key === DISMISSED_KEY || e.key === null) reload();
+  };
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') reload();
+  };
+  window.addEventListener('storage', onStorage);
+  document.addEventListener('visibilitychange', onVisible);
+  return () => {
+    window.removeEventListener('storage', onStorage);
+    document.removeEventListener('visibilitychange', onVisible);
+  };
 }
 
 /** Fatto uscire e da allora senza attività: resta fuori. Torna attivo (updatedAt più recente): rientra. */
@@ -175,6 +199,11 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
     set({ dismissed: next, selectedAgent: get().selectedAgent === agentId ? null : get().selectedAgent });
     saveDismissed(next);
   },
+  restore: (agentIds) => {
+    const next = Object.fromEntries(Object.entries(get().dismissed).filter(([id]) => !agentIds.includes(id)));
+    set({ dismissed: next });
+    saveDismissed(next);
+  },
 }));
 
 /** Preferenze di visualizzazione correnti. */
@@ -195,7 +224,10 @@ export function useShown(): (key: SettingKey) => boolean {
   return useCallback((key: SettingKey) => isShown(settings, key), [settings]);
 }
 
-/** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti fatti uscire. Pura. */
+/**
+ * Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti fatti uscire. I
+ * terminati già usciti (`finished`) restano anche se fatti uscire: sono il resoconto della giornata, non l'ufficio. Pura.
+ */
 export function visibleSnapshot(
   snapshot: Snapshot | null,
   hidden: readonly string[],
@@ -203,12 +235,11 @@ export function visibleSnapshot(
 ): Snapshot | null {
   if (!snapshot || (hidden.length === 0 && Object.keys(dismissed).length === 0)) return snapshot;
   const h = new Set(hidden);
-  const shown = (a: AgentState) => !h.has(a.sessionId) && !isDismissed(a, dismissed);
   return {
     ...snapshot,
     sessions: snapshot.sessions.filter((s) => !h.has(s.id)),
-    agents: snapshot.agents.filter(shown),
-    finished: snapshot.finished?.filter(shown),
+    agents: snapshot.agents.filter((a) => !h.has(a.sessionId) && !isDismissed(a, dismissed)),
+    finished: snapshot.finished?.filter((a) => !h.has(a.sessionId)),
   };
 }
 

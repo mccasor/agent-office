@@ -275,6 +275,14 @@ export const en: Texts = {
   'zoom.in': 'Zoom In',
   'zoom.inHint': 'Zoom In (⌘/ctrl + scroll)',
   'zoom.fit': 'Fit to Window',
+  // #101
+  'alert.dismissDoneHint': 'Removes the finished agent from the lounge without waiting for the others',
+  'dismissed.count.one': '{n} sent out',
+  'dismissed.count.other': '{n} sent out',
+  'dismissed.show': 'Show',
+  'dismissed.showHint': 'Brings the agents you sent out back into the office',
+  'cardWindow.dismissed': 'Sent out of the office: it comes back on its own if it becomes active again.',
+  'cardWindow.restore': 'Bring Back',
 
   'history.title': 'Insights for the Day',
   'history.day': 'Day',

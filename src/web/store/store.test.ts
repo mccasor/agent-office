@@ -1,7 +1,8 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_DISPLAY, isShown } from '../../shared/settings';
 import type { Snapshot } from '../../shared/types';
-import { connectSnapshotStream, share, toView, useOfficeStore, visibleSnapshot } from './index';
+import { connectSnapshotStream, share, toView, useOfficeStore, visibleSnapshot, watchDismissed } from './index';
 
 type Listener = (ev: MessageEvent) => void;
 
@@ -284,7 +285,8 @@ describe('subagenti fatti uscire (#97)', () => {
     const snap = { status: 'idle', sessions: [], agents: [a('fermo', 100), a('tornato', 300), a('altro', 50)], finished: [a('fermo', 100)], generatedAt: 0 } as Snapshot;
     const v = visibleSnapshot(snap, [], { fermo: 200, tornato: 200 })!;
     expect(v.agents.map((x) => x.id)).toEqual(['tornato', 'altro']);
-    expect(v.finished).toEqual([]);
+    // i terminati già usciti restano nel resoconto della giornata (#101)
+    expect(v.finished?.map((x) => x.id)).toEqual(['fermo']);
   });
 
   it('dismiss salva l\'ora, chiude la scheda e dimentica gli agenti spariti', () => {
@@ -297,6 +299,37 @@ describe('subagenti fatti uscire (#97)', () => {
     useOfficeStore.getState().dismiss('a1');
     expect(useOfficeStore.getState()).toMatchObject({ dismissed: { a2: 2, a1: 5_000 }, selectedAgent: null });
     useOfficeStore.setState({ snapshot: null, dismissed: {} });
+  });
+
+  it('restore li fa rientrare e lo salva (#101)', () => {
+    useOfficeStore.setState({ dismissed: { a1: 1, a2: 2, a3: 3 } });
+    useOfficeStore.getState().restore(['a1', 'a3']);
+    expect(useOfficeStore.getState().dismissed).toEqual({ a2: 2 });
+    expect(JSON.parse(localStorage.getItem('agent-office.dismissed')!)).toEqual({ a2: 2 });
+    useOfficeStore.setState({ dismissed: {} });
+    localStorage.clear();
+  });
+
+  it('watchDismissed segue le altre finestre con l\'evento storage (#101)', () => {
+    useOfficeStore.setState({ dismissed: {} });
+    const stop = watchDismissed();
+    // un'altra finestra fa uscire a1: scrive nello storage condiviso e qui arriva l'evento
+    localStorage.setItem('agent-office.dismissed', JSON.stringify({ a1: 10 }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.dismissed' }));
+    expect(useOfficeStore.getState().dismissed).toEqual({ a1: 10 });
+    // altre chiavi: ignorate
+    localStorage.setItem('agent-office.dismissed', JSON.stringify({}));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.prefs' }));
+    expect(useOfficeStore.getState().dismissed).toEqual({ a1: 10 });
+    // storage svuotato (key null): si rilegge
+    window.dispatchEvent(new StorageEvent('storage', { key: null }));
+    expect(useOfficeStore.getState().dismissed).toEqual({});
+    // chiusa: niente più aggiornamenti
+    stop();
+    localStorage.setItem('agent-office.dismissed', JSON.stringify({ a2: 1 }));
+    window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.dismissed' }));
+    expect(useOfficeStore.getState().dismissed).toEqual({});
+    localStorage.clear();
   });
 });
 

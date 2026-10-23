@@ -275,6 +275,14 @@ export const es: Texts = {
   'zoom.in': 'Ampliar',
   'zoom.inHint': 'Ampliar (⌘/ctrl + rueda)',
   'zoom.fit': 'Ajustar a la ventana',
+  // #101
+  'alert.dismissDoneHint': 'Saca al agente terminado de la zona de descanso sin esperar a los demás',
+  'dismissed.count.one': '{n} hecho salir',
+  'dismissed.count.other': '{n} hechos salir',
+  'dismissed.show': 'Mostrar',
+  'dismissed.showHint': 'Hace volver a la oficina a los agentes que hiciste salir',
+  'cardWindow.dismissed': 'Lo hiciste salir de la oficina: vuelve solo si se reactiva.',
+  'cardWindow.restore': 'Hacerlo volver',
 
   'history.title': 'Análisis del día',
   'history.day': 'Día',
