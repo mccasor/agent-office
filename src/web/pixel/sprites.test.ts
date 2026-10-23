@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTER_PRESETS } from './presets';
 import {
-  bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
+  alertImage, bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
   SCREEN_FRAMES, SCREEN_THEMES, selectionImage, shadowImage, tileImage, type PixelImage,
 } from './sprites';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from './types';
@@ -175,7 +175,7 @@ describe('tile', () => {
 
 describe('extra', () => {
   it('fumetto, ombra e selezione hanno pixel e ancora dentro l’immagine', () => {
-    for (const img of [bubbleImage(), shadowImage(), selectionImage()]) {
+    for (const img of [bubbleImage(), alertImage(), shadowImage(), selectionImage()]) {
       expect(opaqueCount(img)).toBeGreaterThan(10);
       expect(img.ax).toBeGreaterThanOrEqual(0);
       expect(img.ax).toBeLessThanOrEqual(img.w);

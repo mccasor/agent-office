@@ -15,6 +15,7 @@ import {
 import { displaySettings, loadConfig, watchConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
+import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
 import { createHistory } from './server/history/index.js';
@@ -107,17 +108,23 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     filesOf: (sessionId, agentId) => transcript.filesOf(sessionId, agentId),
   });
   await Promise.all([transcript.start(), hooks.start(), history.start()]);
+  // cruscotto della giornata (#97): conteggi in memoria da quando il server è partito
+  const today = createDayTracker(Date.now());
+  const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
   const snapshot = (): Snapshot => {
+    const now = Date.now();
     const next = buildSnapshot({
       transcript: transcript.current(),
       hookEvents: hooks.current(),
       repoAt: (cwd) => repos.get(cwd),
-      now: Date.now(),
+      alerts,
+      now,
     });
     // un confronto con lo stato già registrato a ogni pubblicazione; la lista dei terminati chiusi è in cache
     history.observe(next);
     const closedFinished = history.closedFinished();
-    return closedFinished ? { ...next, closedFinished } : next;
+    const withToday = { ...next, today: today.observe(next, now) };
+    return closedFinished ? { ...withToday, closedFinished } : withToday;
   };
 
   const first = snapshot();
@@ -160,6 +167,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   const unwatchConfig = await watchConfig(
     (next) => {
       transcript.setActiveWindowMs(next.activeWindowMinutes * 60_000);
+      Object.assign(alerts, { staleMs: next.staleAgentMinutes * 60_000, loopRepeats: next.loopRepeats });
       server.setSettings(displaySettings(next));
       publish();
     },

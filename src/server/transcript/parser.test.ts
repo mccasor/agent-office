@@ -364,3 +364,58 @@ describe('turni, compattazioni e cache da 1 ora', () => {
     expect(acc.state.tokens).toMatchObject({ cacheCreation: 2000, cacheCreation1h: 1400 });
   });
 });
+
+describe('cruscotto (#97): esito, errori dei tool, ripetizioni', () => {
+  const call = (msg: string, id: string, name: string, input: unknown, at = '2026-01-01T10:00:00.000Z') =>
+    JSON.stringify({ type: 'assistant', timestamp: at, message: { id: msg, role: 'assistant', content: [{ type: 'tool_use', id, name, input }], stop_reason: 'tool_use' } });
+  const result = (id: string, content: string, isError = true, at = '2026-01-01T10:01:00.000Z') =>
+    JSON.stringify({ type: 'user', timestamp: at, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content, is_error: isError }] } });
+  const user = (content: unknown) => JSON.stringify({ type: 'user', message: { role: 'user', content } });
+
+  it('esito: interrotto, errore dell\'API, poi un nuovo prompt riparte da zero', () => {
+    const acc = createAccumulator();
+    acc.ingest(call('m1', 't1', 'Bash', {}));
+    acc.ingest(user([{ type: 'text', text: '[Request interrupted by user]' }]));
+    expect(acc.state.stop).toBe('interrupted');
+    acc.ingest(user('continua'));
+    expect(acc.state.stop).toBeNull();
+    acc.ingest(JSON.stringify({ type: 'assistant', isApiErrorMessage: true, error: 'rate_limit', message: { id: 'e1', model: '<synthetic>', content: [{ type: 'text', text: 'API Error' }] } }));
+    expect(acc.state).toMatchObject({ stop: 'failed', finished: 'confirmed', tool: null });
+  });
+
+  it('errori dei tool: nome e ora, senza rifiuti dell\'utente né testo', () => {
+    const acc = createAccumulator();
+    acc.ingest(call('m1', 't1', 'Bash', { command: 'npm test' }));
+    acc.ingest(result('t1', 'segreto: comando fallito'));
+    acc.ingest(call('m2', 't2', 'Edit', { file_path: '/a/b.ts' }));
+    acc.ingest(result('t2', "The user doesn't want to proceed with this tool use."));
+    acc.ingest(call('m3', 't3', 'Read', { file_path: '/a/c.ts' }));
+    acc.ingest(result('t3', 'ok', false));
+    acc.ingest(call('m4', 't4', 'Edit', { file_path: '/a/b.ts' }));
+    acc.ingest(result('t4', 'String not found', true, '2026-01-01T10:05:00.000Z'));
+    expect(acc.state.toolErrors).toEqual({ count: 2, tool: 'Edit', at: Date.parse('2026-01-01T10:05:00.000Z') });
+    expect(JSON.stringify(acc.state.toolErrors)).not.toContain('segreto');
+  });
+
+  it('stesso tool con lo stesso input di fila: conta le ripetizioni, un input diverso riparte', () => {
+    const acc = createAccumulator();
+    for (let i = 1; i <= 4; i++) acc.ingest(call(`m${i}`, `t${i}`, 'Bash', { command: 'sleep 1' }));
+    // la stessa chiamata riscritta (una riga per blocco) non conta due volte
+    acc.ingest(call('m4', 't4', 'Bash', { command: 'sleep 1' }));
+    expect(acc.state.repeat).toEqual({ tool: 'Bash', count: 4 });
+    expect(JSON.stringify(acc.state.repeat)).not.toContain('sleep');
+    acc.ingest(call('m5', 't5', 'Bash', { command: 'sleep 2' }));
+    expect(acc.state.repeat).toBeNull();
+  });
+
+  it('fine dei subagenti dalle task-notification e dal risultato con errore dell\'Agent', () => {
+    const acc = createAccumulator();
+    const note = (id: string, status: string) =>
+      `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>riassunto</summary>\n</task-notification>`;
+    acc.ingest(user(note('a1', 'killed') + note('a2', 'completed')));
+    acc.ingest(JSON.stringify({ type: 'queue-operation', content: note('a3', 'failed') }));
+    acc.ingest(call('m1', 't1', 'Agent', { prompt: 'x' }));
+    acc.ingest(result('t1', 'Agent failed. agentId: a4'));
+    expect([...acc.state.taskEnds]).toEqual([['a1', 'killed'], ['a2', 'completed'], ['a3', 'failed'], ['a4', 'failed']]);
+  });
+});

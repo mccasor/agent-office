@@ -15,7 +15,7 @@ import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import { furnitureLook, type FurnitureUse } from './screens';
 import {
-  bossLook, bubbleImage, cachedImage, characterSprite, furnitureSprite, PALETTE, pickLook, selectionImage, shadowImage,
+  alertImage, bossLook, bubbleImage, cachedImage, characterSprite, furnitureSprite, PALETTE, pickLook, selectionImage, shadowImage,
   tileSprite, toCanvas, type PixelLook, type Sprite, type SpriteCanvas,
 } from './sprites';
 import { TILE, type PixelActor, type PixelModel } from './types';
@@ -256,7 +256,7 @@ function render(
       frame: frameAt(pose, clock, seedOf(e.actor.id)), selected,
     }));
     rects.push(actorRect(e.actor.id, e.motion.pos));
-    if (everyone || selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
+    if (everyone || selected || e.actor.boss || e.actor.waiting || e.actor.alert) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
   // luci (#99): zone accese da chi c'è adesso; nelle stanze spente i monitor sono spenti
   const occupants = [...s.entries.values()].filter((e) => isVisible(e.motion)).map((e) => ({ sessionId: e.actor.sessionId, pos: e.motion.pos }));
@@ -269,7 +269,7 @@ function render(
   s.rects = rects;
 
   // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
-  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
+  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting || entry.actor.alert ? 2 : entry.actor.boss ? 1 : 0);
   const tags = [...labels].sort((a, b) => rank(a) - rank(b)).map(({ entry: { actor }, x, y }) => {
     const selected = actor.id === selectedId;
     const spec: LabelSpec = {
@@ -279,7 +279,9 @@ function render(
       selected,
       waiting: actor.waiting,
     };
-    return { spec, x, y };
+    // fumetto sopra la testa: rosso se bloccato sull'utente, giallo con l'avviso (fermo o in loop)
+    const mark = actor.waiting ? ('waiting' as const) : actor.alert ? ('alert' as const) : null;
+    return { spec, x, y, mark };
   });
   const sprites = sortByDepth(ops).map((op) => ({ sprite: spriteOf(op.sprite), x: op.x, y: op.y }));
 
@@ -287,7 +289,7 @@ function render(
   const theme = labelTheme();
   const frame: unknown[] = [bw, bh, dpr, view.scale, view.ox, view.oy, theme];
   for (const d of sprites) frame.push(d.sprite, d.x, d.y);
-  for (const { spec, x, y } of tags) frame.push(spec.text, spec.area, spec.selected, spec.waiting, x, y);
+  for (const { spec, x, y, mark } of tags) frame.push(spec.text, spec.area, spec.selected, spec.waiting, mark, x, y);
   // le luci in transizione cambiano il fotogramma anche se nessuno si muove
   frame.push(...lights.levels);
   const wakeAt = nextWake(now, smooth || lights.busy(now), clock);
@@ -307,10 +309,11 @@ function render(
   for (const d of sprites) blit(d.sprite, d.x, d.y);
   lights.draw(ctx, view);
 
-  const bubble = cachedImage('x:bubble', bubbleImage);
-  for (const { spec, x, y } of tags) {
+  const bubbles = { waiting: cachedImage('x:bubble', () => bubbleImage()), alert: cachedImage('x:alert', alertImage) };
+  for (const { spec, x, y, mark } of tags) {
     let top = y - 21;
-    if (spec.waiting) {
+    if (mark) {
+      const bubble = bubbles[mark];
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }

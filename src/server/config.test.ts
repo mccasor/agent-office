@@ -25,17 +25,24 @@ describe('loadConfig', () => {
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 0 }));
     expect(await loadConfig(dir)).toEqual(DEFAULT_CONFIG);
   });
+
+  it('soglie degli avvisi sugli agenti (#97): fermo e in loop', async () => {
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ staleAgentMinutes: 90, loopRepeats: 8 }));
+    expect(await loadConfig(dir)).toEqual({ ...DEFAULT_CONFIG, staleAgentMinutes: 90, loopRepeats: 8 });
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ staleAgentMinutes: -1, loopRepeats: 2.5 }));
+    expect(await loadConfig(dir)).toEqual(DEFAULT_CONFIG);
+  });
 });
 
 describe('parseConfig', () => {
   it('ogni chiave per conto suo: le valide restano, le altre al default', () => {
-    const c = parseConfig({ activeWindowMinutes: 'tanti', language: 'en', show: { 'session.diff': false, 'session.context': 1 }, staleAgentMinutes: 5 });
+    const c = parseConfig({ activeWindowMinutes: 'tanti', language: 'en', show: { 'session.diff': false, 'session.context': 1 }, notifyDone: true });
     expect(c.activeWindowMinutes).toBe(DEFAULT_CONFIG.activeWindowMinutes);
     expect(c.language).toBe('en');
     expect(c.show['session.diff']).toBe(false);
     expect(c.show['session.context']).toBe(true);
     // chiavi di altri (l'app, versioni future): non lette, non rompono nulla
-    expect('staleAgentMinutes' in c).toBe(false);
+    expect('notifyDone' in c).toBe(false);
     expect(parseConfig({ language: 'klingon', show: 'tutto' })).toEqual(DEFAULT_CONFIG);
     expect(parseConfig([1, 2])).toEqual(DEFAULT_CONFIG);
   });

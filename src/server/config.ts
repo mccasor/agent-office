@@ -30,9 +30,18 @@ const oneOf = <T extends string>(values: readonly T[], fallback: T): Field<T> =>
   parse: (v) => values.find((x) => x === v),
 });
 
+const integer = (min: number, max: number, fallback: number): Field<number> => ({
+  default: fallback,
+  parse: (v) => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : undefined),
+});
+
 const FIELDS = {
   /** una sessione senza attività da più di questi minuti non è più attiva (sparisce da ufficio, lista e menu) */
   activeWindowMinutes: number(1, 24 * 60, 10),
+  /** un subagente non terminato senza attività da più di questi minuti ha l'avviso "fermo" (#97) */
+  staleAgentMinutes: number(1, 24 * 60, 60),
+  /** chiamate consecutive allo stesso tool con lo stesso input da cui un subagente ha l'avviso "in loop" (#97) */
+  loopRepeats: integer(2, 100, 5),
   /** lingua dell'interfaccia (#93, non ancora usata) */
   language: oneOf(LANGUAGES, 'system'),
   /** voci da mostrare (catalogo in shared/settings.ts): sempre tutte, risolte con i default */

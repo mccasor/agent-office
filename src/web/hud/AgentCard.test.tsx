@@ -173,3 +173,31 @@ describe('AgentCard', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
   });
 });
+
+describe('AgentCard: cruscotto (#97)', () => {
+  it('fermo: avviso con da quanto e "Fallo uscire"; senza onDismiss niente pulsante', () => {
+    const t = Date.now();
+    const stale = agent({ status: 'idle', updatedAt: t - 72 * 60_000, alert: { kind: 'stale', since: t - 72 * 60_000 } });
+    const onDismiss = vi.fn();
+    const { unmount } = render(<AgentCard agent={stale} onDismiss={onDismiss} />);
+    expect(screen.getByText('Nessuna attività da 1 h 12 min: potrebbe aver finito senza che l\'ufficio se ne accorgesse')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    unmount();
+    render(<AgentCard agent={stale} />);
+    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+  });
+
+  it('in loop: testo diverso e nessun pulsante', () => {
+    render(<AgentCard agent={agent({ alert: { kind: 'loop', tool: 'Bash', count: 6 } })} onDismiss={() => {}} />);
+    expect(screen.getByText('Ha chiamato Bash con lo stesso input 6 volte di fila: potrebbe essere in un loop')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+  });
+
+  it('terminato: esito ed errori dei tool (nome e ora, mai il testo)', () => {
+    const at = new Date(2026, 9, 23, 14, 32).getTime();
+    render(<AgentCard agent={agent({ status: 'done', outcome: 'failed', toolErrors: { count: 3, tool: 'Edit', at } })} />);
+    expect(screen.getByText('fallito').className).toContain('hud-outcome--failed');
+    expect(screen.getByText('3 errori dei tool · ultimo Edit alle 14:32')).toBeTruthy();
+  });
+});

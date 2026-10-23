@@ -95,6 +95,8 @@ export const PALETTE = {
   board: ['#ffffff', '#f2f4f6', '#d4d8de', '#a8aeb8'],
   paper: ['#fffcf2', '#f2ead6', '#d8ccb2', '#b4a68a'],
   bubble: ['#ff8a78', '#e44c4c', '#b02e3a'],
+  /** fumetto giallo dell'avviso (agente fermo o in loop, #97) */
+  alert: ['#ffe9a0', '#f5c242', '#c08e1c'],
   select: ['#fff6b0', '#ffd84a', '#dca024'],
   // tinte delle stanze: pavimenti e facce delle pareti (#89)
   floorOak: ['#f4d4a4', '#e6c08e', '#d6ac78', '#bc9060'],
@@ -1914,10 +1916,12 @@ export function tileImage(kind: TileKind, x: number, z: number, faceVisible: boo
 // ---------------------------------------------------------------------------------------------------------------
 // extra
 
-/** fumetto rosso con "!" della sessione bloccata, ancorato alla punta in basso */
-export function bubbleImage(): PixelImage {
+/**
+ * Fumetto con "!", ancorato alla punta in basso: rosso (default) per chi è bloccato sull'utente, giallo con il segno
+ * scuro (`alertImage`) per l'avviso di un agente fermo o in loop.
+ */
+export function bubbleImage(c: readonly [string, string, string] = PALETTE.bubble, ink = '#ffffff'): PixelImage {
   const r = new Raster(13, 15);
-  const c = PALETTE.bubble;
   r.rect(2, 1, 9, 10, c[1]);
   r.rect(1, 2, 11, 8, c[1]);
   r.hline(2, 10, 1, c[0]);
@@ -1927,13 +1931,16 @@ export function bubbleImage(): PixelImage {
   r.rect(5, 11, 3, 1, c[1]);
   r.px(6, 12, c[2]);
   // punto esclamativo
-  r.rect(6, 3, 1, 4, '#ffffff');
-  r.px(7, 3, '#ffffff');
-  r.px(7, 4, PALETTE.bubble[0]);
-  r.rect(6, 8, 1, 1, '#ffffff');
+  r.rect(6, 3, 1, 4, ink);
+  r.px(7, 3, ink);
+  r.px(7, 4, c[0]);
+  r.rect(6, 8, 1, 1, ink);
   r.outline(PALETTE.outline);
   return r.image(6, 14);
 }
+
+/** fumetto giallo con "!" scuro dell'avviso (#97): agente fermo da troppo o in loop */
+export const alertImage = (): PixelImage => bubbleImage(PALETTE.alert, '#4a3200');
 
 /** ombra ellittica semitrasparente sotto i personaggi, ancorata al centro */
 export function shadowImage(): PixelImage {

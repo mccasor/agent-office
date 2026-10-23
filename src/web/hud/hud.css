@@ -340,7 +340,7 @@
 .list-agents { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid var(--hud-border); }
 .list-agent {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto 90px;
+  grid-template-columns: minmax(0, 1fr) auto auto minmax(90px, max-content);
   align-items: center;
   gap: 10px;
   padding: 7px 0;
@@ -444,3 +444,98 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
 }
 .card-window__note + .hud-panel { opacity: 0.75; }
 .card-window__offline { color: var(--hud-warn); font-weight: 600; }
+
+/* ---- cruscotto della giornata (#97) ---- */
+/* barra in cima alla lista: valori grandi, etichetta sotto */
+.today-bar {
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 12px;
+  box-shadow: var(--hud-shadow);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.today-bar__title { margin: 0; font-size: 13px; font-weight: 600; color: var(--hud-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.today-bar__items { display: flex; flex-wrap: wrap; gap: 6px 22px; margin: 0; flex: 1; }
+.today-bar__item { display: flex; flex-direction: column; min-width: 0; }
+.today-bar__item dd { margin: 0; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.today-bar__item dt { color: var(--hud-muted); font-size: 12px; white-space: nowrap; }
+.today-bar__alarm,
+.today-bar__item.today-bar__alarm dd { color: var(--hud-danger); }
+/* in breve sull'ufficio: una riga discreta sotto il selettore della vista */
+.today-bar--compact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  margin: 0;
+  padding: 5px 10px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--hud-muted);
+  font-variant-numeric: tabular-nums;
+}
+.today-bar--compact strong { color: var(--hud-fg); }
+@media (max-width: 680px) {
+  .today-bar { align-items: flex-start; flex-direction: column; gap: 6px; }
+}
+
+/* avviso su un subagente fermo o in loop: "!" giallo come sopra la testa nell'ufficio */
+.hud-alert {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 4px 8px;
+  margin: 0 0 8px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--hud-warn) 14%, transparent);
+}
+.hud-alert p { margin: 0; }
+.hud-alert__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: #f5c242;
+  color: #3a2a00;
+  font-weight: 800;
+  font-size: 12px;
+  line-height: 1;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+.hud-alert .hud-alert__mark { margin: 1px 0 0; }
+.hud-alert .hud-alert__dismiss { grid-column: 2; }
+.hud-alert__dismiss {
+  justify-self: start;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--hud-border);
+  background: var(--hud-bg);
+  color: var(--hud-fg);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hud-alert__dismiss:hover { border-color: var(--hud-warn); }
+.hud-alert__dismiss:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+.list-agent > .hud-alert__dismiss { padding: 2px 6px; font-size: 11px; }
+.list-agent--alert { background: color-mix(in srgb, var(--hud-warn) 9%, transparent); }
+
+/* esito dei terminati */
+.hud-outcome { font-size: 12px; font-weight: 600; white-space: nowrap; justify-self: end; }
+.hud-outcome--ok { color: var(--hud-ok); }
+.hud-outcome--interrupted { color: var(--hud-warn); }
+.hud-outcome--failed { color: var(--hud-danger); }
+.list-agent--done:has(.hud-outcome--failed) { opacity: 0.85; }
+
+/* errori dei tool: solo quanti, dettaglio (tool e ora) nel tooltip */
+.list-agent__errors { color: var(--hud-danger); }

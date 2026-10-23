@@ -3,9 +3,9 @@ import type { AgentState, SessionState } from '../../shared/types';
 import { useShow } from '../store';
 import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
 import {
-  agentName, agentTask, COMPACT_HINT, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL,
+  agentName, agentTask, CARD_LABEL, COMPACT_HINT, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
 } from './labels';
-import { CONTEXT_BAR_FROM, DiffStat, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
+import { AgentAlertNote, CONTEXT_BAR_FROM, DiffStat, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { TokenSummary } from './TokenBreakdown';
 import { useNow } from './useNow';
@@ -42,14 +42,17 @@ function SessionContext({ session }: { session: SessionState }) {
  * tipo, stato (con tool in uso o da quanto è fermo), durata, modello, effort, avanzamento, issue, costo e token.
  * Per Claude stesso (`session`) anche progetto, branch, motivo del blocco, contesto, turno corrente e ultimo, e i
  * token suoi separati da quelli con i subagenti. Si chiude con il pulsante o con Esc; `onPopOut` la apre in una
- * finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante.
+ * finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante. Dal cruscotto (#97): l'avviso se è fermo
+ * o in loop (con "Fallo uscire" se c'è `onDismiss`), l'esito di un terminato e gli errori dei tool.
  */
-export function AgentCard({ agent, session = null, onClose, onPopOut }: {
+export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss }: {
   agent: AgentState;
   /** sessione di cui l'agente è Claude stesso (il boss); null per i subagenti */
   session?: SessionState | null;
   onClose?: () => void;
   onPopOut?: () => void;
+  /** fa uscire un subagente fermo (nasconderlo finché non torna attivo) */
+  onDismiss?: () => void;
 }) {
   const now = useNow();
   useEffect(() => {
@@ -69,6 +72,7 @@ export function AgentCard({ agent, session = null, onClose, onPopOut }: {
   const name = agentName(agent);
   const task = agentTask(agent);
   const turnStartedAt = session && session.status !== 'done' ? session.turnStartedAt : null;
+  const toolErrors = session ? session.toolErrors : agent.toolErrors;
   return (
     <section className="hud-panel hud-card" aria-label={`Scheda di ${name}`}>
       <header className="hud-card__head">
@@ -92,6 +96,7 @@ export function AgentCard({ agent, session = null, onClose, onPopOut }: {
       {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
       {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? 'Un subagente' : null} />}
       {!session && agent.waiting && !done && <SessionAlert session={agent} />}
+      {!session && agent.alert && !done && <AgentAlertNote alert={agent.alert} onDismiss={onDismiss} />}
       {session && (
         <dl>
           <Row label="Progetto">{projectName(session)}</Row>
@@ -103,6 +108,8 @@ export function AgentCard({ agent, session = null, onClose, onPopOut }: {
       <dl>
         {!session && <Row label="Tipo">{agent.agentType}</Row>}
         <Row label="Stato">{status}</Row>
+        {!session && done && agent.outcome && <Row label={CARD_LABEL.outcome}><OutcomeTag outcome={agent.outcome} /></Row>}
+        {toolErrors && <Row label={CARD_LABEL.errors}>{toolErrorsText(toolErrors)}</Row>}
         {session ? (
           <>
             {turnStartedAt && <Row label="Turno">{`in corso da ${formatDuration(now - turnStartedAt)}`}</Row>}

@@ -5,6 +5,7 @@ import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
 import { openCardWindow } from './hud/popout';
 import { HistoryView } from './hud/HistoryView';
+import { TodayBar } from './hud/TodayBar';
 import './app.css';
 
 export function App() {
@@ -17,6 +18,8 @@ export function App() {
   const focusSession = useOfficeStore((s) => s.focusSession);
   const selectedId = useOfficeStore((s) => s.selectedAgent);
   const select = useOfficeStore((s) => s.select);
+  const dismissed = useOfficeStore((s) => s.dismissed);
+  const dismiss = useOfficeStore((s) => s.dismiss);
   const closeCard = useCallback(() => select(null), [select]);
   // scheda staccata in una finestra a sé: qui si chiude, l'ufficio resta libero
   const popOutCard = useCallback(() => {
@@ -25,8 +28,10 @@ export function App() {
     select(null);
   }, [selectedId, select]);
   const popOutSession = useCallback((sessionId: string) => openCardWindow('session', sessionId), []);
-  // l'ufficio mostra solo le sessioni scelte nella vista lista
-  const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden), [fullSnapshot, hidden]);
+  // l'ufficio mostra solo le sessioni scelte nella vista lista; ufficio e lista non mostrano chi è stato fatto uscire
+  const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden, dismissed), [fullSnapshot, hidden, dismissed]);
+  const listed = useMemo(() => visibleSnapshot(fullSnapshot, [], dismissed), [fullSnapshot, dismissed]);
+  const dismissSelected = useCallback(() => selectedId && dismiss(selectedId), [selectedId, dismiss]);
   const agents = snapshot?.agents ?? [];
   // Claude stesso, uno per sessione attiva; con più sessioni il nome porta il progetto
   const bosses = useMemo(() => {
@@ -60,13 +65,15 @@ export function App() {
       {office && <PixelOffice snapshot={snapshot} selectedId={selectedId} onSelect={select} active={pageVisible} />}
       {viewMode === 'list' && (
         <ListView
-          sessions={fullSnapshot?.sessions ?? []}
-          agents={fullSnapshot?.agents ?? []}
-          finished={fullSnapshot?.finished ?? []}
+          sessions={listed?.sessions ?? []}
+          agents={listed?.agents ?? []}
+          finished={listed?.finished ?? []}
           closedFinished={fullSnapshot?.closedFinished}
           hidden={hidden}
           onToggle={toggleSession}
           focus={focusSession}
+          today={fullSnapshot?.today}
+          onDismiss={dismiss}
         />
       )}
       {viewMode === 'history' && <HistoryView />}
@@ -86,7 +93,11 @@ export function App() {
       <HudOverlay side="right">
         <ViewToggle view={viewMode} onChange={setViewMode} />
         {!connected && <div className="hud-panel app-offline">Disconnesso: riconnessione…</div>}
-        {office && selected && <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} />}
+        {/* cruscotto della giornata (#97), in breve: nella lista è in alto, per esteso */}
+        {office && fullSnapshot?.today && <TodayBar today={fullSnapshot.today} compact />}
+        {office && selected && (
+          <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} onDismiss={dismissSelected} />
+        )}
       </HudOverlay>
     </>
   );

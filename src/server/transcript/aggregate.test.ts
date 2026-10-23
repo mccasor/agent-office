@@ -182,4 +182,28 @@ describe('Claude stesso e subagenti separati', () => {
     expect(s).toMatchObject({ turnStartedAt: T - 3000, lastTurnMs: 42_000, compactions: 2, lastCompaction });
     expect(snap.agents[0]?.effort).toBe('low');
   });
+
+  it('esito dei terminati (#97): dal transcript e dalle notifiche alla sessione; fermato o fallito vale come finito', () => {
+    const working = { hasAssistant: true, lastAt: T - 1000 };
+    const snap = aggregate(
+      [
+        session({ taskEnds: new Map([['a2', 'killed'], ['a3', 'failed'], ['a4', 'completed']]) }),
+        agent('a1', { ...working, finished: 'confirmed', stop: 'interrupted' }),
+        agent('a2', working),
+        agent('a3', working),
+        agent('a4', { ...working, finished: 'confirmed', toolErrors: { count: 2, tool: 'Bash', at: T - 2000 } }),
+        agent('a5', { ...working, repeat: { tool: 'Read', count: 6 } }),
+      ],
+      noMetas,
+      T,
+      OPTS,
+    );
+    const by = new Map(snap.agents.map((a) => [a.id, a]));
+    expect(by.get('a1')).toMatchObject({ status: 'done', outcome: 'interrupted' });
+    expect(by.get('a2')).toMatchObject({ status: 'done', outcome: 'interrupted' });
+    expect(by.get('a3')).toMatchObject({ status: 'done', outcome: 'failed' });
+    expect(by.get('a4')).toMatchObject({ status: 'done', outcome: 'ok', toolErrors: { count: 2, tool: 'Bash', at: T - 2000 } });
+    expect(by.get('a5')).toMatchObject({ status: 'working', repeat: { tool: 'Read', count: 6 } });
+    expect(by.get('a5')).not.toHaveProperty('outcome');
+  });
 });

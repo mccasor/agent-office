@@ -74,7 +74,40 @@ export interface AgentState {
   waitingSince?: number | null;
   /** effort dell'ultima richiesta del subagente ("low" ... "max"); null o assente se non dichiarato */
   effort?: string | null;
+
+  // --- cruscotto della giornata (#97): esito, errori dei tool, avvisi; tutti assenti nei client vecchi ---
+  /** con status 'done': com'è finito; null o assente finché lavora */
+  outcome?: AgentOutcome | null;
+  /** errori dei tool; null o assente se nessuno */
+  toolErrors?: ToolErrors | null;
+  /** chiamate consecutive allo stesso tool con lo stesso input (solo nome e numero); null o assente se meno di 2 */
+  repeat?: ToolRepeat | null;
+  /** avviso calcolato dal server: fermo da troppo tempo o in loop; null o assente se nessuno */
+  alert?: AgentAlert | null;
 }
+
+/** Esito di un subagente terminato: ok, interrotto (Esc, fermato) o fallito (errore dell'API, task fallito). */
+export type AgentOutcome = 'ok' | 'interrupted' | 'failed';
+
+/** Errori dei tool (tool_result con is_error, esclusi i rifiuti dell'utente): mai il testo dell'errore o del comando. */
+export interface ToolErrors {
+  count: number;
+  /** nome del tool dell'ultimo errore e quando (epoch ms) */
+  tool: string;
+  at: number;
+}
+
+/** Stesso tool con lo stesso input più volte di fila: l'input si confronta per hash e non esce dal server. */
+export interface ToolRepeat {
+  tool: string;
+  count: number;
+}
+
+/**
+ * Avviso su un subagente non terminato: `stale` senza attività da `staleAgentMinutes` (potrebbe aver finito senza
+ * che l'ufficio se ne accorgesse), `loop` stesso tool con lo stesso input almeno `loopRepeats` volte di fila.
+ */
+export type AgentAlert = { kind: 'stale'; since: number } | { kind: 'loop'; tool: string; count: number };
 
 /** Compattazione del contesto (riga compact_boundary del transcript): solo contatori e orario. */
 export interface Compaction {
@@ -141,6 +174,8 @@ export interface SessionState {
   dot: OfficeStatus;
   /** nome del progetto: ultima cartella del cwd; null senza cwd */
   project: string | null;
+  /** errori dei tool di Claude stesso (#97); null o assente se nessuno */
+  toolErrors?: ToolErrors | null;
 }
 
 /** Sessione letta dal transcript, prima dei campi che il server deriva nello Snapshot. */
@@ -169,7 +204,25 @@ export interface Snapshot {
   finished?: AgentState[];
   /** terminati oggi delle sessioni già chiuse, dallo storico (#98), dal più recente; assente se nessuno */
   closedFinished?: FinishedAgent[];
+  /** cruscotto della giornata (#97), da quello che il server ha visto da quando è partito; assente nei client vecchi */
+  today?: DayStats;
   generatedAt: number;
+}
+
+/** Numeri della giornata (dalla mezzanotte locale), solo da quanto il server ha osservato in memoria. */
+export interface DayStats {
+  /** da quando valgono i numeri (epoch ms): la mezzanotte, o l'avvio del server se è partito oggi */
+  since: number;
+  /** costo stimato di oggi in dollari (sessioni e subagenti); null se nessun modello è nel listino */
+  cost: number | null;
+  /** costo dell'ultima ora (dollari all'ora); null se nessun modello è nel listino */
+  costLastHour: number | null;
+  /** subagenti partiti oggi, terminati oggi (ok o interrotti) e falliti oggi */
+  launched: number;
+  finished: number;
+  failed: number;
+  /** tempo passato oggi con una sessione bloccata in attesa dell'utente (somma sulle sessioni, a minuti interi) */
+  waitingMs: number;
 }
 
 /** Evento scritto dall'hook di Claude Code (una riga JSON per evento). */

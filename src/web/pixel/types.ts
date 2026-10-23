@@ -153,6 +153,8 @@ export interface PixelActor {
   target: Spot | null;
   /** bloccato in attesa dell'utente (il boss per la sessione, il subagente per sé): fumetto "!" sopra */
   waiting: boolean;
+  /** subagente fermo da troppo o in loop (#97): fumetto "!" giallo sopra, se non è già bloccato */
+  alert: boolean;
 }
 
 /** Assegnazioni stabili tra uno snapshot e il successivo. */

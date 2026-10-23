@@ -109,6 +109,18 @@ describe('pixelModel', () => {
     expect(m.actors.find((a) => a.id === 'boss:s1')?.waiting).toBe(false);
   });
 
+  it('avviso (#97): "!" giallo sopra chi è fermo o in loop, non se è bloccato sull\'utente o ha finito', () => {
+    const stale = { kind: 'stale' as const, since: 0 };
+    const m = pixelModel(snap([
+      { ...agent('fermo'), alert: stale },
+      { ...agent('chiede'), alert: stale, waiting: true },
+      { ...agent('finito'), status: 'done' as const, alert: stale },
+      agent('x'),
+    ], [session('s1', 1)]), EMPTY);
+    const alert = (id: string) => m.actors.find((a) => a.id === id)?.alert;
+    expect([alert('fermo'), alert('chiede'), alert('finito'), alert('x'), alert('boss:s1')]).toEqual([true, false, false, false, false]);
+  });
+
   it('agenti di sessioni non attive: nel corridoio mentre lavorano, nessun boss', () => {
     const m = pixelModel(snap([agent('x', 'old')], [session('old', 1, { active: false })]), EMPTY);
     expect(m.actors.map((a) => a.id)).toEqual(['x']);

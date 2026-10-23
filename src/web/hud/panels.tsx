@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import type { AgentAlert, AgentOutcome, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
 import { useShow } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
-import { AREA_LABEL, COMPACT_HINT, compactionText, DOT_LABEL, projectName, waitingText } from './labels';
+import {
+  alertText, AREA_LABEL, COMPACT_HINT, compactionText, DISMISS_HINT, DISMISS_LABEL, DOT_LABEL, OUTCOME_LABEL, projectName, waitingText,
+} from './labels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -65,6 +67,35 @@ export function SessionAlert({ session, who = null }: {
   const now = useNow();
   const text = waitingText(session.waitingKind, session.waitingSince, now);
   return <p className="hud-session__alert">{who ? `${who} ${text}` : text.charAt(0).toUpperCase() + text.slice(1)}</p>;
+}
+
+/**
+ * Avviso su un subagente fermo o in loop (#97): "!" giallo e la frase; per chi è fermo, con `onDismiss`, il
+ * pulsante "Fallo uscire" (lo nasconde finché non torna attivo).
+ */
+export function AgentAlertNote({ alert, onDismiss }: { alert: AgentAlert; onDismiss?: () => void }) {
+  const now = useNow();
+  return (
+    <div className="hud-alert" role="status">
+      <AlertMark />
+      <p>{alertText(alert, now)}</p>
+      {alert.kind === 'stale' && onDismiss && (
+        <button type="button" className="hud-alert__dismiss" title={DISMISS_HINT} onClick={onDismiss}>
+          {DISMISS_LABEL}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "!" giallo dell'avviso, lo stesso sopra la testa nell'ufficio. */
+export function AlertMark({ title }: { title?: string }) {
+  return <span className="hud-alert__mark" aria-hidden={title ? undefined : true} title={title}>!</span>;
+}
+
+/** Esito di un terminato (#97): ok, interrotto, fallito, colorato. */
+export function OutcomeTag({ outcome }: { outcome: AgentOutcome }) {
+  return <span className={`hud-outcome hud-outcome--${outcome}`}>{OUTCOME_LABEL[outcome]}</span>;
 }
 
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
