@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AnimClock } from './clock';
 import type { AgentState } from '../../shared/types';
 import { START_GAP, StartQueue, WALK_SPEED } from './motion';
 import { arrivedAt, facingOf, frameAt, isDeskSpot, isFoosballSpot, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
@@ -104,7 +105,7 @@ describe('poseOf', () => {
     expect(isFoosballSpot(standing)).toBe(false);
     expect(poseOf(actor('done'), arrivedAt(foosball, 0))).toBe('play');
     expect(poseOf(actor('done'), run(undefined, foosball, 0, 0.1).m)).toBe('walk');
-    expect(frameAt('play', 1, 0) - frameAt('play', 0, 0)).toBeGreaterThanOrEqual(4);
+    expect(frameAt('play', new AnimClock(1), 0) - frameAt('play', new AnimClock(0), 0)).toBeGreaterThanOrEqual(4);
   });
 
   it('riconosce postazioni e scrivanie del boss', () => {
@@ -124,7 +125,7 @@ describe('facingOf e frameAt', () => {
   });
 
   it('camminata più svelta del respiro', () => {
-    expect(frameAt('walk', 1, 0) - frameAt('walk', 0, 0)).toBe(8);
-    expect(frameAt('stand', 1, 0) - frameAt('stand', 0, 0)).toBeLessThan(3);
+    expect(frameAt('walk', new AnimClock(1), 0) - frameAt('walk', new AnimClock(0), 0)).toBe(8);
+    expect(frameAt('stand', new AnimClock(1), 0) - frameAt('stand', new AnimClock(0), 0)).toBeLessThan(3);
   });
 });

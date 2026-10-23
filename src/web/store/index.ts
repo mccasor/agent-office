@@ -57,6 +57,40 @@ function savePrefs(prefs: Pick<OfficeStoreState, 'view' | 'hiddenSessions'>): vo
   }
 }
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+const idOf = (v: unknown): unknown => (isObject(v) ? v.id : undefined);
+
+/**
+ * Condivisione strutturale: `next` con le parti uguali a `prev` sostituite dagli oggetti di `prev`. Ogni snapshot
+ * arriva come JSON nuovo; così sessioni e agenti che non sono cambiati restano gli stessi oggetti e le viste
+ * (React.memo) saltano le righe ferme. Negli array gli elementi con `id` si abbinano per id, gli altri per posizione.
+ * Pura; restituisce `prev` se tutto è uguale.
+ */
+export function share<T>(prev: unknown, next: T): T {
+  if (Object.is(prev, next) || !isObject(prev) || !isObject(next)) return next;
+  if (Array.isArray(next) !== Array.isArray(prev)) return next;
+  if (Array.isArray(next)) {
+    const old = prev as unknown as unknown[];
+    const byId = new Map(old.filter((v) => idOf(v) !== undefined).map((v) => [idOf(v), v]));
+    let same = old.length === next.length;
+    const out = next.map((v: unknown, i) => {
+      const was = idOf(v) !== undefined ? byId.get(idOf(v)) : old[i];
+      const kept = share(was, v);
+      if (kept !== old[i]) same = false;
+      return kept;
+    });
+    return (same ? prev : out) as T;
+  }
+  const keys = Object.keys(next);
+  let same = keys.length === Object.keys(prev).length;
+  const out: Record<string, unknown> = {};
+  for (const k of keys) {
+    out[k] = share(prev[k], next[k]);
+    if (out[k] !== prev[k] || !Object.hasOwn(prev, k)) same = false;
+  }
+  return (same ? prev : out) as T;
+}
+
 /** hook zustand */
 export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   snapshot: null,
@@ -65,7 +99,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   // ?session=<id> (dal pannello della menu bar alla prima apertura)
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   selectedAgent: null,
-  setSnapshot: (snapshot) => set({ snapshot }),
+  setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
     set({ view, focusSession: sessionId || null });

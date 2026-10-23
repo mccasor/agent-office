@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AnimClock } from './clock';
 import {
   actorOps, actorRect, contentSize, FLAT, fitScale, furnitureOp, hitTest, inFront, sameFrame, sceneFurniture, sortByDepth, viewportFor,
   wallFaceVisible, type ActorDraw, type DrawOp,
@@ -115,7 +116,7 @@ describe('fotogrammi uguali', () => {
   });
 
   it('chi siede fermo cambia posa poco più di una volta al secondo: a 30 fps quasi tutti i fotogrammi si saltano', () => {
-    const frames = Array.from({ length: 30 }, (_, i) => frameAt('sit', 100 + i / 30, 7));
+    const frames = Array.from({ length: 30 }, (_, i) => frameAt('sit', new AnimClock(100 + i / 30), 7));
     const redraws = frames.filter((f, i) => i > 0 && !sameFrame([frames[i - 1]], [f])).length;
     expect(redraws).toBeLessThanOrEqual(Math.ceil(POSE_FPS.sit));
   });
