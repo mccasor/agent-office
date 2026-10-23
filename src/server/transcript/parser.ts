@@ -1,4 +1,8 @@
-import type { Compaction, TodoProgress, TokenUsage, ToolInUse } from '../../shared/types.js';
+import { createHash } from 'node:crypto';
+import type { Compaction, TodoProgress, TokenUsage, ToolErrors, ToolInUse, ToolRepeat } from '../../shared/types.js';
+
+/** stato di fine di un subagente o di un task in background, dalla task-notification (<status>) */
+export type TaskEnd = 'completed' | 'failed' | 'killed';
 
 /** Riassunto numerico di un file transcript. Non contiene mai testo dei messaggi. */
 export interface FileSummary {
@@ -42,6 +46,14 @@ export interface FileSummary {
   /** compattazioni del contesto (righe system compact_boundary) e l'ultima */
   compactions: number;
   lastCompaction: Compaction | null;
+  /** errori dei tool (tool_result con is_error, esclusi i rifiuti dell'utente): quanti e l'ultimo; null se nessuno */
+  toolErrors: ToolErrors | null;
+  /** stesso tool con lo stesso input più volte di fila (l'input si confronta per hash); null se meno di 2 */
+  repeat: ToolRepeat | null;
+  /** fine dell'ultimo turno diversa da una risposta: interrotto dall'utente o errore dell'API; null altrimenti */
+  stop: 'interrupted' | 'failed' | null;
+  /** fine dei subagenti e dei task in background notificata a questo transcript (task-notification), per id */
+  taskEnds: Map<string, TaskEnd>;
 }
 
 export interface Accumulator {
@@ -75,6 +87,10 @@ function toolTarget(name: string, input: Json): string | null {
 }
 const MAX_FILE_PATHS = 200;
 const MAX_COUNTED = 32;
+/** nomi dei tool_use recenti per id, per dare un nome agli errori (i risultati seguono di poco le chiamate) */
+const MAX_TOOL_NAMES = 64;
+/** esiti dei task ricordati al più (i più vecchi si dimenticano) */
+const MAX_TASK_ENDS = 200;
 
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null);
@@ -141,6 +157,24 @@ const INTERRUPTED = '[Request interrupted by user';
 /** notifica di fine di un task in background */
 const BACKGROUND_DONE_RE = /<task-id>([\w-]+)<\/task-id>/g;
 
+/** rifiuto di un tool da parte dell'utente: è un tool_result con is_error, ma non un errore del tool */
+const REJECTED = "The user doesn't want to proceed";
+/** stato di fine dentro una task-notification (fallito, fermato, completato) */
+const TASK_STATUS_RE = /<status>(completed|failed|killed)<\/status>/;
+/** id dell'agente nel risultato del tool Agent */
+const AGENT_ID_RE = /agentId: ([\w-]+)/;
+
+/** Esiti nelle task-notification di un testo: id e stato di ciascuna, mai il riassunto o il risultato. */
+function taskEndsIn(text: string): [id: string, end: TaskEnd][] {
+  const out: [string, TaskEnd][] = [];
+  for (const part of text.split('<task-notification>').slice(1)) {
+    const id = /<task-id>([\w-]+)<\/task-id>/.exec(part)?.[1];
+    const end = TASK_STATUS_RE.exec(part)?.[1] as TaskEnd | undefined;
+    if (id && end) out.push([id, end]);
+  }
+  return out;
+}
+
 /** righe utente scritte da Claude Code e non dall'utente (output di comandi locali, notifiche di task) */
 const NOT_PROMPT_RE = /^<(?:local-command-|task-notification)/;
 
@@ -192,6 +226,10 @@ export function createAccumulator(): Accumulator {
     lastTurnMs: null,
     compactions: 0,
     lastCompaction: null,
+    toolErrors: null,
+    repeat: null,
+    stop: null,
+    taskEnds: new Map(),
   };
   /** tool_use che aspettano una risposta dell'utente, per id */
   const pendingQuestions = new Map<string, { kind: 'question' | 'plan'; at: number | null }>();
@@ -225,6 +263,45 @@ export function createAccumulator(): Accumulator {
   let tasks: Map<string, string> | null = null;
   let nextTaskId = 1;
   let structuredOutputPending = false;
+  /** nome del tool per id dei tool_use recenti (per gli errori) */
+  const toolNames = new Map<string, string>();
+  /** ultima chiamata (id e chiave nome + hash dell'input) per contare le ripetizioni */
+  let lastCall: { id: string | null; key: string } | null = null;
+  const taskEnd = (id: string, end: TaskEnd) => {
+    state.taskEnds.delete(id);
+    state.taskEnds.set(id, end);
+    if (state.taskEnds.size > MAX_TASK_ENDS) state.taskEnds.delete(state.taskEnds.keys().next().value!);
+  };
+  /** notifiche di fine: liberano i task in background e ne ricordano lo stato */
+  const onTaskText = (text: string) => {
+    for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+    for (const [id, end] of taskEndsIn(text)) taskEnd(id, end);
+  };
+  /** stesso tool con lo stesso input della chiamata precedente: la serie cresce, altrimenti riparte da 1 */
+  const countRepeat = (name: string, id: string | null, input: Json) => {
+    if (id !== null && lastCall?.id === id) return;
+    const key = `${name}:${createHash('sha1').update(JSON.stringify(input)).digest('base64')}`;
+    const count = lastCall?.key === key ? (state.repeat?.count ?? 1) + 1 : 1;
+    lastCall = { id, key };
+    state.repeat = count >= 2 ? { tool: name, count } : null;
+  };
+  /** tool_result con is_error di una riga utente: si contano solo nome del tool e ora, mai il testo */
+  const onToolErrors = (row: Json, at: number | null) => {
+    const content = isObj(row.message) ? row.message.content : null;
+    if (!Array.isArray(content) || userTexts(row).some((t) => t.startsWith(INTERRUPTED))) return;
+    for (const b of content) {
+      if (!isObj(b) || b.type !== 'tool_result' || b.is_error !== true) continue;
+      const texts = userTexts({ message: { content: [b] } });
+      if (texts.some((t) => t.startsWith(REJECTED))) continue;
+      const tool = toolNames.get(str(b.tool_use_id) ?? '') ?? 'tool';
+      state.toolErrors = { count: (state.toolErrors?.count ?? 0) + 1, tool, at: at ?? state.lastAt ?? 0 };
+      // subagente lanciato in primo piano e fallito: l'id è nel risultato dell'Agent
+      if (tool === 'Agent' || tool === 'Task') {
+        const agentId = texts.map((t) => AGENT_ID_RE.exec(t)?.[1]).find(Boolean);
+        if (agentId) taskEnd(agentId, 'failed');
+      }
+    }
+  };
 
   const addUsage = (u: Usage4, sign: 1 | -1) => {
     const t = state.tokens;
@@ -249,6 +326,13 @@ export function createAccumulator(): Accumulator {
     const name = str(block.name);
     const input = isObj(block.input) ? block.input : {};
     const id = str(block.id);
+    if (name) {
+      if (id) {
+        toolNames.set(id, name);
+        if (toolNames.size > MAX_TOOL_NAMES) toolNames.delete(toolNames.keys().next().value!);
+      }
+      countRepeat(name, id, input);
+    }
     if (QUESTION_TOOLS.has(name ?? '')) {
       if (id) pendingQuestions.set(id, { kind: name === 'ExitPlanMode' ? 'plan' : 'question', at });
       updateAwaiting();
@@ -295,6 +379,14 @@ export function createAccumulator(): Accumulator {
       updateTool();
     }
     const model = str(msg.model);
+    if (row.isApiErrorMessage === true) {
+      // errore dell'API dopo i tentativi di Claude Code: il turno (o il subagente) si chiude con un fallimento
+      state.stop = 'failed';
+      state.finished = 'confirmed';
+      pendingTools.clear();
+      updateTool();
+      return;
+    }
     if (model === '<synthetic>') return;
     if (model) state.model = model;
     const effort = str(row.effort);
@@ -345,7 +437,7 @@ export function createAccumulator(): Accumulator {
       structuredOutputPending = true;
     } else if (att.type === 'queued_command' && typeof att.prompt === 'string') {
       // nei subagenti le notifiche di fine dei task in background arrivano così, senza una riga utente
-      for (const m of att.prompt.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+      onTaskText(att.prompt);
       state.backgroundTasks = background.size;
     }
   };
@@ -407,14 +499,21 @@ export function createAccumulator(): Accumulator {
         updateAwaiting();
         updateTool();
         for (const text of userTexts(row, launches)) for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
-        for (const text of userTexts(row)) for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+        for (const text of userTexts(row)) onTaskText(text);
+        onToolErrors(row, Number.isFinite(at) ? at : null);
         for (const id of toolResultIds(row)) launches.delete(id);
         state.backgroundTasks = background.size;
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
-        if (!structuredOutputPending) state.finished = false;
+        if (!structuredOutputPending) {
+          state.finished = false;
+          state.stop = null;
+        }
         structuredOutputPending = false;
         // interrotto (Esc, tool rifiutato, agente fermato): il turno è finito, non arriverà altro
-        if (userTexts(row).some((t) => t.startsWith(INTERRUPTED))) state.finished = 'confirmed';
+        if (userTexts(row).some((t) => t.startsWith(INTERRUPTED))) {
+          state.finished = 'confirmed';
+          state.stop = 'interrupted';
+        }
         break;
       }
       case 'attachment':
@@ -425,7 +524,7 @@ export function createAccumulator(): Accumulator {
         break;
       case 'queue-operation':
         // notifiche di fine messe in coda mentre Claude lavora: arrivano qui anche senza una riga utente
-        if (typeof row.content === 'string') for (const m of row.content.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
+        if (typeof row.content === 'string') onTaskText(row.content);
         state.backgroundTasks = background.size;
         break;
     }

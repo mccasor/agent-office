@@ -13,6 +13,7 @@ import {
 import { loadConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
+import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
 import type { Snapshot } from './shared/types.js';
@@ -99,13 +100,20 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   }
 
   await Promise.all([transcript.start(), hooks.start()]);
-  const snapshot = () =>
-    buildSnapshot({
+  // cruscotto della giornata (#97): conteggi in memoria da quando il server è partito
+  const today = createDayTracker(Date.now());
+  const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
+  const snapshot = (): Snapshot => {
+    const now = Date.now();
+    const next = buildSnapshot({
       transcript: transcript.current(),
       hookEvents: hooks.current(),
       repoAt: (cwd) => repos.get(cwd),
-      now: Date.now(),
+      alerts,
+      now,
     });
+    return { ...next, today: today.observe(next, now) };
+  };
 
   const first = snapshot();
   const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first });

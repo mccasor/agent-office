@@ -21,8 +21,15 @@ describe('loadConfig', () => {
 
   it('legge la finestra di attività e ignora valori fuori misura e chiavi dell\'app', async () => {
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 30, notifyWaiting: false }));
-    expect(await loadConfig(dir)).toEqual({ activeWindowMinutes: 30 });
+    expect(await loadConfig(dir)).toEqual({ ...DEFAULT_CONFIG, activeWindowMinutes: 30 });
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 0 }));
+    expect(await loadConfig(dir)).toEqual(DEFAULT_CONFIG);
+  });
+
+  it('soglie degli avvisi sugli agenti (#97): fermo e in loop', async () => {
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ staleAgentMinutes: 90, loopRepeats: 8 }));
+    expect(await loadConfig(dir)).toEqual({ ...DEFAULT_CONFIG, staleAgentMinutes: 90, loopRepeats: 8 });
+    await writeFile(join(dir, 'config.json'), JSON.stringify({ staleAgentMinutes: -1, loopRepeats: 2.5 }));
     expect(await loadConfig(dir)).toEqual(DEFAULT_CONFIG);
   });
 });

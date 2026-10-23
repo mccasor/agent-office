@@ -99,6 +99,7 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         tool: null,
         cost: expect.closeTo(0.00062, 7),
         effort: null,
+        outcome: 'ok',
       },
       {
         id: 'a0000000000000002',
