@@ -59,7 +59,7 @@ describe('ListView', () => {
     const t = Date.now();
     render(
       <ListView
-        sessions={[session({ diff: { linesAdded: 12, linesRemoved: 3, filesChanged: 2 }, startedAt: t - 90 * 60_000 })]}
+        sessions={[session({ diff: { linesAdded: 12, linesRemoved: 3, filesChanged: 2 }, startedAt: t - 49 * 3_600_000, turnStartedAt: t - 90 * 60_000 })]}
         agents={[agent({ startedAt: t - 5 * 60_000, progress: null }), agent({ id: 'a2', status: 'done', startedAt: t - 9 * 60_000, updatedAt: t - 7 * 60_000 })]}
         hidden={[]}
         onToggle={() => {}}
@@ -67,9 +67,14 @@ describe('ListView', () => {
     );
     expect(screen.getByText('+12')).toBeTruthy();
     expect(screen.getByText('-3')).toBeTruthy();
-    expect(screen.getByText(/aperta da 1 h 30/)).toBeTruthy();
+    // il turno corrente, non l'età della sessione
+    expect(screen.getByText(/turno da 1 h 30/)).toBeTruthy();
+    expect(screen.queryByText(/49 h/)).toBeNull();
     expect(screen.getByText('al lavoro · da 5 min')).toBeTruthy();
-    expect(screen.getByText('terminato · in 2 min')).toBeTruthy();
+    // terminati in fondo, in un gruppo chiuso; contatore per stato nella testata
+    expect(screen.getByText('terminato · in 2 min').closest('details')?.open).toBe(false);
+    expect(screen.getByText('1 terminato')).toBeTruthy();
+    expect(screen.getByText('1 al lavoro · 1 terminato')).toBeTruthy();
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
   });
 

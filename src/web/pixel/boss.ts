@@ -17,7 +17,10 @@ export function bossOf(session: SessionState, named: boolean): AgentState {
     area: 'architecture',
     status: session.status,
     model: session.model,
-    tokens: session.tokensUsed,
+    // solo Claude: i subagenti hanno la loro scheda (con i subagenti è `session.tokensUsed`)
+    tokens: session.ownTokens ?? session.tokensUsed,
+    cost: session.ownCost ?? session.cost ?? null,
+    effort: session.effort,
     progress: null,
     issues: session.issues,
     startedAt: session.startedAt,

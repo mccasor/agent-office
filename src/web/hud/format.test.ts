@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
+import { byUrgency, contextLevel, effectiveInput, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
+import { compactionText, stateCounts, statusText, turnText } from './labels';
 
 describe('formatTokens', () => {
   it.each([
@@ -70,5 +71,48 @@ describe('formatCost', () => {
     expect(formatCost(0.004)).toBe('< $0,01');
     expect(formatCost(null)).toBe('—');
     expect(formatCost(undefined)).toBe('—');
+  });
+});
+
+describe('urgenza, stato e turno', () => {
+  const now = 10 * 3_600_000;
+  it('byUrgency: in attesa, al lavoro, inattivi, terminati; a parità l\'ordine di arrivo', () => {
+    const list = [
+      { id: 'd', status: 'done' },
+      { id: 'i', status: 'idle' },
+      { id: 'w', status: 'working' },
+      { id: 'e', status: 'entering' },
+      { id: 'q', status: 'working', waiting: true },
+    ];
+    expect(byUrgency(list).map((a) => a.id)).toEqual(['q', 'w', 'e', 'i', 'd']);
+    expect(list[0]!.id).toBe('d');
+  });
+
+  it('stateCounts: solo le voci non zero, singolare e plurale', () => {
+    expect(stateCounts([])).toBe('');
+    expect(stateCounts([{ status: 'working' }, { status: 'working' }, { status: 'done' }])).toBe('2 al lavoro · 1 terminato');
+    expect(stateCounts([{ status: 'idle' }, { status: 'idle' }, { status: 'working', waiting: true }])).toBe('1 in attesa · 2 inattivi');
+  });
+
+  it('statusText: attesa, tool da quanto, fermo da quanto', () => {
+    const tool = { name: 'Bash', target: null, since: now - 4 * 60_000 };
+    expect(statusText({ status: 'working', updatedAt: now, tool }, now)).toBe('al lavoro · Bash da 4 min');
+    expect(statusText({ status: 'working', updatedAt: now, tool: { ...tool, since: now - 5_000 } }, now)).toBe('al lavoro · Bash');
+    expect(statusText({ status: 'idle', updatedAt: now - 12 * 60_000, tool }, now)).toBe('Bash da 4 min');
+    expect(statusText({ status: 'idle', updatedAt: now - 12 * 60_000 }, now)).toBe('fermo da 12 min');
+    expect(statusText({ status: 'idle', updatedAt: now, waiting: true, waitingKind: 'plan', waitingSince: null }, now)).toBe('aspetta l\'ok al piano');
+    expect(statusText({ status: 'done', updatedAt: 0, tool }, now)).toBe('terminato');
+  });
+
+  it('turnText: turno in corso, altrimenti l\'ultimo chiuso', () => {
+    expect(turnText({ status: 'working', turnStartedAt: now - 3 * 60_000, lastTurnMs: 60_000 }, now)).toBe('turno da 3 min');
+    expect(turnText({ status: 'done', turnStartedAt: now - 3 * 60_000, lastTurnMs: 12 * 60_000 }, now)).toBe('ultimo turno 12 min');
+    expect(turnText({ status: 'done' }, now)).toBeNull();
+  });
+
+  it('compactionText ed effectiveInput', () => {
+    expect(compactionText(0, null)).toBeNull();
+    expect(compactionText(1, { at: 0, trigger: 'manual', preTokens: 699_680, postTokens: 12_385 })).toBe('compattato 1 volta · ultima 700k → 12.4k (manuale)');
+    expect(effectiveInput({ input: 2, cacheCreation: 1000 })).toBe(1002);
   });
 });

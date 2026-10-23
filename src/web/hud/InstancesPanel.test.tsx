@@ -44,15 +44,16 @@ describe('InstancesPanel', () => {
     render(
       <InstancesPanel
         sessions={[session({ diff: { linesAdded: 12, linesRemoved: 3, filesChanged: 2 } })]}
-        agents={[agent({ tool: { name: 'Edit', target: 'parser.ts', since: 0 } })]}
+        agents={[agent({ tool: { name: 'Edit', target: 'parser.ts', since: Date.now() } })]}
         bosses={[boss('s1')]}
         onSelect={() => {}}
       />,
     );
     expect(head(/agent-office/).getAttribute('aria-expanded')).toBe('true');
     expect(screen.getByText(/claude-opus-5-5 · high · 2.3k token generati/)).toBeTruthy();
-    expect(screen.getByText('Contesto 25%')).toBeTruthy();
-    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('ok');
+    // sotto il 50% il contesto è una pillola, senza barra
+    expect(screen.getByText('Contesto 25%').className).toBe('hud-pill');
+    expect(screen.queryByRole('progressbar', { name: /Contesto usato/ })).toBeNull();
     expect(screen.getByText('+12')).toBeTruthy();
     expect(screen.getByText('al lavoro · Edit parser.ts')).toBeTruthy();
     fireEvent.click(head(/agent-office/));
@@ -60,6 +61,45 @@ describe('InstancesPanel', () => {
     expect(screen.queryByText('Build HUD panel')).toBeNull();
     fireEvent.click(head(/agent-office/));
     expect(screen.getByText('Build HUD panel')).toBeTruthy();
+  });
+
+  it('agenti per urgenza, terminati in un gruppo chiuso, contatore per stato nella testata (B2, B3)', () => {
+    const t = Date.now();
+    const { container } = render(
+      <InstancesPanel
+        sessions={[session({ context: { used: 190_000, window: 200_000 } })]}
+        agents={[
+          agent({ id: 'd1', name: 'Finito', status: 'done' }),
+          agent({ id: 'i1', name: 'Fermo', status: 'idle', updatedAt: t - 12 * 60_000 }),
+          agent({ id: 'w1', name: 'Lavora' }),
+          agent({ id: 'q1', name: 'Aspetta', waiting: true, waitingKind: 'question', waitingSince: t }),
+          agent({ id: 'd2', name: 'Finito 2', status: 'done' }),
+        ]}
+        bosses={[boss('s1')]}
+        onSelect={() => {}}
+      />,
+    );
+    const names = [...container.querySelectorAll('.hud-instance__agent-name')].map((e) => e.textContent);
+    expect(names).toEqual(['Claudio Code', 'Aspetta', 'Lavora', 'Fermo', 'Finito', 'Finito 2']);
+    const group = screen.getByText('2 terminati').closest('details')!;
+    expect(group.open).toBe(false);
+    expect(within(group).getByText('Finito')).toBeTruthy();
+    expect(within(head(/agent-office/)).getByText('1 al lavoro · 1 in attesa · 1 inattivo · 2 terminati')).toBeTruthy();
+    expect(screen.getByText('fermo da 12 min')).toBeTruthy();
+    // oltre il 90% la barra e il suggerimento di compattare
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('danger');
+    expect(screen.getByText('conviene /compact')).toBeTruthy();
+  });
+
+  it('con la scheda di Claude aperta, riga meta e contesto solo nella scheda', () => {
+    render(<InstancesPanel sessions={[session()]} agents={[]} bosses={[boss('s1')]} selected="boss:s1" onSelect={() => {}} />);
+    expect(screen.queryByText(/token generati/)).toBeNull();
+    expect(screen.queryByText(/Contesto/)).toBeNull();
+  });
+
+  it('riga di Claude: turno corrente dall\'ultimo prompt', () => {
+    render(<InstancesPanel sessions={[session({ turnStartedAt: Date.now() - 4 * 60_000 })]} agents={[]} bosses={[boss('s1')]} onSelect={() => {}} />);
+    expect(screen.getByText('al lavoro · turno da 4 min')).toBeTruthy();
   });
 
   it('clic su un agente o su Claude stesso lo seleziona; la selezione è evidenziata', () => {

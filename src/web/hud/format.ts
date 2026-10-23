@@ -50,6 +50,19 @@ export function elapsed(agent: { status: string; startedAt: number; updatedAt: n
   return (agent.status === 'done' ? agent.updatedAt : now) - agent.startedAt;
 }
 
+/** Input effettivo: token in ingresso non letti dalla cache (input + scrittura in cache). */
+export const effectiveInput = (t: { input: number; cacheCreation: number }): number => t.input + t.cacheCreation;
+
+/** Urgenza di un agente per l'ordinamento: in attesa, al lavoro (e in arrivo), inattivo, terminato. */
+export function urgency(a: { status: string; waiting?: boolean }): number {
+  if (a.waiting && a.status !== 'done') return 0;
+  return a.status === 'working' || a.status === 'entering' ? 1 : a.status === 'idle' ? 2 : 3;
+}
+
+/** Agenti dal più urgente; a parità resta l'ordine di arrivo. Non modifica l'array. */
+export const byUrgency = <T extends { status: string; waiting?: boolean }>(agents: readonly T[]): T[] =>
+  [...agents].sort((a, b) => urgency(a) - urgency(b));
+
 /** Costo stimato in dollari: "≈ $0,42", "< $0,01"; null (modello non nel listino) -> "—". */
 export function formatCost(usd: number | null | undefined): string {
   if (usd === null || usd === undefined || !Number.isFinite(usd)) return '—';

@@ -2,7 +2,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentState, SessionState, Snapshot } from '../shared/types';
 import { AgentCard } from './hud/AgentCard';
 import { appTitle, followHeight, inApp, MAX_SCREEN_FRACTION } from './hud/fit';
-import { InstanceBody } from './hud/InstancesPanel';
+import { InstanceBody, StateCounts } from './hud/InstancesPanel';
 import { projectName } from './hud/labels';
 import { StatusDot } from './hud/panels';
 import { openCardWindow, type CardKind } from './hud/popout';
@@ -98,6 +98,7 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
             {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}
           </span>
           {s.issues.length > 0 && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
+          <StateCounts agents={agents} />
         </header>
         <InstanceBody
           session={current ? s : { ...s, waiting: false }}

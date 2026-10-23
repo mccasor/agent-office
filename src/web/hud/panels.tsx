@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
-import { AREA_LABEL, DOT_LABEL, waitingText } from './labels';
+import { contextLevel, formatTokens, percent } from './format';
+import { AREA_LABEL, COMPACT_HINT, compactionText, DOT_LABEL, projectName, waitingText } from './labels';
+import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -77,5 +79,31 @@ export function PopOutButton({ label, onClick }: { label: string; onClick: () =>
         <path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5" />
       </svg>
     </button>
+  );
+}
+
+/** sotto questa percentuale il contesto è una pillola compatta, da qui una barra */
+export const CONTEXT_BAR_FROM = 50;
+
+/**
+ * Contesto della sessione in una riga: sotto il 50% una pillola (`slot="inline"`, accanto alla riga meta), dal 50% una
+ * barra (`slot="block"`, a tutta riga) con "conviene /compact" oltre il 90%. Token e compattazioni nel tooltip.
+ */
+export function ContextGauge({ session: s, slot }: { session: SessionState; slot: 'inline' | 'block' }) {
+  const pct = percent(s.context.used, s.context.window);
+  if (pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
+  const title = [`${formatTokens(s.context.used)} / ${formatTokens(s.context.window ?? 0)}`, compactionText(s.compactions, s.lastCompaction)]
+    .filter(Boolean)
+    .join(' · ');
+  const level = contextLevel(pct);
+  if (slot === 'inline') {
+    return <span className="hud-pill" data-level={level} title={title}>{`Contesto ${pct}%`}</span>;
+  }
+  return (
+    <div className="list-session__context" title={title}>
+      <span className="hud-muted">{`Contesto ${pct}%`}</span>
+      <ProgressBar value={pct} label={`Contesto usato ${projectName(s)}`} level={level} className="hud-bar--small" />
+      {level === 'danger' && <span className="hud-context__hint">{COMPACT_HINT}</span>}
+    </div>
   );
 }
