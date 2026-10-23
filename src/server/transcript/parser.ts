@@ -1,4 +1,4 @@
-import type { TodoProgress, TokenUsage, ToolInUse } from '../../shared/types.js';
+import type { Compaction, TodoProgress, TokenUsage, ToolInUse } from '../../shared/types.js';
 
 /** Riassunto numerico di un file transcript. Non contiene mai testo dei messaggi. */
 export interface FileSummary {
@@ -35,6 +35,13 @@ export interface FileSummary {
    * 'tentative' (ultima riga solo testo senza stop_reason: in streaming potrebbe seguire un tool_use)
    */
   finished: false | 'tentative' | 'confirmed';
+  /** ultimo prompt scritto dall'utente (solo l'orario, mai il testo): inizio del turno */
+  lastPromptAt: number | null;
+  /** durata dell'ultimo turno chiuso (riga system turn_duration) */
+  lastTurnMs: number | null;
+  /** compattazioni del contesto (righe system compact_boundary) e l'ultima */
+  compactions: number;
+  lastCompaction: Compaction | null;
 }
 
 export interface Accumulator {
@@ -43,7 +50,7 @@ export interface Accumulator {
 }
 
 type Json = Record<string, unknown>;
-type Usage4 = [input: number, output: number, cacheRead: number, cacheCreation: number];
+type Usage4 = [input: number, output: number, cacheRead: number, cacheCreation: number, cacheCreation1h: number];
 
 const FILE_TOOLS = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 /** tool che restano in attesa di una risposta dell'utente finché non arriva il tool_result */
@@ -75,7 +82,15 @@ const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v)
 
 function parseUsage(u: unknown): Usage4 | null {
   if (!isObj(u)) return null;
-  return [num(u.input_tokens), num(u.output_tokens), num(u.cache_read_input_tokens), num(u.cache_creation_input_tokens)];
+  // dettaglio della scrittura in cache: la parte da 1 ora costa di più (pricing.ts)
+  const creation = isObj(u.cache_creation) ? u.cache_creation : {};
+  return [
+    num(u.input_tokens),
+    num(u.output_tokens),
+    num(u.cache_read_input_tokens),
+    num(u.cache_creation_input_tokens),
+    num(creation.ephemeral_1h_input_tokens),
+  ];
 }
 
 const MAX_ISSUES = 3;
@@ -126,6 +141,21 @@ const INTERRUPTED = '[Request interrupted by user';
 /** notifica di fine di un task in background */
 const BACKGROUND_DONE_RE = /<task-id>([\w-]+)<\/task-id>/g;
 
+/** righe utente scritte da Claude Code e non dall'utente (output di comandi locali, notifiche di task) */
+const NOT_PROMPT_RE = /^<(?:local-command-|task-notification)/;
+
+/**
+ * Prompt scritto dall'utente: niente meta, riassunti di compattazione, tool_result, interruzioni e notifiche
+ * (`origin.kind` diverso da "human" nelle versioni che lo scrivono).
+ */
+function isPrompt(row: Json): boolean {
+  if (row.isMeta === true || row.isCompactSummary === true) return false;
+  if (isObj(row.origin) && row.origin.kind !== 'human') return false;
+  if (toolResultIds(row).length > 0) return false;
+  const texts = userTexts(row);
+  return texts.length > 0 && !texts.some((t) => t.startsWith(INTERRUPTED) || NOT_PROMPT_RE.test(t));
+}
+
 /** Issue citate in un prompt utente (testo scritto, non tool_result né messaggi meta). */
 function promptIssues(row: Json): number[] {
   if (row.isMeta === true || !isObj(row.message)) return [];
@@ -142,7 +172,7 @@ export function createAccumulator(): Accumulator {
     model: null,
     declaredModel: null,
     effort: null,
-    tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 },
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0, total: 0 },
     contextUsed: null,
     firstAt: null,
     lastAt: null,
@@ -158,6 +188,10 @@ export function createAccumulator(): Accumulator {
     tool: null,
     backgroundTasks: 0,
     finished: false,
+    lastPromptAt: null,
+    lastTurnMs: null,
+    compactions: 0,
+    lastCompaction: null,
   };
   /** tool_use che aspettano una risposta dell'utente, per id */
   const pendingQuestions = new Map<string, { kind: 'question' | 'plan'; at: number | null }>();
@@ -198,6 +232,7 @@ export function createAccumulator(): Accumulator {
     t.output += sign * u[1];
     t.cacheRead += sign * u[2];
     t.cacheCreation += sign * u[3];
+    t.cacheCreation1h = (t.cacheCreation1h ?? 0) + sign * u[4];
     t.total = t.input + t.output + t.cacheRead + t.cacheCreation;
   };
 
@@ -311,6 +346,22 @@ export function createAccumulator(): Accumulator {
     }
   };
 
+  /** fine di un turno (durata) e compattazioni del contesto: solo numeri */
+  const onSystem = (row: Json, at: number | null) => {
+    if (row.subtype === 'turn_duration' && typeof row.durationMs === 'number') {
+      state.lastTurnMs = num(row.durationMs);
+    } else if (row.subtype === 'compact_boundary') {
+      const meta = isObj(row.compactMetadata) ? row.compactMetadata : {};
+      state.compactions++;
+      state.lastCompaction = {
+        at: at ?? state.lastAt ?? 0,
+        trigger: str(meta.trigger) ?? 'auto',
+        preTokens: num(meta.preTokens),
+        postTokens: num(meta.postTokens),
+      };
+    }
+  };
+
   const ingest = (line: string) => {
     let row: unknown;
     try {
@@ -342,6 +393,7 @@ export function createAccumulator(): Accumulator {
         onAssistant(row, Number.isFinite(at) ? at : null);
         break;
       case 'user': {
+        if (Number.isFinite(at) && isPrompt(row)) state.lastPromptAt = Math.max(state.lastPromptAt ?? 0, at);
         const issues = promptIssues(row);
         if (issues.length > 0) state.issues = issues;
         for (const id of toolResultIds(row)) {
@@ -363,6 +415,9 @@ export function createAccumulator(): Accumulator {
       }
       case 'attachment':
         onAttachment(row);
+        break;
+      case 'system':
+        onSystem(row, Number.isFinite(at) ? at : null);
         break;
       case 'queue-operation':
         // notifiche di fine messe in coda mentre Claude lavora: arrivano qui anche senza una riga utente

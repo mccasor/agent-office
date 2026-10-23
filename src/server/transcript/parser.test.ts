@@ -54,7 +54,7 @@ describe('createAccumulator', () => {
     acc.ingest(assistant('m1', [2, 300, 100, 10], toolUse('Bash', { command: 'ls' })));
     acc.ingest(assistant('m1', [2, 300, 100, 10], [{ type: 'text', text: 'x' }]));
     acc.ingest(assistant('m2', [1, 5, 200, 20]));
-    expect(acc.state.tokens).toEqual({ input: 3, output: 305, cacheRead: 300, cacheCreation: 30, total: 638 });
+    expect(acc.state.tokens).toEqual({ input: 3, output: 305, cacheRead: 300, cacheCreation: 30, cacheCreation1h: 0, total: 638 });
     expect(acc.state.contextUsed).toBe(1 + 200 + 20);
   });
 
@@ -291,5 +291,64 @@ describe('tool in uso e domande aperte', () => {
     expect(acc.state.tool).toBeNull();
     acc.ingest(result('q1'));
     expect(acc.state).toMatchObject({ awaitingUser: false, awaitingKind: null, awaitingSince: null });
+  });
+});
+
+describe('turni, compattazioni e cache da 1 ora', () => {
+  const row = (type: string, timestamp: string, extra: Record<string, unknown> = {}) => JSON.stringify({ type, timestamp, ...extra });
+  const prompt = (timestamp: string, content: unknown, extra: Record<string, unknown> = {}) =>
+    row('user', timestamp, { message: { role: 'user', content }, ...extra });
+
+  it('inizio del turno: ultimo prompt scritto dall\'utente, non meta, tool_result, notifiche o interruzioni', () => {
+    const acc = createAccumulator();
+    acc.ingest(prompt('2026-01-01T10:00:00.000Z', 'primo prompt', { origin: { kind: 'human' } }));
+    expect(acc.state.lastPromptAt).toBe(Date.parse('2026-01-01T10:00:00.000Z'));
+    acc.ingest(prompt('2026-01-01T10:01:00.000Z', [{ type: 'tool_result', tool_use_id: 't', content: 'x' }]));
+    acc.ingest(prompt('2026-01-01T10:02:00.000Z', 'meta', { isMeta: true }));
+    acc.ingest(prompt('2026-01-01T10:03:00.000Z', '<task-notification>x</task-notification>', { origin: { kind: 'task-notification' } }));
+    acc.ingest(prompt('2026-01-01T10:04:00.000Z', [{ type: 'text', text: '[Request interrupted by user]' }]));
+    acc.ingest(prompt('2026-01-01T10:05:00.000Z', 'riassunto', { isCompactSummary: true }));
+    acc.ingest(prompt('2026-01-01T10:06:00.000Z', '<local-command-stdout>ok</local-command-stdout>'));
+    expect(acc.state.lastPromptAt).toBe(Date.parse('2026-01-01T10:00:00.000Z'));
+    // senza origin (versioni vecchie) un prompt normale conta
+    acc.ingest(prompt('2026-01-01T10:07:00.000Z', [{ type: 'text', text: 'secondo' }]));
+    expect(acc.state.lastPromptAt).toBe(Date.parse('2026-01-01T10:07:00.000Z'));
+    expect(JSON.stringify(acc.state)).not.toMatch(/primo|secondo/);
+  });
+
+  it('durata dell\'ultimo turno (turn_duration) e compattazioni (compact_boundary), solo numeri', () => {
+    const acc = createAccumulator();
+    acc.ingest(row('system', '2026-01-01T10:00:00.000Z', { subtype: 'turn_duration', durationMs: 39_231, messageCount: 24 }));
+    acc.ingest(row('system', '2026-01-01T10:10:00.000Z', { subtype: 'turn_duration', durationMs: 10_578 }));
+    expect(acc.state.lastTurnMs).toBe(10_578);
+    expect(acc.state.compactions).toBe(0);
+    acc.ingest(row('system', '2026-01-01T11:00:00.000Z', { subtype: 'compact_boundary', compactMetadata: { trigger: 'auto', preTokens: 253_619, postTokens: 7_593 } }));
+    acc.ingest(row('system', '2026-01-01T12:00:00.000Z', { subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 699_680, postTokens: 12_385 } }));
+    expect(acc.state.compactions).toBe(2);
+    expect(acc.state.lastCompaction).toEqual({ at: Date.parse('2026-01-01T12:00:00.000Z'), trigger: 'manual', preTokens: 699_680, postTokens: 12_385 });
+  });
+
+  it('separa la scrittura nella cache da 1 ora (cache_creation.ephemeral_1h_input_tokens)', () => {
+    const acc = createAccumulator();
+    const usage = (id: string, oneHour: number) =>
+      row('assistant', '2026-01-01T10:00:00.000Z', {
+        message: {
+          id,
+          model: 'claude-opus-5-5',
+          content: [{ type: 'text', text: 'x' }],
+          usage: {
+            input_tokens: 2,
+            output_tokens: 10,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 1000,
+            cache_creation: { ephemeral_1h_input_tokens: oneHour, ephemeral_5m_input_tokens: 1000 - oneHour },
+          },
+        },
+      });
+    acc.ingest(usage('m1', 1000));
+    // stesso messaggio ripetuto (streaming): contato una volta
+    acc.ingest(usage('m1', 1000));
+    acc.ingest(usage('m2', 400));
+    expect(acc.state.tokens).toMatchObject({ cacheCreation: 2000, cacheCreation1h: 1400 });
   });
 });

@@ -13,9 +13,17 @@ describe('estimateCost', () => {
   it('input, output, lettura e scrittura della cache ai prezzi del modello', () => {
     expect(estimateCost('claude-opus-5-5', t(1_000_000, 1_000_000))).toBeCloseTo(24);
     expect(estimateCost('claude-opus-5-5', t(0, 0, 1_000_000, 1_000_000))).toBeCloseTo(0.2 + 5);
-    expect(estimateCost('claude-sonnet-5-5', t(0, 0, 1_000_000))).toBeCloseTo(0.2);
+    expect(estimateCost('claude-sonnet-5-5', t(0, 0, 1_000_000))).toBeCloseTo(0.1);
+    expect(estimateCost('claude-sonnet-5', t(0, 0, 1_000_000))).toBeCloseTo(0.2);
     expect(estimateCost('claude-fable-5-1', t(0, 0, 1_000_000))).toBeCloseTo(0.25);
     expect(estimateCost('claude-haiku-4-5', t(1_000_000, 0))).toBeCloseTo(1);
+  });
+
+  it('scrittura nella cache da 1 ora a 2x l\'input, da 5 minuti a 1,25x', () => {
+    // Opus 5.5: input $4, scrittura 5 min $5, 1 ora $8
+    expect(estimateCost('claude-opus-5-5', { ...t(0, 0, 0, 1_000_000), cacheCreation1h: 1_000_000 })).toBeCloseTo(8);
+    expect(estimateCost('claude-opus-5-5', { ...t(0, 0, 0, 1_000_000), cacheCreation1h: 250_000 })).toBeCloseTo(0.75 * 5 + 0.25 * 8);
+    expect(estimateCost('claude-haiku-4-5', { ...t(0, 0, 0, 1_000_000), cacheCreation1h: 0 })).toBeCloseTo(1.25);
   });
 
   it('riconosce suffissi e prefissi del model id; null se sconosciuto', () => {

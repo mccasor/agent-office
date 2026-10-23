@@ -147,3 +147,26 @@ describe('aggregate', () => {
     expect(snap.sessions[0]?.issues).toEqual([5]);
   });
 });
+
+describe('Claude stesso e subagenti separati', () => {
+  it('ownTokens e ownCost della sola sessione, tokensUsed e cost con i subagenti; turni, compattazioni, effort', () => {
+    const lastCompaction = { at: T - 9000, trigger: 'auto', preTokens: 190_000, postTokens: 9_000 };
+    const snap = aggregate(
+      [
+        session({ model: 'claude-opus-4-5', tokens: tokens(10, 20), lastPromptAt: T - 3000, lastTurnMs: 42_000, compactions: 2, lastCompaction }),
+        agent('a1', { model: 'claude-haiku-4-5', effort: 'low', tokens: tokens(1, 2, 3, 4), hasAssistant: true, lastAt: T - 1000 }),
+      ],
+      noMetas,
+      T,
+      OPTS,
+    );
+    const s = snap.sessions[0]!;
+    expect(s.ownTokens).toMatchObject(tokens(10, 20));
+    expect(s.tokensUsed).toMatchObject(tokens(11, 22, 3, 4));
+    const alone = aggregate([session({ model: 'claude-opus-4-5', tokens: tokens(10, 20) })], noMetas, T, OPTS).sessions[0]!;
+    expect(s.ownCost).toBeCloseTo(alone.cost!, 10);
+    expect(s.cost).toBeCloseTo(s.ownCost! + snap.agents[0]!.cost!, 10);
+    expect(s).toMatchObject({ turnStartedAt: T - 3000, lastTurnMs: 42_000, compactions: 2, lastCompaction });
+    expect(snap.agents[0]?.effort).toBe('low');
+  });
+});

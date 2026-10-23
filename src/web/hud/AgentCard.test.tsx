@@ -28,16 +28,17 @@ describe('AgentCard', () => {
     expect(screen.getByText('Pannelli del HUD e scheda agente')).toBeTruthy();
     expect(screen.getByText('general-purpose')).toBeTruthy();
     expect(screen.getByText('frontend').getAttribute('data-area')).toBe('frontend');
-    expect(screen.getByText('al lavoro')).toBeTruthy();
-    expect(screen.getByText('Edit hud.css')).toBeTruthy();
+    expect(screen.getByText('al lavoro · Edit hud.css')).toBeTruthy();
     expect(screen.getByText('da 5 min')).toBeTruthy();
     expect(screen.getByText('claude-sonnet-5')).toBeTruthy();
     expect(screen.getByText('#77')).toBeTruthy();
     expect(screen.getByTestId('agent-cost').textContent).toBe('≈ $0,42');
     expect(screen.getByText('1/4 · 25%')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Avanzamento Implementa HUD' }).getAttribute('aria-valuenow')).toBe('25');
-    expect(screen.getByTestId('tokens-total').textContent).toBe('17.8M');
+    // output e input effettivo (input + scrittura in cache); il dettaglio in un riquadro chiuso
+    expect(screen.getByTestId('tokens-summary').textContent).toBe('Output 3.4k · Input effettivo 91.2k');
     expect(screen.getByTestId('tokens-cacheRead').textContent).toBe('17.7M');
+    expect(screen.getByTestId('tokens-cacheRead').closest('details')?.open).toBe(false);
     // niente dati di sessione per un subagente
     expect(screen.queryByText('Progetto')).toBeNull();
   });
@@ -61,7 +62,19 @@ describe('AgentCard', () => {
     expect(screen.getByText('in 4 min')).toBeTruthy();
     expect(screen.queryByText('Bash')).toBeNull();
     expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByText('—')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  it('subagente: effort, tool aperto da minuti e inattivo fermo da quanto (B1, B7)', () => {
+    const t = Date.now();
+    const { unmount } = render(
+      <AgentCard agent={agent({ effort: 'low', status: 'idle', tool: { name: 'Bash', target: null, since: t - 4 * 60_000 } })} />,
+    );
+    expect(screen.getByText('low')).toBeTruthy();
+    expect(screen.getByText('Bash da 4 min')).toBeTruthy();
+    unmount();
+    render(<AgentCard agent={agent({ status: 'idle', updatedAt: t - 12 * 60_000 })} />);
+    expect(screen.getByText('fermo da 12 min')).toBeTruthy();
   });
 
   it('Claude stesso: progetto, branch, contesto, motivo del blocco e costo della sessione', () => {
@@ -77,11 +90,47 @@ describe('AgentCard', () => {
     expect(screen.getByText('agent-office')).toBeTruthy();
     expect(screen.getByText('feat/vista-2d')).toBeTruthy();
     expect(screen.getByText('Aspetta un tuo permesso · da 3 min')).toBeTruthy();
-    expect(screen.getByText('pronto')).toBeTruthy();
+    // lo stato è coerente con l'attesa
+    expect(screen.getByText('aspetta un tuo permesso · da 3 min')).toBeTruthy();
     expect(screen.getByText('75%')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Contesto usato' }).getAttribute('data-level')).toBe('warn');
     expect(screen.getByText('+12')).toBeTruthy();
-    expect(screen.getByTestId('agent-cost').textContent).toBe('≈ $3,50');
+    // niente ruolo né tipo per Claude stesso
+    expect(screen.queryByText('architect')).toBeNull();
+    expect(screen.queryByText('Tipo')).toBeNull();
+  });
+
+  it('Claude stesso: token e costo suoi separati da quelli con i subagenti; turno corrente e ultimo; compattazioni', () => {
+    const t = Date.now();
+    const boss = agent({ id: 'boss:s1', name: 'Claudio Code', agentType: 'main', description: '', progress: null });
+    const own = { input: 100, output: 1_000, cacheRead: 5_000, cacheCreation: 2_000, total: 8_100 };
+    const { unmount } = render(
+      <AgentCard
+        agent={boss}
+        session={session({
+          ownTokens: own, ownCost: 1.25, turnStartedAt: t - 3 * 60_000, lastTurnMs: 12 * 60_000, context: { used: 190_000, window: 200_000 },
+          compactions: 2, lastCompaction: { at: t, trigger: 'auto', preTokens: 253_619, postTokens: 7_593 },
+        })}
+      />,
+    );
+    expect(screen.getByTestId('agent-cost').textContent).toBe('≈ $1,25');
+    expect(screen.getByTestId('session-cost').textContent).toBe('≈ $3,50');
+    expect(screen.getAllByTestId('tokens-summary').map((e) => e.textContent)).toEqual([
+      'Output 1k · Input effettivo 2.1k',
+      'Output 3.4k · Input effettivo 91.2k',
+    ]);
+    expect(screen.getByText('al lavoro')).toBeTruthy();
+    expect(screen.getByText('in corso da 3 min')).toBeTruthy();
+    expect(screen.getByText('12 min')).toBeTruthy();
+    expect(screen.getByText('Compattato 2 volte · ultima 254k → 7.6k (auto)')).toBeTruthy();
+    expect(screen.getByText('conviene /compact')).toBeTruthy();
+    unmount();
+    // pronto: il turno è chiuso, resta l'ultimo; contesto sotto il 50% senza barra
+    render(<AgentCard agent={boss} session={session({ status: 'done', turnStartedAt: t - 60_000, lastTurnMs: 60_000, context: { used: 20_000, window: 200_000 } })} />);
+    expect(screen.getByText('pronto')).toBeTruthy();
+    expect(screen.queryByText('Turno')).toBeNull();
+    expect(screen.getByText('Ultimo turno')).toBeTruthy();
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
   it('subagente bloccato: motivo del blocco; Claude bloccato da un subagente lo dice', () => {

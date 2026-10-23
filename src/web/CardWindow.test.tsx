@@ -71,7 +71,8 @@ describe('CardWindow', () => {
     render(<CardWindow kind="agent" id="a1" />);
     push(snap());
     push(snap({ agents: [agent({ status: 'idle' })] }));
-    expect(screen.getByText('inattivo')).toBeTruthy();
+    // inattivo: da quanto è fermo (B1)
+    expect(screen.getByText(/^fermo da /)).toBeTruthy();
     push(snap({ agents: [] }));
     expect(screen.getByRole('status').textContent).toMatch(/Uscito dall'ufficio/);
     expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();

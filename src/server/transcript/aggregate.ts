@@ -30,14 +30,15 @@ export interface AggregateOptions {
 
 export const UNKNOWN_AGENT_TYPE = 'unknown';
 
-const emptyTokens = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 });
+const emptyTokens = (): TokenUsage => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0, total: 0 });
 
 function addTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
   const input = a.input + b.input;
   const output = a.output + b.output;
   const cacheRead = a.cacheRead + b.cacheRead;
   const cacheCreation = a.cacheCreation + b.cacheCreation;
-  return { input, output, cacheRead, cacheCreation, total: input + output + cacheRead + cacheCreation };
+  const cacheCreation1h = (a.cacheCreation1h ?? 0) + (b.cacheCreation1h ?? 0);
+  return { input, output, cacheRead, cacheCreation, cacheCreation1h, total: input + output + cacheRead + cacheCreation };
 }
 
 const mergeIssues = (a: number[], b: number[]): number[] => [...new Set([...a, ...b])].slice(0, 3);
@@ -101,6 +102,7 @@ export function aggregate(
       updatedAt,
       tool: status === 'done' ? null : s.tool,
       cost: estimateCost(s.model ?? s.declaredModel, s.tokens),
+      effort: s.effort,
       // domanda all'utente (AskUserQuestion, ExitPlanMode) del subagente ancora senza risposta
       ...(s.awaitingUser && !s.finished ? { waiting: true, waitingKind: s.awaitingKind, waitingSince: s.awaitingSince } : {}),
     });
@@ -134,6 +136,13 @@ export function aggregate(
       waitingSince: s.awaitingUser && !s.finished ? s.awaitingSince : null,
       tool: s.finished ? null : s.tool,
       cost: g.cost,
+      // Claude stesso, senza i subagenti
+      ownTokens: { ...s.tokens },
+      ownCost: estimateCost(s.model ?? s.declaredModel, s.tokens),
+      turnStartedAt: s.lastPromptAt,
+      lastTurnMs: s.lastTurnMs,
+      compactions: s.compactions,
+      lastCompaction: s.lastCompaction && { ...s.lastCompaction },
     });
   }
 
