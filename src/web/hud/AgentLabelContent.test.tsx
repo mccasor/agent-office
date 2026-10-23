@@ -92,9 +92,19 @@ describe('AgentLabelContent', () => {
     render(<AgentLabelContent agent={agent({ status: 'done', startedAt: t - 5 * 60_000, updatedAt: t - 60_000 })} />);
     expect(screen.getByTestId('agent-time').textContent).toBe('in 4 min');
     cleanup();
-    const { container } = render(<AgentLabelContent agent={agent()} waiting />);
-    expect(screen.getByTestId('agent-time').textContent).toBe('aspetta un tuo input');
+    const { container } = render(<AgentLabelContent agent={agent()} waiting={{ kind: 'permission', since: t - 2 * 60_000 }} />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('aspetta un tuo permesso · da 2 min');
     expect(container.firstElementChild?.className).toContain('hud-label--waiting');
+  });
+
+  it('tool in uso accanto alla durata; Claudio Code a fine turno è pronto', () => {
+    const t = Date.now();
+    const tool = { name: 'Edit', target: 'parser.ts', since: t };
+    render(<AgentLabelContent agent={agent({ startedAt: t - 60_000, tool })} />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('Edit parser.ts · da 1 min');
+    cleanup();
+    render(<AgentLabelContent agent={agent({ agentType: 'main', status: 'done' })} />);
+    expect(screen.getByTestId('agent-time').textContent).toBe('pronto');
   });
 
   it('nome lungo troncato con titolo completo', () => {

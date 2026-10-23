@@ -72,6 +72,7 @@ export function visibleSnapshot(snapshot: Snapshot | null, hidden: readonly stri
     ...snapshot,
     sessions: snapshot.sessions.filter((s) => !h.has(s.id)),
     agents: snapshot.agents.filter((a) => !h.has(a.sessionId)),
+    finished: snapshot.finished?.filter((a) => !h.has(a.sessionId)),
   };
 }
 

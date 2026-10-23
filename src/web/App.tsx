@@ -4,7 +4,7 @@ import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
 import { AgentActor, AlertBubble, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
 import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
-import { AgentLabel, HudOverlay, ListView, RepoPanel, SessionPanel, sessionDot, ViewToggle } from './hud';
+import { AgentLabel, HudOverlay, type Waiting, ListView, RepoPanel, SessionPanel, sessionDot, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
 import { EMPTY_SEATING, officeModel } from './officeModel';
 import { moveCard, syncBoard } from './board';
@@ -67,7 +67,10 @@ export function App() {
 
   const { layout } = model;
   const drawing = viewMode === 'office' && pageVisible;
-  const waiting = new Set(snapshot?.sessions.filter((s) => s.active && s.waiting).map((s) => s.id));
+  // motivo e inizio del blocco delle sessioni bloccate, per Claudio Code
+  const waiting = new Map(
+    (snapshot?.sessions ?? []).filter((s) => s.active && s.waiting).map((s) => [s.id, { kind: s.waitingKind ?? null, since: s.waitingSince ?? null }]),
+  );
   const shown = model.session;
   const shownStatus = shown ? sessionDot(shown, model.agents.filter((a) => a.sessionId === shown.id)) : 'idle';
   const span = Math.max(layout.width, layout.depth);
@@ -109,13 +112,19 @@ export function App() {
             target={model.targets[boss.id] ?? null}
             layout={layout}
             queue={queue}
-            waiting={waiting.has(boss.sessionId)}
+            waiting={waiting.get(boss.sessionId) ?? null}
           />
         ))}
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
       {viewMode === 'list' && (
-        <ListView sessions={fullSnapshot?.sessions ?? []} agents={fullSnapshot?.agents ?? []} hidden={hidden} onToggle={toggleSession} />
+        <ListView
+          sessions={fullSnapshot?.sessions ?? []}
+          agents={fullSnapshot?.agents ?? []}
+          finished={fullSnapshot?.finished ?? []}
+          hidden={hidden}
+          onToggle={toggleSession}
+        />
       )}
       <HudOverlay side="left">{viewMode === 'office' && <SessionPanel session={shown} status={shownStatus} />}</HudOverlay>
       <HudOverlay side="right">
@@ -133,7 +142,7 @@ export function App() {
  * e la riprende quando si alza; sui divani dell'area relax la tiene in mano. Gli agenti con un post-it passano dalle
  * board: entrando lo spostano da "to do" a "in progress", andando via da "in progress" a "in review".
  */
-function Actor({ agent, preset, target, layout, card = null, onCard, queue, waiting = false }: {
+function Actor({ agent, preset, target, layout, card = null, onCard, queue, waiting = null }: {
   agent: AgentState;
   preset: CharacterPreset;
   target: Seat | null;
@@ -142,7 +151,7 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue, wait
   onCard?: (id: string, place: CardPlace) => void;
   queue?: StartQueue;
   /** sessione bloccata in attesa dell'utente: fumetto "!" ed etichetta in rosso */
-  waiting?: boolean;
+  waiting?: Waiting | null;
 }) {
   const move = useCallback((place: CardPlace) => onCard?.(agent.id, place), [onCard, agent.id]);
   return (

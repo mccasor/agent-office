@@ -262,6 +262,8 @@
 .list-session__show { display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--hud-muted); cursor: pointer; }
 .list-session__title { margin: 6px 0 0; }
 .list-session__meta { margin: 2px 0 0; }
+.list-session__context { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.list-session__context .hud-bar { margin-top: 0; }
 .list-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: #9aa4b0; }
 .list-dot--working { background: var(--hud-ok); box-shadow: 0 0 0 3px rgb(46 157 87 / 0.2); }
 .list-dot--waiting { background: var(--hud-danger); box-shadow: 0 0 0 3px rgb(212 56 13 / 0.2); }
@@ -282,3 +284,17 @@
   .list-agent { grid-template-columns: minmax(0, 1fr) auto; }
   .list-agent .hud-bar, .list-agent__status { display: none; }
 }
+.list-finished { margin-top: 8px; font-size: 13px; }
+.list-finished > summary { cursor: pointer; color: var(--hud-muted); }
+.list-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; font-size: 13px; }
+.list-filter input[type='search'] {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 6px 10px;
+  font: inherit;
+  color: var(--hud-fg);
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 8px;
+}
+.list-filter label { display: inline-flex; align-items: center; gap: 6px; color: var(--hud-muted); }

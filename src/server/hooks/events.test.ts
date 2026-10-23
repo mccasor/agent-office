@@ -146,9 +146,11 @@ describe('runHook', () => {
 describe('notificationKind', () => {
   it('notification_type se presente, altrimenti dal messaggio; mai il testo nell\'evento', () => {
     expect(notificationKind({ notification_type: 'idle_prompt' })).toBe('idle');
-    expect(notificationKind({ notification_type: 'permission_prompt' })).toBe('input');
+    expect(notificationKind({ notification_type: 'permission_prompt' })).toBe('permission');
+    expect(notificationKind({ notification_type: 'elicitation_dialog' })).toBe('question');
+    expect(notificationKind({ notification_type: 'altro' })).toBe('input');
     expect(notificationKind({ message: 'Claude is waiting for your input' })).toBe('idle');
-    expect(notificationKind({ message: 'Claude needs your permission to use Bash' })).toBe('input');
+    expect(notificationKind({ message: 'Claude needs your permission to use Bash' })).toBe('permission');
     const e = toHookEvent({ session_id: 's', hook_event_name: 'Notification', message: 'segreto', cwd: '/p' }, 1);
     expect(e).toMatchObject({ event: 'Notification', notification: 'input' });
     expect(JSON.stringify(e)).not.toMatch(/segreto/);

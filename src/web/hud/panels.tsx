@@ -1,9 +1,11 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { OfficeStatus, RepoDiff, RepoState, SessionState } from '../../shared/types';
-import { contextLevel, formatTokens, percent } from './format';
+import { contextLevel, formatCost, formatTokens, percent } from './format';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
+import { DOT_LABEL, toolText, waitingText } from './labels';
+import { useNow } from './useNow';
 import './hud.css';
 
 const DASH = '—';
@@ -33,12 +35,6 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-const DOT_LABEL: Record<OfficeStatus, string> = {
-  waiting: 'in attesa di un tuo input',
-  working: 'al lavoro',
-  idle: 'non attivo',
-};
-
 /** Nome del progetto: ultima cartella del cwd, altrimenti l'inizio dell'id. */
 export const projectName = (s: SessionState): string => s.cwd?.split('/').filter(Boolean).at(-1) ?? s.id.slice(0, 8);
 
@@ -51,6 +47,13 @@ export function DiffStat({ diff }: { diff: RepoDiff }) {
       <span className="hud-muted">{`${diff.filesChanged} file`}</span>
     </div>
   );
+}
+
+/** Avviso della sessione bloccata: motivo e da quanto ("Aspetta un tuo permesso · da 3 min"). */
+function SessionAlert({ session }: { session: SessionState }) {
+  const now = useNow();
+  const text = waitingText(session.waitingKind, session.waitingSince, now);
+  return <p className="hud-session__alert">{text.charAt(0).toUpperCase() + text.slice(1)}</p>;
 }
 
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
@@ -79,12 +82,13 @@ export function SessionPanel({ session, status = 'idle' }: { session: SessionSta
         <span className="hud-title">{projectName(session)}</span>
         {session.branch && <span className="hud-muted hud-session__branch">{session.branch}</span>}
       </header>
-      {session.waiting && <p className="hud-session__alert">Aspetta un tuo input</p>}
+      {session.waiting && <SessionAlert session={session} />}
       {session.diff && <DiffStat diff={session.diff} />}
       <dl>
         <Row label="Modello">{session.model ?? DASH}</Row>
         <Row label="Effort">{session.effort ?? DASH}</Row>
         <Row label="Issue">{session.issues.length > 0 ? session.issues.map((n) => `#${n}`).join(' ') : DASH}</Row>
+        {session.tool && <Row label="In uso">{toolText(session.tool)}</Row>}
       </dl>
       <div className="hud-context">
         <div className="hud-context__head">
@@ -96,6 +100,9 @@ export function SessionPanel({ session, status = 'idle' }: { session: SessionSta
       </div>
       <dl>
         {/* il totale comprende le letture dalla cache e cresce a ogni richiesta: sta nella ripartizione */}
+        <Row label="Costo stimato">
+          <span data-testid="session-cost">{formatCost(session.cost)}</span>
+        </Row>
         <Row label="Token generati">
           <span data-testid="tokens-generated">{formatTokens(session.tokensUsed.output)}</span>
         </Row>

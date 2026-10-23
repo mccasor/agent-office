@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
+import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 
 describe('formatTokens', () => {
   it.each([
@@ -60,5 +60,15 @@ describe('formatDuration / elapsed', () => {
   it('chi lavora conta fino a ora, chi ha finito fino all\'ultimo aggiornamento', () => {
     expect(elapsed({ status: 'working', startedAt: 1000, updatedAt: 2000 }, 9000)).toBe(8000);
     expect(elapsed({ status: 'done', startedAt: 1000, updatedAt: 2000 }, 9000)).toBe(1000);
+  });
+});
+
+describe('formatCost', () => {
+  it('due decimali con la virgola, soglia minima, trattino se sconosciuto', () => {
+    expect(formatCost(0.4249)).toBe('≈ $0,42');
+    expect(formatCost(12.5)).toBe('≈ $12,50');
+    expect(formatCost(0.004)).toBe('< $0,01');
+    expect(formatCost(null)).toBe('—');
+    expect(formatCost(undefined)).toBe('—');
   });
 });

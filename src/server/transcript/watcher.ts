@@ -2,6 +2,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
+import { estimateCost } from '../../shared/pricing.js';
 import type { AgentState, AgentStatus, SessionState, TokenUsage, TranscriptSnapshot, Watcher } from '../../shared/types.js';
 import { classifyArea } from './classify.js';
 import { scanCwd } from './cwdscan.js';
@@ -153,10 +154,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
   const compute = (): TranscriptSnapshot => {
     const t = now();
     const agents: AgentState[] = [];
-    const bySession = new Map<string, { files: TrackedFile[]; tokens: TokenUsage }>();
+    const bySession = new Map<string, { files: TrackedFile[]; tokens: TokenUsage; cost: number | null }>();
     const group = (sessionId: string) => {
       let g = bySession.get(sessionId);
-      if (!g) bySession.set(sessionId, (g = { files: [], tokens: emptyTokens() }));
+      if (!g) bySession.set(sessionId, (g = { files: [], tokens: emptyTokens(), cost: null }));
       return g;
     };
 
@@ -167,12 +168,16 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       const g = group(p.sessionId);
       g.files.push(f);
       g.tokens = addTokens(g.tokens, s.tokens);
+      // costo per file: la sessione e i suoi subagenti possono usare modelli diversi
+      const cost = estimateCost(s.model ?? s.declaredModel, s.tokens);
+      if (cost !== null) g.cost = (g.cost ?? 0) + cost;
       if (p.kind !== 'agent') continue;
 
       const meta = metas.get(agentKey(p.sessionId, p.agentId));
       const agentType = meta?.agentType || UNKNOWN_AGENT_TYPE;
       const description = meta?.description ?? '';
       const updatedAt = Math.max(s.lastAt ?? 0, f.mtime);
+      const status = agentStatus(f, updatedAt, t);
       agents.push({
         id: p.agentId,
         sessionId: p.sessionId,
@@ -180,13 +185,15 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         agentType,
         description,
         area: classifyArea({ agentType, description, filePaths: s.filePaths }),
-        status: agentStatus(f, updatedAt, t),
+        status,
         model: s.model,
         tokens: { ...s.tokens },
         progress: s.progress ? { ...s.progress } : null,
         issues: mergeIssues(extractIssues(description), s.issues),
         startedAt: s.firstAt ?? f.mtime,
         updatedAt,
+        tool: status === 'done' ? null : s.tool,
+        cost: estimateCost(s.model ?? s.declaredModel, s.tokens),
       });
     }
 
@@ -214,6 +221,10 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
         cwd: s.cwd,
         branch: s.gitBranch,
         waiting: s.awaitingUser && !s.finished,
+        waitingKind: s.awaitingUser && !s.finished ? s.awaitingKind : null,
+        waitingSince: s.awaitingUser && !s.finished ? s.awaitingSince : null,
+        tool: s.finished ? null : s.tool,
+        cost: g.cost,
       });
     }
 

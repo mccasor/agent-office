@@ -10,6 +10,7 @@ import {
   uninstallHooks,
   uninstallHooksIn,
 } from './server/hooks/index.js';
+import { loadConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
@@ -78,7 +79,13 @@ function openBrowser(url: string): void {
 
 async function serve(opts: CliOptions): Promise<RunningOffice> {
   const dataDir = process.env.AGENT_OFFICE_DATA_DIR || undefined;
-  const transcript = createTranscriptWatcher({ cwd: opts.cwd, all: opts.all, claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined });
+  const config = await loadConfig(dataDir);
+  const transcript = createTranscriptWatcher({
+    cwd: opts.cwd,
+    all: opts.all,
+    claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined,
+    activeWindowMs: config.activeWindowMinutes * 60_000,
+  });
   const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
   // stato git: della cartella monitorata, oppure (con --all) della cartella di ciascuna sessione attiva
   const repos = createRepoPoller();

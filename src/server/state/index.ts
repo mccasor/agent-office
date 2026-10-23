@@ -7,6 +7,7 @@ import type {
   SessionState,
   Snapshot,
   TranscriptSnapshot,
+  WaitingKind,
 } from '../../shared/types.js';
 
 /** un agente è "entering" (cammina dalla porta) nei primi ms dopo startedAt */
@@ -79,12 +80,17 @@ function resolveSessions(
   const mainHook = new Map<string, HookEvent>();
   /** ultima notifica "bloccato su input" e ultima attività successiva, per sessione */
   const askedAt = new Map<string, number>();
+  /** motivo dell'ultima notifica di blocco, per sessione */
+  const askedKind = new Map<string, WaitingKind>();
   const activeAt = new Map<string, number>();
   const later = (m: Map<string, number>, id: string, t: number) => m.set(id, Math.max(m.get(id) ?? -Infinity, t));
   for (const e of events) {
     if (e.event === 'SessionEnd') endedAt.set(e.sessionId, Math.max(endedAt.get(e.sessionId) ?? -Infinity, e.timestamp));
     if (e.event === 'Notification') {
-      if (e.notification !== 'idle') later(askedAt, e.sessionId, e.timestamp);
+      if (e.notification !== 'idle' && e.timestamp >= (askedAt.get(e.sessionId) ?? -Infinity)) {
+        askedAt.set(e.sessionId, e.timestamp);
+        askedKind.set(e.sessionId, e.notification ?? 'input');
+      }
     } else later(activeAt, e.sessionId, e.timestamp);
     if (e.agentId !== null || !(e.event in MAIN_HOOK_STATUS)) continue;
     const prev = mainHook.get(e.sessionId);
@@ -102,10 +108,13 @@ function resolveSessions(
       const asked = askedAt.get(s.id) ?? -Infinity;
       const blocked = asked > (activeAt.get(s.id) ?? -Infinity) && asked >= s.updatedAt - ASK_GRACE_MS;
       const waiting = !ended && (s.waiting || blocked);
+      // motivo e inizio del blocco: la domanda nel transcript, altrimenti la notifica dell'hook
+      const waitingKind = !waiting ? null : s.waiting ? (s.waitingKind ?? 'input') : (askedKind.get(s.id) ?? 'input');
+      const waitingSince = !waiting ? null : s.waiting ? (s.waitingSince ?? null) : asked;
       const active = ended ? false : s.active;
       const r = active && s.cwd && repoAt ? repoAt(s.cwd) : null;
       const diff = r ? { linesAdded: r.linesAdded, linesRemoved: r.linesRemoved, filesChanged: r.filesChanged } : null;
-      return { ...s, status, issues, waiting, active, diff };
+      return { ...s, status, issues, waiting, waitingKind, waitingSince, active, diff };
     })
     .sort((a, b) => Number(b.active) - Number(a.active) || b.updatedAt - a.updatedAt);
 }
@@ -147,6 +156,20 @@ function keepFinished(agents: AgentState[], now: number): AgentState[] {
   return agents.filter((a) => a.status !== 'done' || keep.has(a.id));
 }
 
+/** quanti agenti terminati oggi restano nello snapshot al massimo */
+export const MAX_FINISHED = 50;
+
+/** Agenti terminati da oggi (ora locale) e già usciti dall'ufficio, dal più recente: la cronologia della giornata. */
+function finishedToday(all: AgentState[], present: AgentState[], now: number): AgentState[] {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const inOffice = new Set(present.map((a) => a.id));
+  return all
+    .filter((a) => a.status === 'done' && !inOffice.has(a.id) && a.updatedAt >= midnight.getTime())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_FINISHED);
+}
+
 /** Stato per l'icona: una sessione attiva bloccata sull'utente > qualcuno lavora > nessuna attività. */
 export function officeStatus(sessions: SessionState[], agents: AgentState[]): OfficeStatus {
   const active = sessions.filter((s) => s.active);
@@ -168,7 +191,8 @@ export function buildSnapshot(input: {
 }): Snapshot {
   const { transcript, hookEvents, repo, now } = input;
   const hooks = latestAgentHooks(hookEvents);
-  const agents = keepFinished(transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now)), now);
+  const resolved = transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now));
+  const agents = keepFinished(resolved, now);
   const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now);
-  return { status: officeStatus(sessions, agents), repo, sessions, agents, generatedAt: now };
+  return { status: officeStatus(sessions, agents), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }

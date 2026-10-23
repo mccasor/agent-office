@@ -1,19 +1,28 @@
 import { useState } from 'react';
-import type { AgentState, AgentStatus } from '../../shared/types';
-import { elapsed, formatDuration, percent, truncate } from './format';
+import type { AgentState, WaitingKind } from '../../shared/types';
+import { elapsed, formatCost, formatDuration, percent, truncate } from './format';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
+import { STATUS_LABEL, toolText, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
 
 export const NAME_MAX_CHARS = 24;
 
-const STATUS_LABEL: Record<AgentStatus, string> = {
-  entering: 'in arrivo',
-  working: 'al lavoro',
-  idle: 'inattivo',
-  done: 'terminato',
-};
+/** Blocco della sessione: motivo e da quando. */
+export interface Waiting {
+  kind: WaitingKind | null;
+  since: number | null;
+}
+
+/** Riga sotto il nome: motivo del blocco, oppure tool in uso e da quanto lavora (o quanto ha lavorato). */
+export function activityText(agent: AgentState, waiting: Waiting | null, now: number): string {
+  if (waiting) return waitingText(waiting.kind, waiting.since, now);
+  // Claudio Code a fine turno aspetta il prossimo prompt: non ha "terminato"
+  if (agent.agentType === 'main' && agent.status === 'done') return 'pronto';
+  const time = `${agent.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`;
+  return agent.tool && agent.status !== 'done' ? `${toolText(agent.tool)} · ${time}` : time;
+}
 
 interface AgentLabelContentProps {
   agent: AgentState;
@@ -22,7 +31,7 @@ interface AgentLabelContentProps {
   /** notifica l'hover sull'etichetta stessa */
   onHoverChange?: (hovered: boolean) => void;
   /** la sessione è bloccata in attesa dell'utente (solo per Claudio Code) */
-  waiting?: boolean;
+  waiting?: Waiting | null;
 }
 
 /**
@@ -30,7 +39,7 @@ interface AgentLabelContentProps {
  * Compatta di default (nome, da quanto lavora, barra solo con una todo list); dettaglio (area, token, stato)
  * con `expanded` o hover. In rosso quando la sessione aspetta un input dell'utente.
  */
-export function AgentLabelContent({ agent, expanded = false, onHoverChange, waiting = false }: AgentLabelContentProps) {
+export function AgentLabelContent({ agent, expanded = false, onHoverChange, waiting = null }: AgentLabelContentProps) {
   const now = useNow();
   const [hovered, setHovered] = useState(false);
   const hover = (h: boolean) => {
@@ -53,7 +62,7 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange, wait
         )}
       </div>
       <div className="hud-label__time" data-testid="agent-time">
-        {waiting ? 'aspetta un tuo input' : `${agent.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`}
+        {activityText(agent, waiting, now)}
       </div>
       {pct !== null && <ProgressBar value={pct} label={`Avanzamento ${agent.name}`} className="hud-bar--small" />}
       {open && (
@@ -64,6 +73,7 @@ export function AgentLabelContent({ agent, expanded = false, onHoverChange, wait
             </span>
             <span className="hud-label__status">{STATUS_LABEL[agent.status]}</span>
           </div>
+          <div className="hud-label__progress" data-testid="agent-cost">{`Costo ${formatCost(agent.cost)}`}</div>
           {progress && pct !== null && (
             <div className="hud-label__progress">{`${progress.completed}/${progress.total} · ${pct}%`}</div>
           )}

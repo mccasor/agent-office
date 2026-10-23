@@ -20,6 +20,7 @@ use tauri::menu::{
 };
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri_plugin_notification::NotificationExt;
 
 /// Porta dedicata all'app, diversa dal default della CLI (4317) per non scontrarsi con un'istanza da terminale.
 const PORT: u16 = 4318;
@@ -30,8 +31,10 @@ const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 /// voci al massimo in ciascun sottomenu delle istanze
 const MAX_ITEMS: usize = 20;
 
+mod notify;
 mod server;
 mod updates;
+use notify::{Prefs, SessionFacts};
 use server::{find_node, probe, Probe, Supervisor};
 use updates::{Upgrade, UpdateState};
 
@@ -43,6 +46,7 @@ struct Ui {
     update: Mutex<UpdateState>,
     /// esito di un'azione (es. installazione degli hook), mostrato nel menu per NOTICE_FOR
     notice: Mutex<Option<(String, Instant)>>,
+    prefs: Mutex<Prefs>,
     wake: Mutex<Sender<()>>,
 }
 
@@ -52,6 +56,7 @@ struct Extras {
     update: UpdateState,
     notice: Option<String>,
     server_error: Option<String>,
+    prefs: Prefs,
 }
 
 const NOTICE_FOR: Duration = Duration::from_secs(60);
@@ -124,11 +129,13 @@ struct Overview {
     sessions: Vec<Entry>,
     /// subagenti non terminati delle sessioni attive (agenti attivi)
     agents: Vec<Entry>,
+    /// stato delle sessioni attive per le notifiche
+    facts: Vec<SessionFacts>,
 }
 
 impl Overview {
     fn offline() -> Overview {
-        Overview { status: Status::Offline, sessions: vec![], agents: vec![] }
+        Overview { status: Status::Offline, sessions: vec![], agents: vec![], facts: vec![] }
     }
 }
 
@@ -252,7 +259,23 @@ fn overview_from(snapshot: &str) -> Overview {
         })
         .collect();
 
-    Overview { status: Status::from_str(&str_of(&v, "status")), sessions: session_entries, agents: agent_entries }
+    let facts = sessions
+        .iter()
+        .map(|s| {
+            let cwd = str_of(s, "cwd");
+            let project = cwd.rsplit('/').find(|p| !p.is_empty()).map(str::to_string).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
+            let branch = str_of(s, "branch");
+            let waiting = (s.get("waiting").and_then(Value::as_bool) == Some(true))
+                .then(|| s.get("waitingKind").and_then(Value::as_str).unwrap_or("input").to_string());
+            SessionFacts {
+                id: str_of(s, "id"),
+                place: if branch.is_empty() { project } else { format!("{project} · {branch}") },
+                status: str_of(s, "status"),
+                waiting,
+            }
+        })
+        .collect();
+    Overview { status: Status::from_str(&str_of(&v, "status")), sessions: session_entries, agents: agent_entries, facts }
 }
 
 /// Stato del menu dal server; None se lo snapshot non è cambiato dall'ETag indicato (aggiornato in place).
@@ -433,12 +456,29 @@ fn set_notice(app: &AppHandle, text: String) {
     let _ = ui.wake.lock().unwrap().send(());
 }
 
+fn toggle_pref(app: &AppHandle, change: impl FnOnce(&mut Prefs)) {
+    let ui = app.state::<Ui>();
+    let mut prefs = ui.prefs.lock().unwrap();
+    change(&mut prefs);
+    notify::save(*prefs);
+    let _ = ui.wake.lock().unwrap().send(());
+}
+
+/// Mostra le notifiche per il passaggio da uno snapshot al successivo.
+fn send_notifications(app: &AppHandle, prev: &[SessionFacts], next: &[SessionFacts]) {
+    let prefs = *app.state::<Ui>().prefs.lock().unwrap();
+    for (title, body) in notify::messages(prev, next, prefs) {
+        let _ = app.notification().builder().title(title).body(body).sound("default").show();
+    }
+}
+
 fn extras(app: &AppHandle) -> Extras {
     let notice = app.state::<Ui>().notice.lock().unwrap().clone();
     Extras {
         update: update_state(app),
         notice: notice.filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text),
         server_error: app.state::<Server>().0.lock().unwrap().error(),
+        prefs: *app.state::<Ui>().prefs.lock().unwrap(),
     }
 }
 
@@ -490,6 +530,9 @@ fn build_menu(app: &AppHandle, o: &Overview, extras: &Extras) -> tauri::Result<M
     let settings = SubmenuBuilder::new(app, "Impostazioni")
         .item(&CheckMenuItemBuilder::with_id("autostart", "Avvia al login").checked(autostart_enabled()).build(app)?)
         .separator()
+        .item(&CheckMenuItemBuilder::with_id("notify-waiting", "Notifica quando Claude aspetta").checked(extras.prefs.notify_waiting).build(app)?)
+        .item(&CheckMenuItemBuilder::with_id("notify-done", "Notifica quando Claude ha finito").checked(extras.prefs.notify_done).build(app)?)
+        .separator()
         .item(&MenuItemBuilder::with_id("hooks-install", "Installa gli hook di Claude Code").build(app)?)
         .item(&MenuItemBuilder::with_id("hooks-remove", "Rimuovi gli hook di Claude Code").build(app)?)
         .build()?;
@@ -533,6 +576,7 @@ fn build_menu(app: &AppHandle, o: &Overview, extras: &Extras) -> tauri::Result<M
 
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(Server(Mutex::new(Supervisor::default())))
         .setup(|app| {
             // solo menu bar: niente icona nel Dock
@@ -547,7 +591,12 @@ fn main() {
 
             let handle = app.handle().clone();
             let (wake, woken) = mpsc::channel::<()>();
-            app.manage(Ui { update: Mutex::new(UpdateState::Unknown), notice: Mutex::new(None), wake: Mutex::new(wake) });
+            app.manage(Ui {
+                update: Mutex::new(UpdateState::Unknown),
+                notice: Mutex::new(None),
+                prefs: Mutex::new(notify::load()),
+                wake: Mutex::new(wake),
+            });
 
             let initial = Overview::offline();
             TrayIconBuilder::with_id(TRAY_ID)
@@ -561,6 +610,8 @@ fn main() {
                     "hooks-install" => run_hooks(app, "install-hooks"),
                     "hooks-remove" => run_hooks(app, "uninstall-hooks"),
                     "updates" => on_updates_click(app),
+                    "notify-waiting" => toggle_pref(app, |p| p.notify_waiting = !p.notify_waiting),
+                    "notify-done" => toggle_pref(app, |p| p.notify_done = !p.notify_done),
                     "quit" => app.exit(0),
                     id if id.starts_with("session:") || id.starts_with("agent:") => show_office(app, "list"),
                     _ => {}
@@ -583,6 +634,8 @@ fn main() {
             thread::spawn(move || {
                 let mut last: Option<(Overview, bool, Extras)> = None;
                 let mut etag: Option<String> = None;
+                // stato delle sessioni al giro precedente: al primo snapshot nessuna notifica (non è un cambiamento)
+                let mut seen: Option<Vec<SessionFacts>> = None;
                 loop {
                     let status = match http_get("/api/status", None) {
                         Fetched::Body(body, _) => probe(Some(&body)),
@@ -596,6 +649,12 @@ fn main() {
                         let _ = woken.recv_timeout(POLL);
                         continue;
                     };
+                    if overview.status != Status::Offline {
+                        if let Some(prev) = &seen {
+                            send_notifications(&handle, prev, &overview.facts);
+                        }
+                        seen = Some(overview.facts.clone());
+                    }
                     let changed = last.as_ref().is_none_or(|(o, d, x)| *o != overview || *d != dark || *x != extra);
                     if changed {
                         if let Some(tray) = handle.tray_by_id(TRAY_ID) {

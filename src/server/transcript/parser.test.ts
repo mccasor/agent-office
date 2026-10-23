@@ -222,3 +222,33 @@ describe('task in background', () => {
     expect(acc.state.backgroundTasks).toBe(0);
   });
 });
+
+describe('tool in uso e domande aperte', () => {
+  const assistant = (id: string, content: unknown[], at = '2026-01-01T10:00:00.000Z') =>
+    JSON.stringify({ type: 'assistant', timestamp: at, message: { id, role: 'assistant', content, stop_reason: 'tool_use' } });
+  const result = (toolUseId: string) =>
+    JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: toolUseId, content: 'ok' }] } });
+
+  it('ultimo tool_use senza risultato, con solo il nome del file; mai comandi o input', () => {
+    const acc = createAccumulator();
+    acc.ingest(assistant('m1', [{ type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/Users/x/repo/src/parser.ts', old_string: 'segreto' } }]));
+    expect(acc.state.tool).toEqual({ name: 'Edit', target: 'parser.ts', since: Date.parse('2026-01-01T10:00:00.000Z') });
+    acc.ingest(result('t1'));
+    expect(acc.state.tool).toBeNull();
+    acc.ingest(assistant('m2', [{ type: 'tool_use', id: 't2', name: 'Bash', input: { command: 'echo segreto' } }]));
+    expect(acc.state.tool).toMatchObject({ name: 'Bash', target: null });
+    expect(JSON.stringify(acc.state.tool)).not.toMatch(/segreto/);
+    // nuovo messaggio senza il risultato del precedente (es. interrotto): il vecchio tool non è più in uso
+    acc.ingest(assistant('m3', [{ type: 'text', text: 'fatto' }]));
+    expect(acc.state.tool).toBeNull();
+  });
+
+  it('domanda e piano: tipo e inizio dell\'ultima aperta', () => {
+    const acc = createAccumulator();
+    acc.ingest(assistant('m1', [{ type: 'tool_use', id: 'q1', name: 'ExitPlanMode', input: {} }], '2026-01-01T10:00:05.000Z'));
+    expect(acc.state).toMatchObject({ awaitingUser: true, awaitingKind: 'plan', awaitingSince: Date.parse('2026-01-01T10:00:05.000Z') });
+    expect(acc.state.tool).toBeNull();
+    acc.ingest(result('q1'));
+    expect(acc.state).toMatchObject({ awaitingUser: false, awaitingKind: null, awaitingSince: null });
+  });
+});
