@@ -443,9 +443,8 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
   background: var(--hud-track);
 }
 .card-window__note + .hud-panel { opacity: 0.75; }
-/* fatto uscire (#101): la frase e "Fallo rientrare" */
+/* segnato come terminato (#104): la frase e "Annulla" */
 .card-window__note--out { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
-.card-window__instance > .hud-dismissed { margin: 6px 8px 0; }
 .card-window__offline { color: var(--hud-warn); font-weight: 600; }
 
 /* ---- cruscotto della giornata (#97) ---- */
@@ -514,8 +513,8 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
   vertical-align: -2px;
 }
 .hud-alert .hud-alert__mark { margin: 1px 0 0; }
-.hud-alert .hud-alert__dismiss { grid-column: 2; }
-.hud-alert__dismiss {
+/* pulsanti piccoli: "Controlla stato", "Segna come terminato", "Annulla" */
+.hud-action {
   justify-self: start;
   font: inherit;
   font-size: 12px;
@@ -528,25 +527,37 @@ html.card-window-root body { overflow-y: auto; background: #fff; }
   cursor: pointer;
   white-space: nowrap;
 }
-.hud-alert__dismiss:hover { border-color: var(--hud-warn); }
-.hud-alert__dismiss:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
-.list-agent > .hud-alert__dismiss { padding: 2px 6px; font-size: 11px; }
+.hud-action:hover { border-color: var(--hud-warn); }
+.hud-action:disabled { cursor: progress; opacity: 0.7; }
+.hud-action:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+.list-agent > .hud-action, .list-agent__end > .hud-action { padding: 2px 6px; font-size: 11px; justify-self: end; }
 .list-agent--alert { background: color-mix(in srgb, var(--hud-warn) 9%, transparent); }
-/* terminato ancora in area relax (#101): esito e "Fallo uscire" nell'ultima colonna */
+/* segnato come terminato da te (#104), tra i terminati di oggi: etichetta e "Annulla" nell'ultima colonna */
 .list-agent__end { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
-.list-agent__end > .hud-alert__dismiss { padding: 2px 6px; font-size: 11px; }
-/* subagenti fatti uscire a mano (#101): quanti e "Mostra", come un link */
-.hud-dismissed { margin: 6px 0 0; font-size: 12px; }
-.hud-dismissed__show {
-  font: inherit;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--hud-accent);
-  text-decoration: underline;
-  cursor: pointer;
+
+/* "Controlla stato" (#104): pulsante nella scheda e verdetto in un riquadro, colorato per esito */
+.hud-check { margin: 0 0 8px; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.hud-verdict {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  border-left: 3px solid var(--hud-muted);
+  background: var(--hud-track);
 }
-.hud-dismissed__show:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; }
+.hud-verdict p { margin: 0; }
+.hud-verdict__title { font-weight: 600; }
+.hud-verdict__at { font-size: 11px; }
+.hud-verdict .hud-action { margin-top: 3px; }
+.hud-verdict--closed, .hud-verdict--done { border-left-color: var(--hud-ok); }
+.hud-verdict--running { border-left-color: var(--hud-accent); }
+.hud-verdict--silent { border-left-color: var(--hud-warn); }
+.hud-verdict--error { border-left-color: var(--hud-danger); }
+/* nella lista il verdetto va a capo, a tutta riga sotto l'agente */
+.list-agent > .hud-verdict { grid-column: 1 / -1; font-size: 12px; }
 
 /* esito dei terminati */
 .hud-outcome { font-size: 12px; font-weight: 600; white-space: nowrap; justify-self: end; }

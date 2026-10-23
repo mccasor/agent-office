@@ -109,6 +109,34 @@ export interface ToolRepeat {
  */
 export type AgentAlert = { kind: 'stale'; since: number } | { kind: 'loop'; tool: string; count: number };
 
+/**
+ * Verdetto di "Controlla stato" su un subagente (#104), da GET /api/agents/<id>/status: solo verdetto, nomi di tool,
+ * orari e conteggi, mai prompt, comandi, output o percorsi.
+ * - `closed`: il processo di Claude Code della sessione è terminato, l'agente risulta terminato (interrotto);
+ * - `done`: l'agente ha finito normalmente (`outcome`);
+ * - `running`: sessione viva e un tool in corso, un'attesa dell'utente o comandi in background aperti;
+ * - `silent`: sessione viva, nessun tool né comando in corso: probabilmente ha finito senza notifica;
+ * - `unknown`: nessun file di sessione, il processo non si può controllare (con i dettagli del transcript).
+ */
+export type AgentVerdict =
+  | { kind: 'closed'; checkedAt: number }
+  | { kind: 'done'; outcome: AgentOutcome; checkedAt: number }
+  | ({ kind: 'running' | 'silent' | 'unknown'; checkedAt: number } & VerdictDetails);
+
+/** Cosa sta facendo l'agente secondo il suo transcript, per il verdetto. */
+export interface VerdictDetails {
+  /** tool in corso e da quando (epoch ms); null se nessuno */
+  tool: { name: string; since: number } | null;
+  /** in attesa dell'utente: motivo; null se non aspetta */
+  waiting: WaitingKind | null;
+  /** comandi o agenti in background ancora aperti */
+  background: number;
+  /** ultima scrittura sull'output dei comandi in background (epoch ms); null se sconosciuta */
+  lastOutputAt: number | null;
+  /** stato di Claude Code dal file di sessione: busy al lavoro, idle in attesa di un prompt; null se sconosciuto */
+  claude: 'busy' | 'idle' | null;
+}
+
 /** Compattazione del contesto (riga compact_boundary del transcript): solo contatori e orario. */
 export interface Compaction {
   /** epoch ms */
@@ -176,7 +204,15 @@ export interface SessionState {
   project: string | null;
   /** errori dei tool di Claude stesso (#97); null o assente se nessuno */
   toolErrors?: ToolErrors | null;
+  /** processo di Claude Code della sessione (#104), da ~/.claude/sessions; assente nei client vecchi */
+  process?: SessionProcess;
 }
+
+/**
+ * Processo di Claude Code di una sessione (#104): `alive` aperto, `gone` terminato (la sessione e i suoi subagenti
+ * sono chiusi), `unknown` senza un file di sessione (versioni vecchie di Claude Code, o sessione mai vista aperta).
+ */
+export type SessionProcess = 'alive' | 'gone' | 'unknown';
 
 /** Sessione letta dal transcript, prima dei campi che il server deriva nello Snapshot. */
 export type TranscriptSession = Omit<SessionState, 'dot' | 'project'>;

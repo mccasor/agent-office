@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { AgentAlert, AgentOutcome, AgentState, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import type { AgentAlert, AgentOutcome, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
 import { t, tn } from '../../shared/i18n';
 import { useShow } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
@@ -69,37 +69,16 @@ export function SessionAlert({ session, who = null }: {
 }
 
 /**
- * Avviso su un subagente fermo o in loop (#97): "!" giallo e la frase; per chi è fermo, con `onDismiss`, il
- * pulsante "Fallo uscire" (lo nasconde finché non torna attivo).
+ * Avviso su un subagente fermo o in loop (#97): "!" giallo e la frase; per chi è fermo, la frase invita a usare
+ * "Controlla stato" (#104), che nella scheda sta subito sotto.
  */
-export function AgentAlertNote({ alert, onDismiss }: { alert: AgentAlert; onDismiss?: () => void }) {
+export function AgentAlertNote({ alert }: { alert: AgentAlert }) {
   const now = useNow();
   return (
     <div className="hud-alert" role="status">
       <AlertMark />
       <p>{alertText(alert, now)}</p>
-      {alert.kind === 'stale' && onDismiss && (
-        <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={onDismiss}>
-          {t('alert.dismiss')}
-        </button>
-      )}
     </div>
-  );
-}
-
-/**
- * Subagenti dell'istanza fatti uscire a mano (#101): quanti, e "Mostra" per farli rientrare subito invece di
- * aspettare che tornino attivi. Niente se non ce ne sono.
- */
-export function DismissedNote({ agents, onRestore }: { agents: readonly AgentState[]; onRestore: (agentIds: string[]) => void }) {
-  if (agents.length === 0) return null;
-  return (
-    <p className="hud-dismissed hud-muted">
-      {`${tn('dismissed.count', agents.length)} · `}
-      <button type="button" className="hud-dismissed__show" title={t('dismissed.showHint')} onClick={() => onRestore(agents.map((a) => a.id))}>
-        {t('dismissed.show')}
-      </button>
-    </p>
   );
 }
 

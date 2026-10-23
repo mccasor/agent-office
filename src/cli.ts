@@ -16,6 +16,8 @@ import {
 import { displaySettings, loadConfig, systemLanguages, watchConfig, type ServerConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
+import { agentVerdict, lastWrite } from './server/state/verdict.js';
+import { createSessionProcesses } from './server/sessions/index.js';
 import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
@@ -47,6 +49,8 @@ const DEFAULT_PORT = 4317;
 const GIT_POLL_MS = 3000;
 /** ricalcolo periodico: gli stati entering/idle/done dipendono dal tempo */
 const TICK_MS = 5000;
+/** controllo dei processi di Claude Code (#104): stat dei file di sessione e kill(pid, 0), al più ogni 5 s */
+const PROCESS_POLL_MS = 5000;
 /** le modifiche arrivano a raffiche (transcript, hook, git): dopo una pausa si pubblica PUBLISH_DELAY_MS dopo la prima */
 const PUBLISH_DELAY_MS = 150;
 /** sotto carico al più una pubblicazione (SSE, /api/snapshot) ogni PUBLISH_INTERVAL_MS, l'ultima sempre */
@@ -92,10 +96,11 @@ function openBrowser(url: string): void {
 }
 
 async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | undefined): Promise<RunningOffice> {
+  const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
   const transcript = createTranscriptWatcher({
     cwd: opts.cwd,
     all: opts.all,
-    claudeHome: process.env.CLAUDE_CONFIG_DIR || undefined,
+    claudeHome,
     activeWindowMs: config.activeWindowMinutes * 60_000,
   });
   const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
@@ -113,7 +118,9 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   });
   // cruscotto della giornata (#97): conteggi dallo storico, costo ripreso da today.json dopo un riavvio (#102)
   const today = createDayTracker(Date.now(), { file: join(dataDir ?? join(homedir(), '.agent-office'), 'today.json') });
-  await Promise.all([transcript.start(), hooks.start(), history.start()]);
+  // processi di Claude Code delle sessioni (#104): chi ha chiuso Claude Code non lascia agenti fantasma
+  const processes = createSessionProcesses({ dir: join(claudeHome, 'sessions'), minIntervalMs: PROCESS_POLL_MS });
+  await Promise.all([transcript.start(), hooks.start(), history.start(), processes.refresh(true)]);
   await today.start();
   const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
   const snapshot = (): Snapshot => {
@@ -123,6 +130,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
       hookEvents: hooks.current(),
       repoAt: (cwd) => repos.get(cwd),
       alerts,
+      processes: processes.current(),
       now,
     });
     // un confronto con lo stato già registrato a ogni pubblicazione; la lista dei terminati chiusi è in cache
@@ -132,9 +140,23 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
     return closedFinished ? { ...withToday, closedFinished } : withToday;
   };
 
+  /**
+   * "Controlla stato" (#104): rifà subito il controllo dei processi, pubblica se qualcosa è cambiato (un agente chiuso
+   * esce dall'ufficio) e dà il verdetto dallo snapshot aggiornato. Dei comandi in background solo l'mtime dell'output.
+   */
+  const checkAgent = async (agentId: string) => {
+    if (await processes.refresh(true)) publish();
+    const next = snapshot();
+    const agent = next.agents.find((a) => a.id === agentId) ?? next.finished?.find((a) => a.id === agentId);
+    const bg = agent ? transcript.backgroundOf(agent.sessionId, agent.id) : null;
+    const background = bg && { count: bg.count, lastOutputAt: await lastWrite(bg.outputs) };
+    return agentVerdict({ agent, process: agent && processes.get(agent.sessionId), background, now: Date.now() });
+  };
+
   const first = snapshot();
   const server = await startServer({
     port: opts.port, webDir: WEB_DIR, initial: first, settings: displaySettings(config), history: (day) => history.report(day),
+    agentStatus: checkAgent,
   });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
@@ -164,6 +186,9 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   const publish = () => throttle.schedule();
   const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish)];
   const tick = setInterval(publish, TICK_MS);
+  const processPoll = setInterval(() => {
+    void processes.refresh().then((changed) => changed && publish(), () => {});
+  }, PROCESS_POLL_MS);
   const gitPoll = setInterval(() => {
     void repos.poll(Date.now()).then((changed) => changed && publish());
   }, GIT_POLL_MS);
@@ -184,6 +209,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
     url: server.url,
     async close() {
       clearInterval(tick);
+      clearInterval(processPoll);
       clearInterval(gitPoll);
       throttle.cancel();
       unwatchConfig();

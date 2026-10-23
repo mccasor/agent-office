@@ -498,3 +498,50 @@ describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
     expect(build([], [], [done, agent({ id: 'w', sessionId: 's1' })]).agents.map((a) => a.id)).toEqual(['w']);
   });
 });
+
+describe('buildSnapshot: processo di Claude Code terminato (#104)', () => {
+  const gone = (goneAt: number | null = NOW - 1_000) => new Map([['s1', { process: 'gone' as const, status: null, goneAt }]]);
+  const alive = new Map([['s1', { process: 'alive' as const, status: 'busy' as const, goneAt: null }]]);
+  const stale = () =>
+    agent({ status: 'idle', startedAt: NOW - 3 * 3600_000, updatedAt: NOW - 2 * 3600_000, tool: { name: 'Bash', target: null, since: NOW - 2 * 3600_000 } });
+
+  it('gli agenti non terminati risultano terminati (interrotto), senza tool né avviso "fermo"; la sessione è chiusa', () => {
+    const snap = buildSnapshot({
+      transcript: { sessions: [session()], agents: [stale(), agent({ id: 'a2', status: 'done', outcome: 'ok' })] },
+      hookEvents: [],
+      processes: gone(),
+      now: NOW,
+    });
+    const a1 = snap.agents.find((a) => a.id === 'a1')!;
+    expect(a1).toMatchObject({ status: 'done', outcome: 'interrupted', tool: null, waiting: false });
+    // niente avviso, quindi niente notifica "fermo" (#100)
+    expect(a1.alert).toBeUndefined();
+    // chi aveva già finito resta com'era
+    expect(snap.agents.find((a) => a.id === 'a2')?.outcome).toBe('ok');
+    expect(snap.sessions[0]).toMatchObject({ active: false, status: 'done', waiting: false, process: 'gone', dot: 'idle' });
+    expect(snap.status).toBe('idle');
+  });
+
+  it('escono dall\'ufficio come gli altri terminati: restano DONE_LINGER_MS da quando ci si è accorti della fine', () => {
+    const build104 = (now: number, goneAt: number | null) =>
+      // fermo da poco: i terminati di oggi contano da mezzanotte, e NOW è nel 1970
+      buildSnapshot({ transcript: { sessions: [session()], agents: [agent({ status: 'idle', updatedAt: NOW - 120_000 })] }, hookEvents: [], processes: gone(goneAt), now });
+    expect(build104(NOW, NOW - 1_000).agents.map((a) => a.id)).toEqual(['a1']);
+    const later = build104(NOW + DONE_LINGER_MS, NOW - 1_000);
+    expect(later.agents).toEqual([]);
+    expect(later.finished?.map((a) => a.id)).toEqual(['a1']);
+    // già terminato all'avvio del server: niente passeggiata, subito tra i terminati
+    expect(build104(NOW, null).agents).toEqual([]);
+  });
+
+  it('processo vivo o sconosciuto: nulla cambia; il campo process c\'è solo se il server legge i processi', () => {
+    const base = { transcript: { sessions: [session()], agents: [stale()] }, hookEvents: [], now: NOW };
+    const withAlive = buildSnapshot({ ...base, processes: alive });
+    expect(withAlive.agents[0]).toMatchObject({ status: 'idle', alert: { kind: 'stale' } });
+    expect(withAlive.sessions[0]!.process).toBe('alive');
+    const unknown = buildSnapshot({ ...base, processes: new Map() });
+    expect(unknown.agents[0]!.status).toBe('idle');
+    expect(unknown.sessions[0]!.process).toBe('unknown');
+    expect('process' in buildSnapshot(base).sessions[0]!).toBe(false);
+  });
+});

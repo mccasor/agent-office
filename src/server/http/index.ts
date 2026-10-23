@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
 import { DEFAULT_DISPLAY, type DisplaySettings } from '../../shared/settings.js';
-import type { HistoryReport, Snapshot } from '../../shared/types.js';
+import type { AgentVerdict, HistoryReport, Snapshot } from '../../shared/types.js';
 
 export interface OfficeServer {
   url: string;
@@ -19,6 +19,8 @@ const HOST = '127.0.0.1';
 const HEARTBEAT_MS = 15_000;
 /** un client SSE che non legge (buffer oltre questa soglia) viene chiuso invece di accumulare snapshot */
 const MAX_SSE_BUFFER = 4 * 1024 * 1024;
+/** GET /api/agents/<id>/status: id di un subagente (solo lettere, cifre, - e _) */
+const AGENT_STATUS_RE = /^\/api\/agents\/([\w-]{1,128})\/status$/;
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -59,7 +61,8 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
 /**
  * Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/config (preferenze di visualizzazione),
  * GET /api/events (SSE: eventi `snapshot` e `config`), GET /api/history (storico della giornata, se c'è `history`),
- * statici da webDir. Nessuna scrittura: config.json lo scrive l'app della menu bar.
+ * GET /api/agents/<id>/status ("Controlla stato" di un subagente, se c'è `agentStatus`), statici da webDir.
+ * Nessuna scrittura: config.json lo scrive l'app della menu bar.
  */
 export async function startServer(opts: {
   port: number;
@@ -68,6 +71,8 @@ export async function startServer(opts: {
   settings?: DisplaySettings;
   /** riepilogo di un giorno ("YYYY-MM-DD", null = oggi); null se il giorno non è valido */
   history?: (day: string | null) => Promise<HistoryReport | null>;
+  /** verdetto aggiornato su un subagente (#104), rifacendo subito i controlli; null se l'agente non c'è */
+  agentStatus?: (agentId: string) => Promise<AgentVerdict | null>;
 }): Promise<OfficeServer> {
   let current = opts.initial;
   // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
@@ -222,6 +227,17 @@ export async function startServer(opts: {
         return;
       }
       send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return;
+    }
+
+    const agentStatus = AGENT_STATUS_RE.exec(pathname);
+    if (agentStatus && opts.agentStatus) {
+      const verdict = await opts.agentStatus(agentStatus[1]!);
+      if (!verdict) {
+        send(res, 404, 'Not Found');
+        return;
+      }
+      send(res, 200, JSON.stringify(verdict), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       return;
     }
 

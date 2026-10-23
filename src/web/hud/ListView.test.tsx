@@ -228,9 +228,12 @@ describe('cruscotto della giornata (#97)', () => {
     expect(screen.getByText('· 2 errori').getAttribute('title')).toMatch(/^2 errori dei tool · ultimo Bash alle \d\d:\d\d$/);
   });
 
-  it('agente fermo: "!" e "Fallo uscire"; in loop: quante ripetizioni', () => {
+  it('agente fermo: "!" e "Controlla stato" con il verdetto a tutta riga; in loop: quante ripetizioni (#104)', async () => {
     const t = Date.now();
-    const onDismiss = vi.fn();
+    const onMarkDone = vi.fn();
+    const verdict = { kind: 'silent', checkedAt: t, tool: null, waiting: null, background: 0, lastOutputAt: null, claude: 'idle' };
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => verdict }));
+    vi.stubGlobal('fetch', fetchMock);
     const { container } = render(
       <ListView
         sessions={[session()]}
@@ -240,39 +243,48 @@ describe('cruscotto della giornata (#97)', () => {
         ]}
         hidden={[]}
         onToggle={() => {}}
-        onDismiss={onDismiss}
+        onMarkDone={onMarkDone}
       />,
     );
     expect(container.querySelectorAll('.list-agent--alert')).toHaveLength(2);
     expect([...container.querySelectorAll('.hud-alert__mark')].map((m) => m.getAttribute('title'))).toEqual(['Read ripetuto 7 volte', 'fermo da 1 h 30 min']);
-    fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
-    expect(onDismiss).toHaveBeenCalledWith('fermo');
     expect(screen.getByText(/^Read ripetuto 7 volte · al lavoro/)).toBeTruthy();
+    // solo chi è fermo ha il pulsante, e niente più "Fallo uscire"
+    expect(screen.getAllByRole('button', { name: 'Controlla stato' })).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Controlla stato' }));
+    expect(fetchMock).toHaveBeenCalledWith('/api/agents/fermo/status', { cache: 'no-store' });
+    const note = await screen.findByRole('status');
+    expect(note.closest('li')!.className).toContain('list-agent--alert');
+    expect(note.textContent).toMatch(/^Probabilmente finito senza notifica/);
+    expect(note.textContent).toContain('Claude è fermo in attesa di un prompt.');
+    fireEvent.click(screen.getByRole('button', { name: 'Segna come terminato' }));
+    expect(onMarkDone).toHaveBeenCalledWith('fermo');
+    vi.unstubAllGlobals();
   });
 
-  it('terminato ancora in area relax: "Fallo uscire" accanto all\'esito; senza onDismiss niente pulsante (#101)', () => {
-    const onDismiss = vi.fn();
+  it('terminato ancora in area relax: solo l\'esito, niente pulsanti (#104)', () => {
     const done = agent({ id: 'finito', status: 'done', outcome: 'ok', progress: null });
-    const { rerender } = render(<ListView sessions={[session()]} agents={[agent(), done]} hidden={[]} onToggle={() => {}} onDismiss={onDismiss} />);
+    render(<ListView sessions={[session()]} agents={[agent(), done]} hidden={[]} onToggle={() => {}} onMarkDone={() => {}} />);
     const row = screen.getByText('ok').closest('li')!;
     expect(row.className).toContain('list-agent--done');
-    fireEvent.click(row.querySelector('button')!);
-    expect(onDismiss).toHaveBeenCalledWith('finito');
-    expect(row.querySelector('button')!.getAttribute('title')).toMatch(/area relax/);
-    rerender(<ListView sessions={[session()]} agents={[agent(), done]} hidden={[]} onToggle={() => {}} />);
-    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+    expect(row.querySelector('button')).toBeNull();
   });
 
-  it('"N fatti uscire · Mostra" nella scheda dell\'istanza li fa rientrare (#101)', () => {
-    const onRestore = vi.fn();
-    const out = [agent({ id: 'x1' }), agent({ id: 'x2' }), agent({ id: 'y1', sessionId: 's2' })];
+  it('segnati da te come terminati: tra i terminati di oggi della loro istanza, con "Annulla" (#104)', () => {
+    const onUnmark = vi.fn();
+    const marked = [agent({ id: 'x1', nickname: 'Ugo Uno' }), agent({ id: 'y1', sessionId: 's2', nickname: 'Dino Due' })];
     render(
-      <ListView sessions={[session(), session({ id: 's2', project: 'altro' })]} agents={[agent()]} dismissed={out} hidden={[]} onToggle={() => {}} onRestore={onRestore} />,
+      <ListView sessions={[session(), session({ id: 's2', project: 'altro' })]} agents={[agent()]} marked={marked} hidden={[]} onToggle={() => {}} onUnmark={onUnmark} />,
     );
     const first = screen.getByRole('region', { name: 'agent-office' });
-    expect(first.querySelector('.hud-dismissed')!.textContent).toBe('2 fatti uscire · Mostra');
-    fireEvent.click(screen.getAllByRole('button', { name: 'Mostra' })[0]!);
-    expect(onRestore).toHaveBeenCalledWith(['x1', 'x2']);
-    expect(screen.getByRole('region', { name: 'altro' }).querySelector('.hud-dismissed')!.textContent).toBe('1 fatto uscire · Mostra');
+    expect(first.querySelector('.list-finished summary')!.textContent).toBe('Terminati oggi (1)');
+    const row = first.querySelector('.list-agent--marked')!;
+    expect(row.textContent).toContain('Ugo Uno');
+    expect(row.textContent).toContain('segnato da te');
+    fireEvent.click(row.querySelector('button')!);
+    expect(onUnmark).toHaveBeenCalledWith(['x1']);
+    expect(screen.getByRole('region', { name: 'altro' }).querySelector('.list-agent--marked')!.textContent).toContain('Dino Due');
+    expect(screen.queryByText(/fatti? uscire/)).toBeNull();
   });
 });

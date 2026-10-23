@@ -124,46 +124,49 @@ describe('CardWindow', () => {
     expect(screen.getByRole('button', { name: /Marta Commit/ })).toBeTruthy();
   });
 
-  describe('fatti uscire (#101)', () => {
+  describe('"Controlla stato" e segnati come terminati (#104)', () => {
     const stale = () => agent({ status: 'idle', updatedAt: 1_000, alert: { kind: 'stale', since: 1_000 } });
+    const silent = { kind: 'silent', checkedAt: 5_000, tool: null, waiting: null, background: 0, lastOutputAt: null, claude: null };
     beforeEach(() => {
-      useOfficeStore.setState({ dismissed: {} });
+      useOfficeStore.setState({ markedDone: {} });
       localStorage.clear();
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200, json: async () => silent })));
     });
+    afterEach(() => vi.unstubAllGlobals());
 
-    it('"Fallo uscire" dalla scheda staccata: lo salva per le altre finestre, poi "Fallo rientrare"', () => {
+    it('dalla scheda staccata: verdetto, "Segna come terminato" salvato per le altre finestre, poi "Annulla"', async () => {
       render(<CardWindow kind="agent" id="a1" />);
       push(snap({ agents: [stale()] }));
-      fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
-      expect(Object.keys(JSON.parse(localStorage.getItem('agent-office.dismissed')!))).toEqual(['a1']);
-      expect(screen.getAllByRole('status')[0]!.textContent).toMatch(/^Fatto uscire dall'ufficio/);
-      expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
-      fireEvent.click(screen.getByRole('button', { name: 'Fallo rientrare' }));
-      expect(JSON.parse(localStorage.getItem('agent-office.dismissed')!)).toEqual({});
-      expect(screen.getByRole('button', { name: 'Fallo uscire' })).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Controlla stato' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Segna come terminato' }));
+      expect(Object.keys(JSON.parse(localStorage.getItem('agent-office.markedDone')!))).toEqual(['a1']);
+      expect(screen.getAllByRole('status')[0]!.textContent).toMatch(/^Segnato come terminato da te/);
+      expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Controlla stato' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Annulla' }));
+      expect(JSON.parse(localStorage.getItem('agent-office.markedDone')!)).toEqual({});
+      expect(screen.getByRole('button', { name: 'Controlla stato' })).toBeTruthy();
     });
 
-    it('fatto uscire in un\'altra finestra: l\'evento storage aggiorna la scheda; tornato attivo, rientra da solo', () => {
+    it('segnato in un\'altra finestra: l\'evento storage aggiorna la scheda; tornato attivo, rientra da solo', () => {
       render(<CardWindow kind="agent" id="a1" />);
       push(snap({ agents: [stale()] }));
       act(() => {
-        localStorage.setItem('agent-office.dismissed', JSON.stringify({ a1: 2_000 }));
-        window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.dismissed' }));
+        localStorage.setItem('agent-office.markedDone', JSON.stringify({ a1: 2_000 }));
+        window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.markedDone' }));
       });
-      expect(screen.getByRole('button', { name: 'Fallo rientrare' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Annulla' })).toBeTruthy();
       push(snap({ agents: [agent({ updatedAt: 3_000 })] }));
-      expect(screen.queryByRole('button', { name: 'Fallo rientrare' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Annulla' })).toBeNull();
     });
 
-    it('scheda di un\'istanza: senza i fatti uscire, con "Mostra" per farli rientrare', () => {
-      useOfficeStore.setState({ dismissed: { a2: 5_000 } });
+    it('scheda di un\'istanza: senza i segnati come terminati, e niente "N fatti uscire"', () => {
+      useOfficeStore.setState({ markedDone: { a2: 5_000 } });
       render(<CardWindow kind="session" id="s1" />);
       push(snap({ agents: [agent(), agent({ id: 'a2', nickname: 'Gino Fermo', updatedAt: 1_000 })] }));
       expect(screen.queryByText('Gino Fermo')).toBeNull();
-      expect(document.querySelector('.hud-dismissed')!.textContent).toBe('1 fatto uscire · Mostra');
-      fireEvent.click(screen.getByRole('button', { name: 'Mostra' }));
-      expect(screen.getByText('Gino Fermo')).toBeTruthy();
+      expect(screen.getByText('Marta Commit')).toBeTruthy();
       expect(document.querySelector('.hud-dismissed')).toBeNull();
     });
   });
