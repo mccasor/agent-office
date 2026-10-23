@@ -53,20 +53,11 @@ pub enum UpdateState {
     UpgradeFailed,
 }
 
-/// Badge accanto alla voce: blu con freccia, rosso con "!" oltre OUTDATED_AFTER versioni.
+/// Segnale accanto alla voce (nel pannello): blu con freccia, rosso con "!" da OUTDATED_AFTER versioni indietro.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Badge {
     Available,
     Outdated,
-}
-
-impl Badge {
-    pub fn png(self) -> &'static [u8] {
-        match self {
-            Badge::Available => include_bytes!("../icons/tray/update-available.png"),
-            Badge::Outdated => include_bytes!("../icons/tray/update-outdated.png"),
-        }
-    }
 }
 
 impl UpdateState {

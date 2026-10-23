@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AgentState, AgentStatus, OfficeStatus, SessionState } from '../../shared/types';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
@@ -105,16 +105,24 @@ export function ViewToggle({ view, onChange }: { view: 'office' | 'list'; onChan
  * Vista lista: una scheda per sessione (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nella scena 3D.
  */
-export function ListView({ sessions, agents, finished = [], hidden, onToggle }: {
+export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** terminati oggi e già usciti dall'ufficio */
   finished?: AgentState[];
   hidden: readonly string[];
   onToggle: (sessionId: string) => void;
+  /** sessione da evidenziare e portare in vista */
+  focus?: string | null;
 }) {
   const now = useNow();
   const [filter, setFilter] = useState(loadFilter);
+  // sessione aperta dal pannello della menu bar: portata in vista una volta, quando cambia
+  useEffect(() => {
+    if (!focus) return;
+    const el = [...document.querySelectorAll<HTMLElement>('[data-session]')].find((e) => e.dataset.session === focus);
+    el?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [focus]);
   const update = (next: Partial<ListFilter>) => {
     const value = { ...filter, ...next };
     setFilter(value);
@@ -153,7 +161,12 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle }: 
       {active.length > 0 && shown.length === 0 && <p className="list-view__empty">Nessuna sessione corrisponde al filtro.</p>}
       {shown.map(({ s, own, dot }) => {
         return (
-          <section key={s.id} className="list-session" aria-label={projectName(s)}>
+          <section
+            key={s.id}
+            className={`list-session${s.id === focus ? ' list-session--focus' : ''}`}
+            aria-label={projectName(s)}
+            data-session={s.id}
+          >
             <header className="list-session__head">
               <StatusDot status={dot} />
               <div className="list-session__name">

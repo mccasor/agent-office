@@ -40,6 +40,7 @@ export function App() {
   const setViewMode = useOfficeStore((s) => s.setView);
   const hidden = useOfficeStore((s) => s.hiddenSessions);
   const toggleSession = useOfficeStore((s) => s.toggleSession);
+  const focusSession = useOfficeStore((s) => s.focusSession);
   // l'ufficio mostra solo le sessioni scelte nella vista lista
   const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden), [fullSnapshot, hidden]);
   // posti ricalcolati solo quando arriva un nuovo snapshot, partendo dai precedenti (posti stabili)
@@ -124,6 +125,7 @@ export function App() {
           finished={fullSnapshot?.finished ?? []}
           hidden={hidden}
           onToggle={toggleSession}
+          focus={focusSession}
         />
       )}
       <HudOverlay side="left">{viewMode === 'office' && <SessionPanel session={shown} status={shownStatus} />}</HudOverlay>
