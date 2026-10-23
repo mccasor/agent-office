@@ -206,7 +206,7 @@
         <button class="row" data-action="notify-done">${icon('check')}<span class="row__label">Notifica a fine lavoro</span>${sw(state.prefs.notifyDone)}</button>
         <div class="row">${icon('link')}<span class="row__label">Hook di Claude Code</span>
           <button class="mini" data-action="hooks-install">Installa</button><button class="mini" data-action="hooks-remove">Rimuovi</button></div>
-        ${showCheck ? `<button class="row" data-action="update" ${u.kind === 'checking' ? 'disabled' : ''}>${icon('refresh')}<span class="row__label">${esc(u.kind === 'unknown' ? 'Cerca aggiornamenti' : u.label)}</span></button>` : ''}
+        ${showCheck ? `<button class="row" data-action="update" ${u.kind === 'checking' ? 'disabled' : ''}>${icon('refresh')}<span class="row__label">${u.kind === 'checking' || u.kind === 'failed' ? esc(u.label) : 'Cerca aggiornamenti'}</span></button>` : ''}
         ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}`;
 
       // istanze e agenti
