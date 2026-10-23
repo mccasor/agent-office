@@ -12,6 +12,15 @@ describe('eventsFilePath', () => {
     );
   });
 
+  it('rispetta AGENT_OFFICE_DATA_DIR come il server', () => {
+    vi.stubEnv('AGENT_OFFICE_DATA_DIR', '/dati');
+    try {
+      expect(eventsFilePath('/p')).toBe(join('/dati', 'events', '-p.jsonl'));
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('codifica ogni carattere non alfanumerico e non "-" come "-"', () => {
     expect(eventsFilePath('/a/b.c_d e-f', { dataDir: '/data' })).toBe(join('/data', 'events', '-a-b-c-d-e-f.jsonl'));
   });
