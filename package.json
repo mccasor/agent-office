@@ -1,6 +1,6 @@
 {
   "name": "agent-office",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Ufficio 2D in pixel art che visualizza in tempo reale gli agenti di Claude Code della cartella corrente",
   "type": "module",
   "license": "MIT",
