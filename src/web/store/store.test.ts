@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../shared/types';
-import { connectSnapshotStream, toView, useOfficeStore, visibleSnapshot } from './index';
+import { connectSnapshotStream, share, toView, useOfficeStore, visibleSnapshot } from './index';
 
 type Listener = (ev: MessageEvent) => void;
 
@@ -63,6 +63,46 @@ describe('useOfficeStore', () => {
     useOfficeStore.getState().setConnected(true);
     expect(useOfficeStore.getState().snapshot?.generatedAt).toBe(1);
     expect(useOfficeStore.getState().connected).toBe(true);
+  });
+});
+
+describe('condivisione strutturale degli snapshot', () => {
+  it('le parti uguali restano gli stessi oggetti, quelle cambiate sono nuove', () => {
+    const prev = { at: 1, list: [{ id: 'a', n: 1, tags: [1, 2] }, { id: 'b', n: 2, tags: [] }], meta: { x: null } };
+    const next = share(prev, JSON.parse(JSON.stringify({ ...prev, at: 2, list: [prev.list[0], { ...prev.list[1], n: 3 }] })) as typeof prev);
+    expect(next).not.toBe(prev);
+    expect(next.at).toBe(2);
+    expect(next.list[0]).toBe(prev.list[0]);
+    expect(next.list[1]).not.toBe(prev.list[1]);
+    expect(next.list[1]!.tags).toBe(prev.list[1]!.tags);
+    expect(next.meta).toBe(prev.meta);
+  });
+
+  it('negli array abbina per id anche se l\'ordine cambia; tutto uguale: resta prev', () => {
+    const prev = [{ id: 'a', n: 1 }, { id: 'b', n: 2 }];
+    const swapped = share(prev, [{ id: 'b', n: 2 }, { id: 'a', n: 1 }]);
+    expect(swapped).not.toBe(prev);
+    expect(swapped[0]).toBe(prev[1]);
+    expect(swapped[1]).toBe(prev[0]);
+    expect(share(prev, JSON.parse(JSON.stringify(prev)) as typeof prev)).toBe(prev);
+  });
+
+  it('chiavi aggiunte o tolte, tipi diversi: nuovo oggetto', () => {
+    const prev: Record<string, unknown> = { a: 1, b: undefined };
+    expect(share(prev, { a: 1 })).not.toBe(prev);
+    expect(share({ a: 1 }, { a: 1, c: undefined })).toEqual({ a: 1, c: undefined });
+    expect(share([1], { 0: 1 })).toEqual({ 0: 1 });
+    expect(share(null, { a: 1 })).toEqual({ a: 1 });
+  });
+
+  it('lo store tiene gli agenti invariati tra due snapshot', () => {
+    const first = snap(1);
+    useOfficeStore.getState().setSnapshot(first);
+    useOfficeStore.getState().setSnapshot(JSON.parse(JSON.stringify({ ...first, generatedAt: 2 })) as Snapshot);
+    const { snapshot } = useOfficeStore.getState();
+    expect(snapshot?.generatedAt).toBe(2);
+    expect(snapshot?.sessions).toBe(first.sessions);
+    expect(snapshot?.agents).toBe(first.agents);
   });
 });
 
