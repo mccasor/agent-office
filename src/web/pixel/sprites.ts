@@ -916,8 +916,162 @@ function chair(facing: Facing): PixelImage {
   return finish(r, E);
 }
 
-/** monitor con tastiera; schermo rivolto a `facing`; frame < 0 = spento */
-function monitor(facing: Facing, frame: number): PixelImage {
+/** temi degli schermi accesi (#90): l'indice è la variante del monitor */
+export const SCREEN_THEMES = ['generic', 'matrix', 'code', 'terminal', 'tests', 'design', 'docs', 'chart', 'diagram'] as const;
+export type ScreenTheme = (typeof SCREEN_THEMES)[number];
+/** fotogrammi di ogni tema: un giro completo */
+export const SCREEN_FRAMES = 8;
+/** area dello schermo in pixel */
+const SW = 10;
+const SH = 7;
+
+/**
+ * righe di codice finte: rientro, poi segmenti [lunghezza, colore]; quattro, una ogni due pixel che sale di un
+ * pixel a fotogramma: dopo SCREEN_FRAMES il giro torna uguale
+ */
+const CODE: readonly (readonly [number, ...(readonly [number, string])[]])[] = [
+  [0, [3, PALETTE.cloth.rose[0]], [4, PALETTE.screen[0]]],
+  [2, [2, PALETTE.cloth.mustard[0]], [4, PALETTE.cloth.mint[0]]],
+  [2, [5, PALETTE.screen[1]]],
+  [0, [2, PALETTE.cloth.rose[0]], [3, PALETTE.cloth.amber[0]]],
+];
+
+/**
+ * Contenuto dello schermo SW×SH da (x0, y0) per il tema e il fotogramma (0..SCREEN_FRAMES-1): pochi pixel,
+ * deterministici, così ogni fotogramma si calcola una volta e resta in cache.
+ */
+function paintScreen(r: Raster, x0: number, y0: number, theme: ScreenTheme, f: number): void {
+  const px = (x: number, y: number, c: string) => {
+    if (x >= 0 && y >= 0 && x < SW && y < SH) r.px(x0 + x, y0 + y, c);
+  };
+  const fill = (c: string) => r.rect(x0, y0, SW, SH, c);
+  const line = (x: number, y: number, len: number, c: string) => {
+    for (let i = 0; i < len; i++) px(x + i, y, c);
+  };
+  const ink = PALETTE.night[3];
+  switch (theme) {
+    case 'matrix': {
+      // pioggia verde: colonne alterne, ognuna con la sua goccia e la scia (giro di SCREEN_FRAMES)
+      fill(ink);
+      for (let x = 0; x < SW; x += 2) {
+        const h = hash2(x, 3, 91);
+        const start = h % SCREEN_FRAMES;
+        const head = (f + start) % SCREEN_FRAMES;
+        px(x + (h % 3 === 0 ? 1 : 0), head, '#e8ffe0');
+        for (let k = 1; k < 4; k++) px(x + (h % 3 === 0 ? 1 : 0), head - k, PALETTE.leaf[Math.min(3, k)]!);
+      }
+      break;
+    }
+    case 'code': {
+      // righe colorate, una sì e una no, che scorrono verso l'alto di un pixel a fotogramma
+      fill(ink);
+      for (let y = 0; y < SH; y++) {
+        if ((y + f) % 2 === 1) continue;
+        const [indent, ...segs] = CODE[((y + f) / 2) % CODE.length]!;
+        let x = indent;
+        for (const [len, c] of segs) {
+          line(x, y, len, c);
+          x += len + 1;
+        }
+      }
+      break;
+    }
+    case 'terminal': {
+      // prompt e uscite, barra di avanzamento in basso
+      fill(ink);
+      for (let y = 0; y < 4; y++) {
+        const k = (y + Math.floor(f / 2)) % 6;
+        px(0, y, PALETTE.leaf[0]);
+        line(2, y, 2 + ((k * 3) % 6), k % 3 === 0 ? PALETTE.cloth.mustard[0] : PALETTE.leaf[1]);
+      }
+      line(0, 5, SW, PALETTE.night[1]);
+      line(0, 5, 1 + Math.round(((SW - 1) * f) / (SCREEN_FRAMES - 1)), PALETTE.cloth.mint[0]);
+      px(0, 6, PALETTE.leaf[0]);
+      if (f % 2 === 0) px(2, 6, '#ffffff');
+      break;
+    }
+    case 'tests': {
+      // test che passano uno dopo l'altro (uno resta rosso per un po'), poi la barra verde
+      fill(ink);
+      for (let i = 0; i < 3; i++) {
+        const y = i * 2;
+        const done = f >= 1 + i * 2;
+        px(0, y, done ? (i === 1 && f < 6 ? PALETTE.bubble[0] : PALETTE.leaf[0]) : PALETTE.night[1]);
+        line(2, y, 4 + ((i * 5) % 4), done ? PALETTE.screen[1] : PALETTE.night[1]);
+      }
+      if (f >= 6) line(0, 6, SW, PALETTE.leaf[1]);
+      break;
+    }
+    case 'design': {
+      // tela chiara, un cerchio che rimbalza e un quadrato che cambia colore
+      fill(PALETTE.board[1]);
+      const bx = [1, 2, 3, 4, 5, 4, 3, 2][f]!;
+      const by = [3, 2, 1, 1, 2, 3, 4, 4][f]!;
+      for (const [dx, dy] of [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]] as const) px(bx + dx, by + dy - 1, PALETTE.cloth.coral[1]);
+      const sq = [PALETTE.cloth.teal[1], PALETTE.cloth.mustard[1], PALETTE.cloth.violet[1], PALETTE.cloth.blue[1]][Math.floor(f / 2)]!;
+      r.rect(x0 + 7, y0 + 1 + (f % 4 < 2 ? 0 : 1), 2, 2, sq);
+      line(0, 6, SW, PALETTE.board[2]);
+      px(1 + f, 6, PALETTE.cloth.blue[1]);
+      break;
+    }
+    case 'docs': {
+      // pagina bianca con il testo che si scrive, cursore lampeggiante
+      fill(PALETTE.paper[0]);
+      let left = f * 3;
+      for (const [i, len] of [7, 5, 8].entries()) {
+        const n = Math.min(len, Math.max(0, left));
+        if (n < len && left >= 0 && f % 2 === 0) px(1 + n, 1 + i * 2, ink);
+        left -= len;
+        line(1, 1 + i * 2, n, i === 0 ? PALETTE.cloth.blue[2] : PALETTE.paper[3]);
+      }
+      break;
+    }
+    case 'chart': {
+      // assi, barre che cambiano e un punto che scorre in alto
+      fill(ink);
+      for (let y = 0; y < SH; y++) px(0, y, PALETTE.metal[2]);
+      line(0, SH - 1, SW, PALETTE.metal[2]);
+      const cols = [PALETTE.screen[1], PALETTE.cloth.mustard[0], PALETTE.cloth.mint[0], PALETTE.cloth.coral[0]];
+      for (let i = 0; i < 4; i++) {
+        const h = 1 + ((hash2(i, Math.floor(f / 2), 92) % 3) + i + Math.floor(f / 2)) % 5;
+        for (let y = 0; y < h; y++) px(2 + i * 2, SH - 2 - y, cols[i]!);
+      }
+      px(1 + f, 0, '#ffffff');
+      break;
+    }
+    case 'diagram': {
+      // blocchi collegati, un impulso che corre lungo i collegamenti
+      fill(PALETTE.board[1]);
+      line(3, 0, 4, PALETTE.board[3]);
+      line(3, 5, 4, PALETTE.board[3]);
+      for (let y = 2; y < 5; y++) {
+        px(1, y, PALETTE.board[3]);
+        px(8, y, PALETTE.board[3]);
+      }
+      const blocks = [[0, 0, PALETTE.cloth.blue[1]], [7, 0, PALETTE.cloth.coral[1]], [0, 5, PALETTE.cloth.mint[1]], [7, 5, PALETTE.cloth.mustard[1]]] as const;
+      for (const [bx, by, c] of blocks) r.rect(x0 + bx, y0 + by, 3, 2, c);
+      const [qx, qy] = ([[3, 0], [5, 0], [8, 2], [8, 4], [6, 5], [4, 5], [1, 4], [1, 2]] as const)[f]!;
+      px(qx, qy, PALETTE.bubble[1]);
+      break;
+    }
+    case 'generic': {
+      // righe di codice su fondo azzurro, il monitor di sempre
+      const lines = [
+        [0, 5, PALETTE.screen[0]], [2, 3, PALETTE.cloth.mustard[0]], [2, 6, PALETTE.screen[1]],
+        [0, 4, PALETTE.cloth.salmon[0]], [2, 5, PALETTE.screen[0]], [0, 3, PALETTE.cloth.mint[0]],
+      ] as const;
+      for (let i = 0; i < 3; i++) {
+        const [x, len, c] = lines[(i + f) % lines.length]!;
+        line(1 + x, 1 + i * 2, len, c);
+      }
+      if (f % 2 === 1) px(7, 5, PALETTE.screen[0]);
+      break;
+    }
+  }
+}
+
+/** monitor con tastiera; schermo rivolto a `facing`; frame < 0 = spento; `theme` indice in SCREEN_THEMES */
+function monitor(facing: Facing, frame: number, theme: number): PixelImage {
   const { r, E } = furnitureRaster(1, 1, 8);
   const base = E + 6;
   const frameC = PALETTE.dark;
@@ -942,21 +1096,7 @@ function monitor(facing: Facing, frame: number): PixelImage {
   const sc = on ? PALETTE.screen : PALETTE.screenOff;
   r.rect(3, base - 11, 10, 7, sc[2]);
   if (on) {
-    // righe di codice che scorrono
-    const lines = [
-      [0, 5, PALETTE.screen[0]],
-      [2, 3, PALETTE.cloth.mustard[0]],
-      [2, 6, PALETTE.screen[1]],
-      [0, 4, PALETTE.cloth.salmon[0]],
-      [2, 5, PALETTE.screen[0]],
-      [0, 3, PALETTE.cloth.mint[0]],
-    ] as const;
-    const off = frame % 2;
-    for (let i = 0; i < 3; i++) {
-      const [x, len, c] = lines[(i + off * 2) % lines.length]!;
-      r.hline(4 + x, 4 + x + len - 1, base - 10 + i * 2, c);
-    }
-    if (off === 1) r.px(10, base - 6, PALETTE.screen[0]);
+    paintScreen(r, 3, base - 11, SCREEN_THEMES[theme % SCREEN_THEMES.length]!, frame % SCREEN_FRAMES);
   } else {
     r.px(10, base - 10, sc[0]);
     r.px(11, base - 10, sc[0]);
@@ -1580,14 +1720,14 @@ function centered(img: PixelImage, w: number, h: number): PixelImage {
 }
 
 /** frame di animazione degli arredi che ne hanno (monitor: schermo che cambia; biliardino: la partita) */
-export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = { monitor: 2, foosball: FOOSBALL_FRAMES };
+export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = { monitor: SCREEN_FRAMES, foosball: FOOSBALL_FRAMES };
 
 /**
  * Arredo w×h celle. L'immagine è larga w·TILE e alta h·TILE più l'altezza dell'oggetto: l'ancora (0, ay) è l'angolo
  * nord-ovest dell'impronta. `facing` è il lato del fronte: dove guarda chi siede (sedia, divano, poltrona), dove è
- * rivolto lo schermo (monitor), il fronte di libreria e lavagna. Monitor: frame >= 0 acceso (2 fotogrammi), < 0
- * spento; biliardino: frame >= 0 partita in corso. `variant` sceglie colori del tappeto, soggetto di quadri e
- * poster, colore dei cabinati.
+ * rivolto lo schermo (monitor), il fronte di libreria e lavagna. Monitor: frame >= 0 acceso, < 0 spento, `variant`
+ * è il tema dello schermo (SCREEN_THEMES); biliardino: frame >= 0 partita in corso. `variant` sceglie anche colori
+ * del tappeto, soggetto di quadri e poster, colore dei cabinati.
  */
 export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0, variant = 0): PixelImage {
   w = Math.max(1, Math.round(w));
@@ -1596,7 +1736,7 @@ export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h
     case 'desk': return desk(w, h, false);
     case 'boss-desk': return desk(w, h, true);
     case 'chair': return centered(chair(facing), w, h);
-    case 'monitor': return centered(monitor(facing, frame), w, h);
+    case 'monitor': return centered(monitor(facing, frame, variant), w, h);
     case 'plant': return centered(plant(), w, h);
     case 'sofa': return sofa(w, h, facing, PALETTE.sofa);
     case 'armchair': return sofa(w, h, facing, PALETTE.armchair);

@@ -1,7 +1,7 @@
 /**
  * Anteprima degli sprite della vista 2D (#73) in un PNG, senza browser né dipendenze:
  *   npx tsx scripts/pixel-preview.ts [uscita.png] [scala] [x,y,w,h | pianta] [x,y,w,h]
- * Personaggi (tutte le pose, direzioni e fotogrammi), arredi, tile e una stanza di prova; con
+ * Personaggi (tutte le pose, direzioni e fotogrammi), arredi, schermi a tema, tile e una stanza di prova; con
  * `pianta` l'ufficio intero con tutti gli arredi, agenti al lavoro e giocatori al biliardino.
  */
 import { writeFileSync } from 'node:fs';
@@ -10,7 +10,7 @@ import { actorOps, cellKey, FLAT, furnitureOp, inFront, sceneFurniture, sortByDe
 import { createPlan } from '../src/web/pixel/plan';
 import { furnitureLook, type FurnitureUse } from '../src/web/pixel/screens';
 import {
-  bossLook, bubbleImage, characterImage, FOOSBALL_FRAMES, furnitureImage, pickLook, POSE_FRAMES, rgba,
+  bossLook, bubbleImage, characterImage, FOOSBALL_FRAMES, furnitureImage, pickLook, POSE_FRAMES, rgba, SCREEN_FRAMES, SCREEN_THEMES,
   selectionImage, shadowImage, tileImage, type PixelImage,
 } from '../src/web/pixel/sprites';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from '../src/web/pixel/types';
@@ -106,8 +106,14 @@ for (let v = 0; v < 6; v++) blit(furnitureImage('painting', 'down', 1, 1, 0, v),
 for (let v = 0; v < 2; v++) blit(furnitureImage('poster', 'down', 1, 1, 0, v), 266 + v * 18, fy - 2);
 for (let v = 0; v < 2; v++) blit(furnitureImage('arcade', 'down', 1, 1, 0, v), 310 + v * 18, fy);
 
-// la partita al biliardino
+// schermi a tema (#90): una riga per tema, tutti i fotogrammi; poi la partita al biliardino
 fy += 30;
+for (const [t] of SCREEN_THEMES.entries()) {
+  const row = Math.floor(t / 2);
+  const col = t % 2;
+  for (let f = 0; f < SCREEN_FRAMES; f++) blit(furnitureImage('monitor', 'down', 1, 1, f, t), 8 + col * 230 + f * 18, fy + row * 22);
+}
+fy += Math.ceil(SCREEN_THEMES.length / 2) * 22 + 6;
 for (let f = 0; f < FOOSBALL_FRAMES; f++) blit(furnitureImage('foosball', 'down', 2, 1, f), 8 + f * 36, fy);
 fy += 10;
 

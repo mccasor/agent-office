@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHARACTER_PRESETS } from '../characters/presets';
 import {
   bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
-  selectionImage, shadowImage, tileImage, type PixelImage,
+  SCREEN_FRAMES, SCREEN_THEMES, selectionImage, shadowImage, tileImage, type PixelImage,
 } from './sprites';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from './types';
 
@@ -118,7 +118,17 @@ describe('arredi', () => {
     const off = furnitureImage('monitor', 'down', 1, 1, -1);
     expect(sameData(a, b)).toBe(false);
     expect(sameData(a, off)).toBe(false);
-    expect(sameData(a, furnitureImage('monitor', 'down', 1, 1, 2))).toBe(true);
+    expect(sameData(a, furnitureImage('monitor', 'down', 1, 1, SCREEN_FRAMES))).toBe(true);
+  });
+
+  it('ogni tema dello schermo si anima e si distingue dagli altri; di spalle il monitor non cambia', () => {
+    const first = SCREEN_THEMES.map((_, t) => furnitureImage('monitor', 'down', 1, 1, 0, t));
+    for (const [t, img] of first.entries()) {
+      const frames = Array.from({ length: SCREEN_FRAMES }, (_, f) => furnitureImage('monitor', 'down', 1, 1, f, t));
+      expect(frames.some((f) => !sameData(f, img)), SCREEN_THEMES[t]).toBe(true);
+      for (const other of first.slice(t + 1)) expect(sameData(img, other)).toBe(false);
+    }
+    expect(sameData(furnitureImage('monitor', 'up', 1, 1, 0, 3), furnitureImage('monitor', 'up', 1, 1, 5, 7))).toBe(true);
   });
 
   it('il biliardino in partita muove la palla, fermo resta uguale', () => {
