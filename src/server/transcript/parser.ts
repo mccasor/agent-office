@@ -1,4 +1,4 @@
-import type { TodoProgress, TokenUsage } from '../../shared/types.js';
+import type { TodoProgress, TokenUsage, ToolInUse } from '../../shared/types.js';
 
 /** Riassunto numerico di un file transcript. Non contiene mai testo dei messaggi. */
 export interface FileSummary {
@@ -23,6 +23,11 @@ export interface FileSummary {
   gitBranch: string | null;
   /** domanda all'utente (AskUserQuestion, ExitPlanMode) ancora senza risposta */
   awaitingUser: boolean;
+  /** con awaitingUser: tipo dell'ultima domanda aperta e da quando */
+  awaitingKind: 'question' | 'plan' | null;
+  awaitingSince: number | null;
+  /** tool in uso: l'ultimo tool_use del messaggio corrente ancora senza risultato */
+  tool: ToolInUse | null;
   /** comandi o agenti avviati in background e non ancora terminati (l'agente riprenderà alla loro notifica) */
   backgroundTasks: number;
   /**
@@ -43,6 +48,24 @@ type Usage4 = [input: number, output: number, cacheRead: number, cacheCreation: 
 const FILE_TOOLS = new Set(['Read', 'Edit', 'MultiEdit', 'Write', 'NotebookEdit']);
 /** tool che restano in attesa di una risposta dell'utente finché non arriva il tool_result */
 const QUESTION_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode']);
+/** tool che chiudono il lavoro dell'agente: non sono "in uso" */
+const FINAL_TOOLS = new Set(['SubagentHandback', 'StructuredOutput']);
+
+/** Nome del file (mai la cartella) per i tool sui file, host per WebFetch: niente input, comandi o query. */
+function toolTarget(name: string, input: Json): string | null {
+  if (FILE_TOOLS.has(name)) {
+    const path = str(input.file_path) ?? str(input.notebook_path);
+    return path ? (path.split(/[\\/]/).filter(Boolean).at(-1) ?? null) : null;
+  }
+  if (name === 'WebFetch') {
+    try {
+      return new URL(str(input.url) ?? '').hostname || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
 const MAX_FILE_PATHS = 200;
 const MAX_COUNTED = 32;
 
@@ -124,11 +147,26 @@ export function createAccumulator(): Accumulator {
     cwd: null,
     gitBranch: null,
     awaitingUser: false,
+    awaitingKind: null,
+    awaitingSince: null,
+    tool: null,
     backgroundTasks: 0,
     finished: false,
   };
   /** tool_use che aspettano una risposta dell'utente, per id */
-  const pendingQuestions = new Set<string>();
+  const pendingQuestions = new Map<string, { kind: 'question' | 'plan'; at: number | null }>();
+  /** tool_use del messaggio corrente ancora senza risultato, per id (in ordine di chiamata) */
+  const pendingTools = new Map<string, ToolInUse>();
+  let toolMessageId: string | null = null;
+  const updateAwaiting = () => {
+    const last = [...pendingQuestions.values()].at(-1);
+    state.awaitingUser = last !== undefined;
+    state.awaitingKind = last?.kind ?? null;
+    state.awaitingSince = last?.at ?? null;
+  };
+  const updateTool = () => {
+    state.tool = [...pendingTools.values()].at(-1) ?? null;
+  };
   /** id dei task in background ancora aperti (solo gli id, mai il testo dei messaggi) */
   const background = new Set<string>();
   /**
@@ -161,13 +199,16 @@ export function createAccumulator(): Accumulator {
     }
   };
 
-  const onToolUse = (block: Json) => {
+  const onToolUse = (block: Json, at: number | null) => {
     const name = str(block.name);
     const input = isObj(block.input) ? block.input : {};
+    const id = str(block.id);
     if (QUESTION_TOOLS.has(name ?? '')) {
-      const id = str(block.id);
-      if (id) pendingQuestions.add(id);
-      state.awaitingUser = pendingQuestions.size > 0;
+      if (id) pendingQuestions.set(id, { kind: name === 'ExitPlanMode' ? 'plan' : 'question', at });
+      updateAwaiting();
+    } else if (name && id && !FINAL_TOOLS.has(name)) {
+      pendingTools.set(id, { name, target: toolTarget(name, input), since: at ?? state.lastAt ?? 0 });
+      updateTool();
     }
     if (FILE_TOOLS.has(name ?? '')) {
       const path = str(input.file_path) ?? str(input.notebook_path);
@@ -196,9 +237,16 @@ export function createAccumulator(): Accumulator {
     }
   };
 
-  const onAssistant = (row: Json) => {
+  const onAssistant = (row: Json, at: number | null) => {
     const msg = row.message;
     if (!isObj(msg)) return;
+    // nuovo messaggio: i tool rimasti senza risultato (es. interrotti) non sono più in uso
+    const messageId = str(msg.id);
+    if (messageId && messageId !== toolMessageId) {
+      toolMessageId = messageId;
+      pendingTools.clear();
+      updateTool();
+    }
     const model = str(msg.model);
     if (model === '<synthetic>') return;
     if (model) state.model = model;
@@ -226,7 +274,7 @@ export function createAccumulator(): Accumulator {
       if (block.type === 'tool_use') {
         hasToolUse = true;
         if (block.name === 'SubagentHandback') handback = true;
-        onToolUse(block);
+        onToolUse(block, at);
       } else if (block.type === 'text') {
         hasText = true;
       }
@@ -279,13 +327,17 @@ export function createAccumulator(): Accumulator {
         break;
       }
       case 'assistant':
-        onAssistant(row);
+        onAssistant(row, Number.isFinite(at) ? at : null);
         break;
       case 'user': {
         const issues = promptIssues(row);
         if (issues.length > 0) state.issues = issues;
-        for (const id of toolResultIds(row)) pendingQuestions.delete(id);
-        state.awaitingUser = pendingQuestions.size > 0;
+        for (const id of toolResultIds(row)) {
+          pendingQuestions.delete(id);
+          pendingTools.delete(id);
+        }
+        updateAwaiting();
+        updateTool();
         for (const text of userTexts(row)) {
           for (const m of text.matchAll(BACKGROUND_STARTED_RE)) background.add(m[1]!);
           for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);

@@ -1,7 +1,7 @@
 import { appendFile, mkdir, rename, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import type { HookEvent } from '../../shared/types.js';
+import type { HookEvent, WaitingKind } from '../../shared/types.js';
 
 /** default: ~/.agent-office */
 export interface HookPathsOptions {
@@ -24,10 +24,15 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? 
  * Tipo di notifica senza conservarne il testo: `notification_type` se presente (idle_prompt, permission_prompt,
  * elicitation_dialog...), altrimenti dal messaggio ("Claude is waiting for your input" = attesa del prossimo prompt).
  */
-export function notificationKind(p: Record<string, unknown>): 'input' | 'idle' {
+export function notificationKind(p: Record<string, unknown>): WaitingKind | 'idle' {
   const type = str(p.notification_type);
-  if (type) return type === 'idle_prompt' ? 'idle' : 'input';
-  return /waiting for your input/i.test(str(p.message) ?? '') ? 'idle' : 'input';
+  if (type === 'idle_prompt') return 'idle';
+  if (type === 'permission_prompt') return 'permission';
+  if (type === 'elicitation_dialog') return 'question';
+  if (type) return 'input';
+  const message = str(p.message) ?? '';
+  if (/waiting for your input/i.test(message)) return 'idle';
+  return /permission/i.test(message) ? 'permission' : 'input';
 }
 
 export function toHookEvent(payload: unknown, now: number): HookEvent | null {

@@ -309,7 +309,7 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
 });
 
 describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
-  const notif = (t: number, notification: 'input' | 'idle') => hook('Notification', t, { agentId: null, notification });
+  const notif = (t: number, notification: NonNullable<HookEvent['notification']>) => hook('Notification', t, { agentId: null, notification });
   const build = (sessions: SessionState[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
     buildSnapshot({ transcript: { sessions, agents }, hookEvents, repo: null, now: NOW });
 
@@ -320,6 +320,14 @@ describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
     // il transcript è andato avanti dopo la notifica
     expect(build([session({ updatedAt: NOW - 100 })], [notif(NOW - 60_000, 'input')]).sessions[0]!.waiting).toBe(false);
     expect(build([session({ waiting: true })]).sessions[0]!.waiting).toBe(true);
+  });
+
+  it('motivo e inizio del blocco: dalla domanda nel transcript o dalla notifica dell\'hook', () => {
+    const fromHook = build([session()], [notif(NOW - 500, 'permission')]).sessions[0]!;
+    expect(fromHook).toMatchObject({ waiting: true, waitingKind: 'permission', waitingSince: NOW - 500 });
+    const fromTranscript = build([session({ waiting: true, waitingKind: 'plan', waitingSince: NOW - 9_000 })]).sessions[0]!;
+    expect(fromTranscript).toMatchObject({ waitingKind: 'plan', waitingSince: NOW - 9_000 });
+    expect(build([session()]).sessions[0]).toMatchObject({ waiting: false, waitingKind: null, waitingSince: null });
   });
 
   it('status: waiting > working > idle, solo sessioni attive', () => {

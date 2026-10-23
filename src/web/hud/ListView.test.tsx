@@ -68,6 +68,26 @@ describe('ListView', () => {
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
   });
 
+  it('sessione pronta, bloccata con motivo, contesto e tool in uso', () => {
+    const t = Date.now();
+    render(
+      <ListView
+        sessions={[
+          session({ status: 'done', context: { used: 150_000, window: 200_000 } }),
+          session({ id: 's2', cwd: '/x/blocco', waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 }),
+        ]}
+        agents={[agent({ tool: { name: 'Edit', target: 'parser.ts', since: t }, startedAt: t })]}
+        hidden={[]}
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByText(/· pronta/)).toBeTruthy();
+    expect(screen.getByText(/aspetta un tuo permesso · da 3 min/)).toBeTruthy();
+    expect(screen.getByText('Contesto 75%')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('warn');
+    expect(screen.getByText(/Edit parser\.ts/)).toBeTruthy();
+  });
+
   it('sessione nascosta: casella non spuntata; nessuna sessione: messaggio', () => {
     render(<ListView sessions={[session()]} agents={[]} hidden={['s1']} onToggle={() => {}} />);
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);

@@ -55,3 +55,10 @@ export function formatDuration(ms: number): string {
 export function elapsed(agent: { status: string; startedAt: number; updatedAt: number }, now: number): number {
   return (agent.status === 'done' ? agent.updatedAt : now) - agent.startedAt;
 }
+
+/** Costo stimato in dollari: "≈ $0,42", "< $0,01"; null (modello non nel listino) -> "—". */
+export function formatCost(usd: number | null | undefined): string {
+  if (usd === null || usd === undefined || !Number.isFinite(usd)) return '—';
+  if (usd < 0.01) return '< $0,01';
+  return `≈ $${usd.toFixed(2).replace('.', ',')}`;
+}

@@ -67,6 +67,11 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         cwd: '/tmp/agent-office-fixture',
         branch: null,
         waiting: false,
+        waitingKind: null,
+        waitingSince: null,
+        tool: null,
+        // stima ai prezzi di listino, sommata file per file (sessione e subagenti)
+        cost: expect.closeTo(0.0095745, 7),
       },
     ]);
 
@@ -85,6 +90,8 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         issues: [],
         startedAt: ts('2026-01-01T10:00:03.500Z'),
         updatedAt: T0,
+        tool: null,
+        cost: expect.closeTo(0.00062, 7),
       },
       {
         id: 'a0000000000000002',
@@ -100,6 +107,8 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         issues: [],
         startedAt: ts('2026-01-01T10:01:00.000Z'),
         updatedAt: T0,
+        tool: null,
+        cost: expect.closeTo(0.0038295, 7),
       },
     ]);
   });

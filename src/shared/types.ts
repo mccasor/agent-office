@@ -27,6 +27,19 @@ export interface TodoProgress {
   total: number;
 }
 
+/** Tool che un agente sta usando adesso (tool_use senza ancora il risultato). Mai input o comandi. */
+export interface ToolInUse {
+  /** nome del tool: Bash, Edit, Read, Grep, Agent, ... */
+  name: string;
+  /** solo il nome del file (senza cartella) per i tool sui file, l'host per WebFetch; altrimenti null */
+  target: string | null;
+  /** epoch ms */
+  since: number;
+}
+
+/** Perché una sessione è bloccata: permesso di un tool, domanda (AskUserQuestion), piano (ExitPlanMode), altro input. */
+export type WaitingKind = 'permission' | 'question' | 'plan' | 'input';
+
 export interface AgentState {
   /** agentId del transcript (es. "aa90d25bed00dc240") */
   id: string;
@@ -46,6 +59,10 @@ export interface AgentState {
   /** epoch ms */
   startedAt: number;
   updatedAt: number;
+  /** tool in uso adesso; null o assente se nessuno */
+  tool?: ToolInUse | null;
+  /** costo stimato in dollari (listino dell'API); null se il modello non è nel listino */
+  cost?: number | null;
 }
 
 export interface ContextState {
@@ -77,6 +94,13 @@ export interface SessionState {
   branch: string | null;
   /** bloccata in attesa dell'utente: permesso di un tool, domanda, richiesta di input (non il prossimo prompt) */
   waiting: boolean;
+  /** con `waiting`: perché e da quando (epoch ms) */
+  waitingKind?: WaitingKind | null;
+  waitingSince?: number | null;
+  /** tool in uso adesso dalla sessione principale */
+  tool?: ToolInUse | null;
+  /** costo stimato in dollari della sessione e dei suoi subagenti; null se nessun modello è nel listino */
+  cost?: number | null;
   /** modifiche non committate nel repository del cwd (solo sessioni attive); null o assente se non disponibili */
   diff?: RepoDiff | null;
 }
@@ -112,8 +136,8 @@ export interface HookEvent {
   agentId: string | null;
   agentType: string | null;
   toolName: string | null;
-  /** solo per Notification: 'input' = Claude è bloccato su un permesso o una domanda, 'idle' = aspetta il prossimo prompt */
-  notification?: 'input' | 'idle' | null;
+  /** solo per Notification: perché Claude è bloccato, oppure 'idle' = aspetta il prossimo prompt */
+  notification?: WaitingKind | 'idle' | null;
   cwd: string;
   /** epoch ms */
   timestamp: number;
