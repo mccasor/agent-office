@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
+import { useShow } from '../store';
 import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
 import {
   agentName, agentTask, COMPACT_HINT, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL,
@@ -17,9 +18,11 @@ const DASH = '—';
  * il suggerimento di compattare. Sotto, quante volte è stato compattato e l'ultima volta prima → dopo.
  */
 function SessionContext({ session }: { session: SessionState }) {
+  const shown = useShow('session.context');
   const { used, window } = session.context;
   const pct = percent(used, window);
   const compacted = compactionText(session.compactions, session.lastCompaction);
+  if (!shown) return null;
   return (
     <div className="hud-context">
       <div className="hud-context__head">
