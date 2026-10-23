@@ -235,6 +235,18 @@ describe('task in background', () => {
     expect(acc.state.backgroundTasks).toBe(0);
   });
 
+  it('chiude un task anche con la notifica allegata come comando in coda (subagenti)', () => {
+    const acc = createAccumulator();
+    acc.ingest(toolUse('b1', 'Bash', { command: 'sleep 60', run_in_background: true }));
+    acc.ingest(toolResult('Command running in background with ID: bb3oeq1oy. Output is being written to: /t/bb3oeq1oy.output', 'b1'));
+    expect(acc.state.backgroundTasks).toBe(1);
+    acc.ingest(JSON.stringify({
+      type: 'attachment',
+      attachment: { type: 'queued_command', prompt: '<task-notification>\n<task-id>bb3oeq1oy</task-id>\n<status>completed</status>' },
+    }));
+    expect(acc.state.backgroundTasks).toBe(0);
+  });
+
   it('non scambia per un task il testo di un file letto o di un comando in primo piano', () => {
     const acc = createAccumulator();
     acc.ingest(toolUse('r1', 'Read', { file_path: '/p/types.ts' }));
