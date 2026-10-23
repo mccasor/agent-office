@@ -9,6 +9,7 @@ import {
   wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
 import { ALL_LABELS_ZOOM, drawLabel, labelText } from './labels';
+import { litZones, RoomLights } from './lights';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import { furnitureLook, type FurnitureUse } from './screens';
@@ -27,6 +28,8 @@ const plan = createPlan();
 const furniture = sceneFurniture(plan);
 const flat = furniture.filter((f) => FLAT.has(f.kind));
 const solid = furniture.filter((f) => !FLAT.has(f.kind));
+/** luci delle stanze (#99): accese con qualcuno dentro, penombra altrimenti */
+const lights = new RoomLights(plan);
 
 /** Pavimenti, pareti, porte e arredi piatti non cambiano mai: disegnati una volta in una canvas a scala 1. */
 let floorCanvas: SpriteCanvas | null = null;
@@ -205,6 +208,10 @@ function render(
     rects.push(actorRect(e.actor.id, e.motion.pos));
     if (everyone || selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
+  // luci (#99): zone accese da chi c'è adesso; nelle stanze spente i monitor sono spenti
+  const occupants = [...s.entries.values()].filter((e) => isVisible(e.motion)).map((e) => ({ sessionId: e.actor.sessionId, pos: e.motion.pos }));
+  lights.update(litZones(lights.geometry, occupants, model.rooms, new Set(model.idle)), now);
+  lights.dimScreens(use.screens);
   for (const f of solid) {
     const { frame, variant } = furnitureLook(f, use, now);
     ops.push(furnitureOp(f, frame, variant));
@@ -222,6 +229,7 @@ function render(
   const blit = (sp: Sprite, x: number, y: number) =>
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
   for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
+  lights.draw(ctx, view);
 
   // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
   const bubble = cachedImage('x:bubble', bubbleImage);

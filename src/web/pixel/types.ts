@@ -168,6 +168,8 @@ export interface PixelModel extends PixelSeating {
   actors: PixelActor[];
   /** sessioni attive senza stanza (oltre INSTANCE_ROOMS), dalla più recente */
   roomless: string[];
+  /** sessioni attive inattive (pallino grigio): le loro stanze restano in penombra (#99) */
+  idle: string[];
 }
 
 /** Pose di un personaggio, una riga di fotogrammi per ciascuna; play: in piedi alle stecche del biliardino. */

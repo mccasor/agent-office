@@ -17,6 +17,11 @@ const EMPTY = EMPTY_PIXEL_SEATING;
 const target = (m: PixelModel, id: string) => m.actors.find((a) => a.id === id)?.target?.id ?? null;
 
 describe('pixelModel', () => {
+  it('sessioni attive col pallino grigio tra le inattive (luci spente, #99)', () => {
+    const m = pixelModel(snap([], [session('a', 2, { dot: 'idle' }), session('b'), session('c', 1, { dot: 'idle', active: false })]), EMPTY);
+    expect(m.idle).toEqual(['a']);
+  });
+
   it('senza snapshot: nessun attore, pianta fissa', () => {
     const m = pixelModel(null, EMPTY);
     expect(m.actors).toEqual([]);
