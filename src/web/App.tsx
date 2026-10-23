@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentCard, HudOverlay, InstancesPanel, ListView, ViewToggle } from './hud';
 import { t } from '../shared/i18n';
-import { connectSnapshotStream, useLocale, useOfficeStore, visibleSnapshot } from './store';
+import { connectSnapshotStream, isDismissed, useLocale, useOfficeStore, visibleSnapshot, watchDismissed } from './store';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
 import { openCardWindow } from './hud/popout';
@@ -21,6 +21,7 @@ export function App() {
   const select = useOfficeStore((s) => s.select);
   const dismissed = useOfficeStore((s) => s.dismissed);
   const dismiss = useOfficeStore((s) => s.dismiss);
+  const restore = useOfficeStore((s) => s.restore);
   const closeCard = useCallback(() => select(null), [select]);
   // lingua (#93): cambiandola si ridisegna tutto, senza ricaricare (posizioni, schede aperte e filtri restano)
   useLocale();
@@ -35,6 +36,8 @@ export function App() {
   const snapshot = useMemo(() => visibleSnapshot(fullSnapshot, hidden, dismissed), [fullSnapshot, hidden, dismissed]);
   const listed = useMemo(() => visibleSnapshot(fullSnapshot, [], dismissed), [fullSnapshot, dismissed]);
   const dismissSelected = useCallback(() => selectedId && dismiss(selectedId), [selectedId, dismiss]);
+  // fatti uscire a mano: nella lista "N fatti uscire · Mostra" per farli rientrare (#101)
+  const dismissedAgents = useMemo(() => fullSnapshot?.agents.filter((a) => isDismissed(a, dismissed)) ?? [], [fullSnapshot, dismissed]);
   const agents = snapshot?.agents ?? [];
   // Claude stesso, uno per sessione attiva; con più sessioni il nome porta il progetto
   const bosses = useMemo(() => {
@@ -43,6 +46,8 @@ export function App() {
   }, [snapshot]);
 
   useEffect(() => connectSnapshotStream(), []);
+  // chi viene fatto uscire (o rientra) da una scheda staccata sparisce (o ricompare) anche qui (#101)
+  useEffect(() => watchDismissed(), []);
   // finestra nascosta (app della menu bar) o scheda in background: niente frame da disegnare
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState !== 'hidden');
   useEffect(() => {
@@ -72,11 +77,13 @@ export function App() {
           agents={listed?.agents ?? []}
           finished={listed?.finished ?? []}
           closedFinished={fullSnapshot?.closedFinished}
+          dismissed={dismissedAgents}
           hidden={hidden}
           onToggle={toggleSession}
           focus={focusSession}
           today={fullSnapshot?.today}
           onDismiss={dismiss}
+          onRestore={restore}
         />
       )}
       {viewMode === 'history' && <HistoryView />}

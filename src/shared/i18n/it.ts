@@ -284,6 +284,14 @@ export const it = {
   'zoom.in': 'Ingrandisci',
   'zoom.inHint': 'Ingrandisci (⌘/ctrl + rotella)',
   'zoom.fit': 'Adatta alla finestra',
+  // #101
+  'alert.dismissDoneHint': 'Toglie il terminato dall\'area relax senza aspettare gli altri agenti',
+  'dismissed.count.one': '{n} fatto uscire',
+  'dismissed.count.other': '{n} fatti uscire',
+  'dismissed.show': 'Mostra',
+  'dismissed.showHint': 'Fa rientrare nell\'ufficio gli agenti fatti uscire',
+  'cardWindow.dismissed': 'Fatto uscire dall\'ufficio: rientra da solo se torna attivo.',
+  'cardWindow.restore': 'Fallo rientrare',
 
   // --- vista Analisi (#98) ---
   'history.title': 'Analisi della giornata',
