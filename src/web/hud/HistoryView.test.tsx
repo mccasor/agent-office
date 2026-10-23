@@ -43,6 +43,19 @@ describe('HistoryReportView', () => {
     expect(files.map((f) => f.textContent)).toEqual(['parser.ts4', 'types.ts1']);
   });
 
+  it('esito dei terminati (#97): interrotto o fallito accanto all\'evento, in colore; ok non si dice', () => {
+    const end = { at: at(11, 0), kind: 'agent-end' as const, sessionId: 's1', project: 'agent-office', agent: 'Marta Commit', durationMs: MIN };
+    render(<HistoryReportView report={report({ events: [{ ...end, outcome: 'failed' }, { ...end, outcome: 'interrupted' }, { ...end, outcome: 'ok' }, end] })} />);
+    const items = within(screen.getByRole('region', { name: 'Cronologia' })).getAllByRole('listitem');
+    expect(items[0]!.textContent).toBe('11:00agente terminato · fallito · Marta Commit · agent-office · in 1 min');
+    expect(items[0]!.querySelector('.hud-outcome--failed')).toBeTruthy();
+    expect(items[1]!.textContent).toBe('11:00agente terminato · interrotto · Marta Commit · agent-office · in 1 min');
+    expect(items[1]!.querySelector('.hud-outcome--interrupted')).toBeTruthy();
+    // ok e righe senza esito (scritte prima di #97): come prima
+    expect(items[2]!.textContent).toBe('11:00agente terminato · Marta Commit · agent-office · in 1 min');
+    expect(items[3]!.textContent).toBe(items[2]!.textContent);
+  });
+
   it('sezioni vuote con il loro messaggio', () => {
     render(<HistoryReportView report={report({ events: [], waits: { count: 0, totalMs: 0, sessions: [] }, byType: [], files: [] })} />);
     expect(screen.getByText('Nessuna attesa')).toBeTruthy();
@@ -96,6 +109,12 @@ describe('terminati delle istanze chiuse nella lista (B5)', () => {
     expect(block.querySelector('li')!.textContent).toContain('Rita Lint');
     expect(block.querySelector('li')!.textContent).toContain('Plan · vecchio');
     expect(block.querySelector('li')!.textContent).toContain('in 5 min · 2.4k token · ≈ $0,30');
+  });
+
+  it('con l\'esito registrato nello storico (#97)', () => {
+    render(<ListView sessions={[session]} agents={[]} closedFinished={[{ ...closed, outcome: 'failed' }]} hidden={[]} onToggle={() => {}} />);
+    const block = screen.getByRole('region', { name: 'Terminati oggi nelle istanze chiuse' });
+    expect(block.querySelector('.hud-outcome--failed')!.textContent).toBe('fallito');
   });
 
   it('niente blocco senza terminati chiusi', () => {

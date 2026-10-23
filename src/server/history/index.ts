@@ -2,6 +2,7 @@ import { appendFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { nicknameOf } from '../../shared/nickname.js';
 import type {
+  AgentOutcome,
   AgentState,
   AgentTypeStats,
   FinishedAgent,
@@ -89,6 +90,7 @@ const RESUMED_MS = 60_000;
 export const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const FILE_RE = /^(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const KINDS = new Set<HistoryEventKind>(['agent-start', 'agent-end', 'wait', 'unblock', 'compact', 'session-open', 'session-close']);
+const OUTCOMES = new Set<AgentOutcome>(['ok', 'interrupted', 'failed']);
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -141,7 +143,10 @@ async function loadDay(dir: string, day: string): Promise<DayState> {
     if (!line || st.records.length >= MAX_RECORDS) continue;
     try {
       const r: unknown = JSON.parse(line);
-      if (isRecord(r)) apply(st, { ...r, project: typeof r.project === 'string' ? r.project : null });
+      if (!isRecord(r)) continue;
+      const { outcome, ...rest } = r;
+      // esito solo se valido; le righe di prima di #97 non l'hanno
+      apply(st, { ...rest, project: typeof r.project === 'string' ? r.project : null, ...(outcome && OUTCOMES.has(outcome) ? { outcome } : {}) });
     } catch {
       // riga troncata
     }
@@ -157,6 +162,7 @@ function toEvent(r: HistoryRecord): HistoryEvent {
   if (r.tool !== undefined) e.tool = r.tool;
   if (r.waitingKind !== undefined) e.waitingKind = r.waitingKind;
   if (r.durationMs !== undefined) e.durationMs = r.durationMs;
+  if (r.outcome !== undefined) e.outcome = r.outcome;
   return e;
 }
 
@@ -361,6 +367,8 @@ export function createHistory(opts: HistoryOptions): History {
           at: a.updatedAt,
           kind: 'agent-end',
           durationMs: Math.max(0, a.updatedAt - a.startedAt),
+          // come in withAlert (state): senza esito dal transcript un terminato è finito bene
+          outcome: a.outcome ?? 'ok',
           agentId: a.id,
           startedAt: a.startedAt,
           area: a.area,
@@ -397,6 +405,7 @@ export function createHistory(opts: HistoryOptions): History {
           endedAt: r.at,
           outputTokens: r.outputTokens ?? 0,
           cost: r.cost ?? null,
+          ...(r.outcome ? { outcome: r.outcome } : {}),
         }));
       const value = list.length > 0 ? list : undefined;
       closedCache = { version, active, value };

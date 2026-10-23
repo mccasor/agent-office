@@ -286,6 +286,8 @@ export interface HistoryEvent {
   /** con wait/unblock: il motivo; con unblock e agent-end: la durata */
   waitingKind?: WaitingKind;
   durationMs?: number;
+  /** con agent-end: com'è finito (#97); assente nelle righe scritte prima */
+  outcome?: AgentOutcome;
 }
 
 /** Subagente terminato oggi in una sessione già chiusa (B5): l'essenziale per la riga dei terminati. */
@@ -300,6 +302,8 @@ export interface FinishedAgent {
   endedAt: number;
   outputTokens: number;
   cost: number | null;
+  /** com'è finito (#97); assente nelle righe scritte prima */
+  outcome?: AgentOutcome;
 }
 
 /** Attese di una sessione nella giornata. */

@@ -40,8 +40,8 @@ export interface SettingItem {
 }
 
 /**
- * Catalogo delle voci. Tutte visibili di default (com'era prima delle impostazioni). Le voci senza effetto nei
- * componenti sono già nel catalogo, così la finestra le mostra tutte; l'applicazione arriva con la seconda parte di #94.
+ * Catalogo delle voci. Tutte visibili di default (com'era prima delle impostazioni). `places` dice dove la voce è
+ * applicata: in ognuno dei posti, spenta, sparisce senza lasciare separatori o righe vuote.
  */
 export const SETTINGS_CATALOG = [
   // Claude stesso (la sessione principale)
@@ -51,11 +51,14 @@ export const SETTINGS_CATALOG = [
   { key: 'session.cost', tab: 'claude', label: 'Costo stimato', places: ['instances', 'list', 'card'], default: true },
   { key: 'session.context', tab: 'claude', label: 'Contesto usato', places: ['instances', 'list', 'card', 'panel'], default: true },
   { key: 'session.turn', tab: 'claude', label: 'Durata del turno', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.title', tab: 'claude', label: 'Titolo della conversazione', places: ['list'], default: true },
-  { key: 'session.activity', tab: 'claude', label: 'Attività in corso', places: ['panel'], default: true },
+  { key: 'session.title', tab: 'claude', label: 'Titolo della conversazione', places: ['list', 'card'], default: true },
+  { key: 'session.toolErrors', tab: 'claude', label: 'Errori dei tool', places: ['card'], default: true },
+  { key: 'session.activity', tab: 'claude', label: 'Attività sotto l\'istanza', places: ['panel'], default: true },
   // subagenti
   { key: 'agent.role', tab: 'agents', label: 'Ruolo', places: ['office', 'instances', 'list', 'card'], default: true },
-  { key: 'agent.task', tab: 'agents', label: 'Compito', places: ['instances', 'list', 'card'], default: true },
+  { key: 'agent.task', tab: 'agents', label: 'Compito', places: ['instances', 'list', 'card', 'panel'], default: true },
+  { key: 'agent.type', tab: 'agents', label: 'Tipo di agente', places: ['card'], default: true },
+  { key: 'agent.description', tab: 'agents', label: 'Descrizione', places: ['card'], default: true },
   { key: 'agent.issues', tab: 'agents', label: 'Issue', places: ['list', 'card'], default: true },
   { key: 'agent.progress', tab: 'agents', label: 'Avanzamento', places: ['list', 'card'], default: true },
   { key: 'agent.duration', tab: 'agents', label: 'Durata', places: ['list', 'card'], default: true },
@@ -63,17 +66,23 @@ export const SETTINGS_CATALOG = [
   { key: 'agent.effort', tab: 'agents', label: 'Effort', places: ['card'], default: true },
   { key: 'agent.tokens', tab: 'agents', label: 'Token', places: ['list', 'card'], default: true },
   { key: 'agent.cost', tab: 'agents', label: 'Costo stimato', places: ['list', 'card'], default: true },
+  { key: 'agent.outcome', tab: 'agents', label: 'Esito dei terminati', places: ['list', 'card'], default: true },
+  { key: 'agent.toolErrors', tab: 'agents', label: 'Errori dei tool', places: ['list', 'card'], default: true },
+  { key: 'agent.alerts', tab: 'agents', label: 'Avviso se fermo o in loop', places: ['office', 'instances', 'list', 'card'], default: true },
   { key: 'office.labels', tab: 'agents', label: 'Nomi sopra i personaggi', places: ['office'], default: true },
   { key: 'office.bubbles', tab: 'agents', label: 'Fumetto di chi aspetta', places: ['office'], default: true },
   { key: 'panel.agents', tab: 'agents', label: 'Agenti sotto le istanze', places: ['panel'], default: true },
   // repository
   { key: 'session.branch', tab: 'git', label: 'Branch', places: ['instances', 'list', 'card', 'panel'], default: true },
   { key: 'session.diff', tab: 'git', label: 'Modifiche non committate', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.issues', tab: 'git', label: 'Issue del branch', places: ['instances', 'list'], default: true },
-  // istanze
+  { key: 'session.issues', tab: 'git', label: 'Issue del branch', places: ['instances', 'list', 'card'], default: true },
+  // istanze e giornata
   { key: 'instances.counts', tab: 'instances', label: 'Subagenti per stato', places: ['instances', 'list'], default: true },
-  { key: 'instances.done', tab: 'instances', label: 'Subagenti terminati', places: ['instances', 'list'], default: true },
-  { key: 'list.finishedToday', tab: 'instances', label: 'Terminati oggi', places: ['list'], default: true },
+  { key: 'instances.done', tab: 'instances', label: 'Terminati ancora in ufficio', places: ['instances', 'list'], default: true },
+  { key: 'list.finishedToday', tab: 'instances', label: 'Terminati oggi, già usciti', places: ['list'], default: true },
+  { key: 'list.closedFinished', tab: 'instances', label: 'Terminati delle istanze chiuse', places: ['list'], default: true },
+  { key: 'today.list', tab: 'instances', label: 'Barra "Oggi" completa', places: ['list'], default: true },
+  { key: 'today.office', tab: 'instances', label: 'Barra "Oggi" compatta', places: ['office'], default: true },
 ] as const satisfies readonly SettingItem[];
 
 export type SettingKey = (typeof SETTINGS_CATALOG)[number]['key'];

@@ -7,7 +7,7 @@ import { projectName } from './hud/labels';
 import { StatusDot } from './hud/panels';
 import { openCardWindow, type CardKind } from './hud/popout';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
-import { connectSnapshotStream, useOfficeStore } from './store';
+import { connectSnapshotStream, useOfficeStore, useShown } from './store';
 
 interface AgentView {
   agent: AgentState;
@@ -81,6 +81,7 @@ function AgentWindow({ snapshot, id, onName }: WindowProps) {
 function SessionWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findSession(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
+  const show = useShown();
   const name = shown ? projectName(shown.session) : null;
   useEffect(() => {
     if (name) onName(name);
@@ -95,9 +96,9 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
           <StatusDot status={current ? s.dot : 'idle'} />
           <span className="hud-instance__name">
             <span className="hud-title">{projectName(s)}</span>
-            {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}
+            {s.branch && show('session.branch') && <span className="hud-session__branch hud-muted">{s.branch}</span>}
           </span>
-          {s.issues.length > 0 && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
+          {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
           <StateCounts agents={agents} />
         </header>
         <InstanceBody

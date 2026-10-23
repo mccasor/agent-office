@@ -140,6 +140,9 @@ export function stateCounts(agents: readonly { status: AgentStatus; waiting?: bo
     .join(' · ');
 }
 
+/** Terminati di oggi già usciti dall'ufficio, in fondo alla scheda dell'istanza nella lista. */
+export const FINISHED_TODAY_TITLE = 'Terminati oggi';
+
 /** Gruppo richiudibile dei terminati: "1 terminato", "12 terminati". */
 export const doneGroupLabel = (n: number): string => `${n} ${COUNT_LABEL[3]![n === 1 ? 0 : 1]}`;
 

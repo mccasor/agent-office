@@ -215,16 +215,20 @@
         const d = dotOf(s);
         const ctx = show('session.context') && s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
         const ctxClass = ctx > 90 ? ' pill--danger' : ctx > 70 ? ' pill--warn' : '';
-        const line = s.waiting ? waitingText(s) : activity(s) || SESSION_STATUS[s.status] || '';
+        // l'attesa si vede sempre; l'attività (session.activity) si può spegnere, e senza niente da dire niente riga
+        const line = s.waiting ? waitingText(s) : show('session.activity') ? activity(s) || SESSION_STATUS[s.status] || '' : '';
+        const branch = show('session.branch') && s.branch ? ` <span>${esc(s.branch)}</span>` : '';
         html += `<button class="session" data-action="open-session" data-arg="${esc(s.id)}">
           <span class="session__head"><span class="dot dot--${d}"></span>
-            <span class="session__name"><b>${esc(project(s))}</b>${s.branch ? ` <span>${esc(s.branch)}</span>` : ''}</span>
+            <span class="session__name"><b>${esc(project(s))}</b>${branch}</span>
             ${ctx !== null ? `<span class="pill${ctxClass}" title="Contesto usato">${ctx}%</span>` : ''}</span>
-          <span class="session__sub${s.waiting ? ' session__sub--waiting' : ''}">${esc(line)}</span></button>`;
+          ${line ? `<span class="session__sub${s.waiting ? ' session__sub--waiting' : ''}">${esc(line)}</span>` : ''}</button>`;
         for (const a of show('panel.agents') ? own : []) {
           const ad = busy(a.status) ? 'working' : 'idle';
+          // nome di persona e, se non è spento (agent.task), il compito; senza nome di persona il compito fa da nome
+          const name = a.nickname ? `<b>${esc(a.nickname)}</b>${show('agent.task') ? ` <span>${esc(a.name)}</span>` : ''}` : esc(a.name);
           html += `<button class="agent" data-action="open-session" data-arg="${esc(s.id)}"><span class="dot dot--${ad}"></span>
-            <span class="agent__name" title="${esc(a.name)}">${a.nickname ? `<b>${esc(a.nickname)}</b> <span>${esc(a.name)}</span>` : esc(a.name)}</span><span class="agent__tool">${esc(activity(a))}</span></button>`;
+            <span class="agent__name" title="${esc(a.name)}">${name}</span><span class="agent__tool">${esc(activity(a))}</span></button>`;
         }
       }
 

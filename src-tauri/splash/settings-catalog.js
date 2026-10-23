@@ -102,14 +102,24 @@ globalThis.AGENT_OFFICE_SETTINGS = {
       "tab": "claude",
       "label": "Titolo della conversazione",
       "places": [
-        "list"
+        "list",
+        "card"
+      ],
+      "default": true
+    },
+    {
+      "key": "session.toolErrors",
+      "tab": "claude",
+      "label": "Errori dei tool",
+      "places": [
+        "card"
       ],
       "default": true
     },
     {
       "key": "session.activity",
       "tab": "claude",
-      "label": "Attività in corso",
+      "label": "Attività sotto l'istanza",
       "places": [
         "panel"
       ],
@@ -134,6 +144,25 @@ globalThis.AGENT_OFFICE_SETTINGS = {
       "places": [
         "instances",
         "list",
+        "card",
+        "panel"
+      ],
+      "default": true
+    },
+    {
+      "key": "agent.type",
+      "tab": "agents",
+      "label": "Tipo di agente",
+      "places": [
+        "card"
+      ],
+      "default": true
+    },
+    {
+      "key": "agent.description",
+      "tab": "agents",
+      "label": "Descrizione",
+      "places": [
         "card"
       ],
       "default": true
@@ -207,6 +236,38 @@ globalThis.AGENT_OFFICE_SETTINGS = {
       "default": true
     },
     {
+      "key": "agent.outcome",
+      "tab": "agents",
+      "label": "Esito dei terminati",
+      "places": [
+        "list",
+        "card"
+      ],
+      "default": true
+    },
+    {
+      "key": "agent.toolErrors",
+      "tab": "agents",
+      "label": "Errori dei tool",
+      "places": [
+        "list",
+        "card"
+      ],
+      "default": true
+    },
+    {
+      "key": "agent.alerts",
+      "tab": "agents",
+      "label": "Avviso se fermo o in loop",
+      "places": [
+        "office",
+        "instances",
+        "list",
+        "card"
+      ],
+      "default": true
+    },
+    {
       "key": "office.labels",
       "tab": "agents",
       "label": "Nomi sopra i personaggi",
@@ -262,7 +323,8 @@ globalThis.AGENT_OFFICE_SETTINGS = {
       "label": "Issue del branch",
       "places": [
         "instances",
-        "list"
+        "list",
+        "card"
       ],
       "default": true
     },
@@ -279,7 +341,7 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "instances.done",
       "tab": "instances",
-      "label": "Subagenti terminati",
+      "label": "Terminati ancora in ufficio",
       "places": [
         "instances",
         "list"
@@ -289,9 +351,36 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     {
       "key": "list.finishedToday",
       "tab": "instances",
-      "label": "Terminati oggi",
+      "label": "Terminati oggi, già usciti",
       "places": [
         "list"
+      ],
+      "default": true
+    },
+    {
+      "key": "list.closedFinished",
+      "tab": "instances",
+      "label": "Terminati delle istanze chiuse",
+      "places": [
+        "list"
+      ],
+      "default": true
+    },
+    {
+      "key": "today.list",
+      "tab": "instances",
+      "label": "Barra \"Oggi\" completa",
+      "places": [
+        "list"
+      ],
+      "default": true
+    },
+    {
+      "key": "today.office",
+      "tab": "instances",
+      "label": "Barra \"Oggi\" compatta",
+      "places": [
+        "office"
       ],
       "default": true
     }

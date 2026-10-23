@@ -1,4 +1,4 @@
-import type { HistoryEvent, HistoryEventKind, WaitingKind } from '../../shared/types';
+import type { AgentOutcome, HistoryEvent, HistoryEventKind, WaitingKind } from '../../shared/types';
 import { formatDuration } from './format';
 
 /*
@@ -57,6 +57,10 @@ export function eventLabel(e: Pick<HistoryEvent, 'kind' | 'waitingKind'>): strin
   const label = EVENT_LABEL[e.kind];
   return e.kind === 'wait' && e.waitingKind ? `${label} ${WAIT_REASON[e.waitingKind]}` : label;
 }
+
+/** Esito da mostrare accanto a "agente terminato" (#97): solo interrotto o fallito, ok è la norma; null altrimenti. */
+export const eventOutcome = (e: Pick<HistoryEvent, 'kind' | 'outcome'>): Exclude<AgentOutcome, 'ok'> | null =>
+  e.kind === 'agent-end' && e.outcome && e.outcome !== 'ok' ? e.outcome : null;
 
 /** Dettaglio della durata: "in 4 min" per un agente, "dopo 3 min" per uno sblocco; null altrimenti. */
 export function eventDuration(e: Pick<HistoryEvent, 'kind' | 'durationMs'>): string | null {
