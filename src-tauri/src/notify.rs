@@ -1,7 +1,5 @@
 //! Notifiche di macOS: quando una sessione si blocca in attesa dell'utente e, se richiesto, quando finisce il
-//! lavoro. Preferenze in ~/.agent-office/config.json, file condiviso con il server (che ne legge altre chiavi).
-
-use std::path::PathBuf;
+//! lavoro. Preferenze in ~/.agent-office/config.json (config.rs), scelte nella finestra Impostazioni.
 
 use serde_json::{Map, Value};
 
@@ -20,33 +18,17 @@ impl Default for Prefs {
     }
 }
 
-fn prefs_path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/config.json"))
+impl Prefs {
+    /// Dal contenuto di config.json: chiavi mancanti o non booleane al default.
+    pub fn from_config(config: &Map<String, Value>) -> Prefs {
+        let d = Prefs::default();
+        let flag = |key: &str, default: bool| config.get(key).and_then(Value::as_bool).unwrap_or(default);
+        Prefs { notify_waiting: flag("notifyWaiting", d.notify_waiting), notify_done: flag("notifyDone", d.notify_done) }
+    }
 }
 
 pub fn load() -> Prefs {
-    let stored = prefs_path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str::<Value>(&t).ok());
-    let d = Prefs::default();
-    let flag = |key: &str, default: bool| stored.as_ref().and_then(|v| v.get(key)?.as_bool()).unwrap_or(default);
-    Prefs { notify_waiting: flag("notifyWaiting", d.notify_waiting), notify_done: flag("notifyDone", d.notify_done) }
-}
-
-/// Salva le preferenze lasciando intatte le altre chiavi del file (es. activeWindowMinutes del server).
-pub fn save(p: Prefs) {
-    let Some(path) = prefs_path() else { return };
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let mut config = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-        .and_then(|v| v.as_object().cloned())
-        .unwrap_or_else(Map::new);
-    config.insert("notifyWaiting".into(), Value::Bool(p.notify_waiting));
-    config.insert("notifyDone".into(), Value::Bool(p.notify_done));
-    if let Ok(text) = serde_json::to_string_pretty(&Value::Object(config)) {
-        let _ = std::fs::write(path, text + "\n");
-    }
+    Prefs::from_config(&crate::config::read())
 }
 
 /// Quanto serve per decidere le notifiche di una sessione attiva.
@@ -109,6 +91,13 @@ mod tests {
         // nuova sessione già bloccata
         assert_eq!(messages(&[], &[facts("b", "done", Some("plan"))], prefs).len(), 1);
         assert!(messages(&working, &blocked, Prefs { notify_waiting: false, notify_done: false }).is_empty());
+    }
+
+    #[test]
+    fn preferenze_da_config() {
+        let config = serde_json::json!({ "notifyDone": true, "notifyWaiting": "sì" });
+        assert_eq!(Prefs::from_config(config.as_object().unwrap()), Prefs { notify_waiting: true, notify_done: true });
+        assert_eq!(Prefs::from_config(&Map::new()), Prefs::default());
     }
 
     #[test]
