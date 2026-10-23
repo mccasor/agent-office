@@ -75,6 +75,12 @@ export const es: Texts = {
   'panel.contextUsed': 'Contexto usado',
   'panel.settings': 'Ajustes…',
   'panel.quit': 'Salir de Agent Office',
+  // #100
+  'notify.alertStale': '{name} lleva {d} sin actividad',
+  'notify.alertLoop': '{name} repite {tool} {n} veces seguidas',
+  'notify.min': '{m} min',
+  'notify.h': '{h} h',
+  'notify.hm': '{h} h {m} min',
 
   'settings.startup': 'Inicio y notificaciones',
   'settings.autostart': 'Abrir al iniciar sesión',
@@ -158,6 +164,9 @@ export const es: Texts = {
   'setting.list.closedFinished': 'Terminados de instancias cerradas',
   'setting.today.list': 'Barra "Hoy" completa',
   'setting.today.office': 'Barra "Hoy" compacta',
+  // #100
+  'settings.notifyAlerts': 'Avisar de las alertas de los agentes',
+  'settings.notifyAlertsSub': 'Cuando un subagente está detenido o en bucle',
 
   'turn.current': 'turno desde hace {d}',
   'turn.last': 'último turno {d}',

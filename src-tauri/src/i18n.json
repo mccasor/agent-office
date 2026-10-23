@@ -27,7 +27,12 @@
     "server.exited": "Il server si è chiuso ({code}){detail}",
     "server.portBusy": "La porta {port} è occupata da un altro programma",
     "server.spawnFailed": "Avvio del server non riuscito: {e}",
-    "window.settings": "Impostazioni"
+    "window.settings": "Impostazioni",
+    "notify.alertStale": "{name} è senza attività da {d}",
+    "notify.alertLoop": "{name} ripete {tool} {n} volte di fila",
+    "notify.min": "{m} min",
+    "notify.h": "{h} h",
+    "notify.hm": "{h} h {m} min"
   },
   "en": {
     "tray.working": "Claude is working",
@@ -57,7 +62,12 @@
     "server.exited": "The server quit ({code}){detail}",
     "server.portBusy": "Port {port} is in use by another app",
     "server.spawnFailed": "Couldn’t start the server: {e}",
-    "window.settings": "Settings"
+    "window.settings": "Settings",
+    "notify.alertStale": "{name} has been idle for {d}",
+    "notify.alertLoop": "{name} repeated {tool} {n} times in a row",
+    "notify.min": "{m}m",
+    "notify.h": "{h}h",
+    "notify.hm": "{h}h {m}m"
   },
   "es": {
     "tray.working": "Claude está trabajando",
@@ -87,6 +97,11 @@
     "server.exited": "El servidor se ha cerrado ({code}){detail}",
     "server.portBusy": "Otra app está usando el puerto {port}",
     "server.spawnFailed": "No se ha podido iniciar el servidor: {e}",
-    "window.settings": "Ajustes"
+    "window.settings": "Ajustes",
+    "notify.alertStale": "{name} lleva {d} sin actividad",
+    "notify.alertLoop": "{name} repite {tool} {n} veces seguidas",
+    "notify.min": "{m} min",
+    "notify.h": "{h} h",
+    "notify.hm": "{h} h {m} min"
   }
 }
