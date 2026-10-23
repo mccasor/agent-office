@@ -9,7 +9,7 @@ const agent = (id: string, sessionId = 's1', status: AgentState['status'] = 'wor
 });
 const session = (id: string, updatedAt = 1, extra: Partial<SessionState> = {}): SessionState => ({
   id, title: null, model: null, effort: null, context: { used: 0, window: null }, tokensUsed: tokens,
-  startedAt: 0, updatedAt, active: true, status: 'working', issues: [], cwd: null, branch: null, waiting: false, ...extra,
+  startedAt: 0, updatedAt, active: true, status: 'working', issues: [], cwd: null, branch: null, waiting: false, dot: 'working', project: null, ...extra,
 });
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
   ({ status: 'idle', repo: null, sessions, agents, generatedAt: 0 });

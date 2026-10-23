@@ -9,6 +9,7 @@ const agent = (id: string): AgentState => ({
 const session = (id: string, active: boolean, updatedAt: number): SessionState => ({
   id, title: null, model: null, effort: null, context: { used: 0, window: null }, tokensUsed: tokens,
   startedAt: 0, updatedAt, active, status: 'working', issues: [], cwd: null, branch: null, waiting: false,
+  dot: 'working', project: null,
 });
 const EMPTY = EMPTY_SEATING;
 const snap = (agents: AgentState[], sessions: SessionState[] = []): Snapshot =>
@@ -84,7 +85,7 @@ describe('officeModel', () => {
   });
 
   it('più sessioni attive: un Claudio per sessione, ognuno alla sua postazione; oltre 4 nell\'openspace', () => {
-    const s = (id: string, project: string, updatedAt = 1) => ({ ...session(id, true, updatedAt), cwd: `/u/${project}` });
+    const s = (id: string, project: string, updatedAt = 1) => ({ ...session(id, true, updatedAt), cwd: `/u/${project}`, project });
     const two = officeModel(snap([], [s('a', 'alpha'), s('b', 'beta')]), EMPTY);
     expect(two.bosses.map((b) => b.name)).toEqual(['Claudio Code · alpha', 'Claudio Code · beta']);
     expect(new Set(two.bosses.map((b) => two.targets[b.id]?.id))).toEqual(new Set(['boss-0', 'boss-1']));

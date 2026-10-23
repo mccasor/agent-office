@@ -10,7 +10,7 @@ export { AgentCard } from './AgentCard';
 export { AgentLabelContent, activityText } from './AgentLabelContent';
 export type { Waiting } from './AgentLabelContent';
 export { ProgressBar } from './ProgressBar';
-export { ListView, ViewToggle, sessionDot } from './ListView';
+export { ListView, ViewToggle } from './ListView';
 export { TokenBreakdown } from './TokenBreakdown';
 
 export interface AgentLabelProps {

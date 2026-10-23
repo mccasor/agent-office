@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { AgentState, AgentStatus, HookEvent, RepoState, SessionState } from '../../shared/types.js';
+import type { AgentState, AgentStatus, HookEvent, RepoState, TranscriptSession } from '../../shared/types.js';
 import { branchIssue, buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS, LOUNGE_WAIT_MS } from './index.js';
 
 const NOW = 1_000_000;
@@ -24,7 +24,7 @@ function agent(over: Partial<AgentState> = {}): AgentState {
   };
 }
 
-function session(over: Partial<SessionState> = {}): SessionState {
+function session(over: Partial<TranscriptSession> = {}): TranscriptSession {
   return {
     id: 's1',
     title: null,
@@ -159,7 +159,7 @@ describe('buildSnapshot: stato agente', () => {
 });
 
 describe('buildSnapshot: sessioni', () => {
-  const cases: Array<{ name: string; sessions: Partial<SessionState>[]; hooks?: HookEvent[]; expected: Array<[string, boolean]> }> = [
+  const cases: Array<{ name: string; sessions: Partial<TranscriptSession>[]; hooks?: HookEvent[]; expected: Array<[string, boolean]> }> = [
     {
       name: 'attive prima, poi updatedAt desc',
       sessions: [
@@ -293,7 +293,7 @@ describe('buildSnapshot: terminati di oggi', () => {
 });
 
 describe('buildSnapshot: sessione principale (Claudio Code)', () => {
-  const build = (over: Partial<SessionState>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
+  const build = (over: Partial<TranscriptSession>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
     buildSnapshot({
       transcript: { sessions: [session(over)], agents: [] },
       hookEvents,
@@ -328,7 +328,7 @@ describe('buildSnapshot: sessione principale (Claudio Code)', () => {
 
 describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
   const notif = (t: number, notification: NonNullable<HookEvent['notification']>) => hook('Notification', t, { agentId: null, notification });
-  const build = (sessions: SessionState[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
+  const build = (sessions: TranscriptSession[], hookEvents: HookEvent[] = [], agents: AgentState[] = []) =>
     buildSnapshot({ transcript: { sessions, agents }, hookEvents, repo: null, now: NOW });
 
   it('notifica di permesso senza attività successiva → waiting; quella di attesa prompt no', () => {
@@ -355,6 +355,25 @@ describe('buildSnapshot: sessione bloccata e stato per l\'icona', () => {
     expect(build([session({ status: 'done' })]).status).toBe('idle');
     expect(build([session({ status: 'working', waiting: true })]).status).toBe('waiting');
     expect(build([session({ status: 'working', waiting: true, active: false })]).status).toBe('idle');
+  });
+
+  it('pallino per sessione: solo i suoi agenti contano; le sessioni non attive sono grigie', () => {
+    const dots = (sessions: TranscriptSession[], agents: AgentState[] = []) => build(sessions, [], agents).sessions.map((s) => [s.id, s.dot]);
+    expect(dots([session({ waiting: true })])).toEqual([['s1', 'waiting']]);
+    expect(dots([session()])).toEqual([['s1', 'working']]);
+    expect(dots([session({ status: 'done' })], [agent()])).toEqual([['s1', 'working']]);
+    expect(dots([session({ status: 'done' })], [agent({ status: 'idle', updatedAt: NOW - IDLE_MS - 1 })])).toEqual([['s1', 'idle']]);
+    expect(dots([session({ active: false, waiting: true })])).toEqual([['s1', 'idle']]);
+    // l'agente al lavoro di s1 non colora s2
+    expect(dots([session({ status: 'done' }), session({ id: 's2', status: 'done', updatedAt: NOW - 2_000 })], [agent()])).toEqual([
+      ['s1', 'working'],
+      ['s2', 'idle'],
+    ]);
+  });
+
+  it('progetto: ultima cartella del cwd, null senza cwd', () => {
+    expect(build([session({ cwd: '/Users/x/agent-office/' })]).sessions[0]!.project).toBe('agent-office');
+    expect(build([session({ cwd: null })]).sessions[0]!.project).toBeNull();
   });
 
   it('area relax per sessione: i terminati di una sessione non aspettano gli agenti di un\'altra', () => {

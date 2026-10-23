@@ -30,9 +30,6 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** Nome del progetto: ultima cartella del cwd, altrimenti l'inizio dell'id. */
-export const projectName = (s: SessionState): string => s.cwd?.split('/').filter(Boolean).at(-1) ?? s.id.slice(0, 8);
-
 /** Righe aggiunte e tolte, file modificati (modifiche non committate). */
 export function DiffStat({ diff }: { diff: RepoDiff }) {
   return (

@@ -103,7 +103,14 @@ export interface SessionState {
   cost?: number | null;
   /** modifiche non committate nel repository del cwd (solo sessioni attive); null o assente se non disponibili */
   diff?: RepoDiff | null;
+  /** pallino di stato della sessione (stessa regola dell'icona nella menu bar), calcolato dal server */
+  dot: OfficeStatus;
+  /** nome del progetto: ultima cartella del cwd; null senza cwd */
+  project: string | null;
 }
+
+/** Sessione letta dal transcript, prima dei campi che il server deriva nello Snapshot. */
+export type TranscriptSession = Omit<SessionState, 'dot' | 'project'>;
 
 /** Stato complessivo per l'icona nella menu bar: rosso, verde, grigio. */
 export type OfficeStatus = 'waiting' | 'working' | 'idle';
@@ -154,6 +161,6 @@ export interface Watcher<T> {
 }
 
 export interface TranscriptSnapshot {
-  sessions: SessionState[];
+  sessions: TranscriptSession[];
   agents: AgentState[];
 }

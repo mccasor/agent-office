@@ -1,20 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { AgentState, AgentStatus, OfficeStatus, SessionState } from '../../shared/types';
+import type { AgentState, SessionState } from '../../shared/types';
 import type { OfficeView } from '../store';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, projectName, StatusDot } from './panels';
+import { INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
+import { DiffStat, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
-
-/** Colore del pallino di una sessione, con la stessa regola dell'icona nella menu bar. */
-export function sessionDot(session: SessionState, agents: AgentState[]): OfficeStatus {
-  if (!session.active) return 'idle';
-  if (session.waiting) return 'waiting';
-  const busy = (s: AgentStatus) => s === 'working' || s === 'entering';
-  return busy(session.status) || agents.some((a) => busy(a.status)) ? 'working' : 'idle';
-}
 
 const issueText = (issues: number[]): string => issues.map((n) => `#${n}`).join(' ');
 
@@ -91,10 +83,10 @@ function ContextBar({ session }: { session: SessionState }) {
 const VIEW_LABEL: [OfficeView, string, string][] = [
   ['office', '3D', 'Ufficio 3D'],
   ['pixel', '2D', 'Ufficio 2D in pixel art'],
-  ['list', 'Lista', 'Lista delle sessioni'],
+  ['list', 'Lista', 'Lista delle istanze'],
 ];
 
-/** Selettore a tre segmenti in alto a destra: ufficio 3D, ufficio 2D o lista delle sessioni. */
+/** Selettore a tre segmenti in alto a destra: ufficio 3D, ufficio 2D o lista delle istanze. */
 export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
     <div className="hud-toggle" role="group" aria-label="Vista">
@@ -108,7 +100,7 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
 }
 
 /**
- * Vista lista: una scheda per sessione (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
+ * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nella scena 3D.
  */
 export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
@@ -138,12 +130,12 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
   const shown = active
     .map((s) => {
       const all = agents.filter((a) => a.sessionId === s.id);
-      return { s, all, own: filter.hideDone ? all.filter((a) => a.status !== 'done') : all, dot: sessionDot(s, all) };
+      return { s, all, own: filter.hideDone ? all.filter((a) => a.status !== 'done') : all };
     })
-    .filter(({ s, all, dot }) => (!filter.waitingOnly || dot === 'waiting') && matches(filter.query, s, all));
+    .filter(({ s, all }) => (!filter.waitingOnly || s.dot === 'waiting') && matches(filter.query, s, all));
   return (
-    <main className="list-view" aria-label="Sessioni">
-      <h1 className="list-view__title">Sessioni attive</h1>
+    <main className="list-view" aria-label="Istanze">
+      <h1 className="list-view__title">{INSTANCES_TITLE}</h1>
       {active.length > 0 && (
         <div className="list-filter" role="search">
           <input
@@ -163,9 +155,9 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
           </label>
         </div>
       )}
-      {active.length === 0 && <p className="list-view__empty">Nessuna sessione di Claude Code attiva.</p>}
-      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">Nessuna sessione corrisponde al filtro.</p>}
-      {shown.map(({ s, own, dot }) => {
+      {active.length === 0 && <p className="list-view__empty">{NO_INSTANCES}</p>}
+      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">{NO_MATCH}</p>}
+      {shown.map(({ s, own }) => {
         return (
           <section
             key={s.id}
@@ -174,7 +166,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
             data-session={s.id}
           >
             <header className="list-session__head">
-              <StatusDot status={dot} />
+              <StatusDot status={s.dot} />
               <div className="list-session__name">
                 <strong>{projectName(s)}</strong>
                 {s.branch && <span className="hud-muted">{s.branch}</span>}
@@ -193,7 +185,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                 s.effort,
                 `${formatTokens(s.tokensUsed.output)} token generati`,
                 s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null,
-                `attiva da ${formatDuration(now - s.startedAt)}`,
+                `aperta da ${formatDuration(now - s.startedAt)}`,
                 s.waiting ? waitingText(s.waitingKind, s.waitingSince, now) : SESSION_STATUS_LABEL[s.status],
                 s.tool && !s.waiting ? toolText(s.tool) : null,
               ]

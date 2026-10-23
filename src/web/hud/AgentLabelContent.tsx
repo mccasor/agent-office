@@ -1,7 +1,7 @@
 import type { AgentState, WaitingKind } from '../../shared/types';
 import { elapsed, formatDuration, percent, truncate } from './format';
 import { ProgressBar } from './ProgressBar';
-import { toolText, waitingText } from './labels';
+import { SESSION_STATUS_LABEL, toolText, waitingText } from './labels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -17,7 +17,7 @@ export interface Waiting {
 export function activityText(agent: AgentState, waiting: Waiting | null, now: number): string {
   if (waiting) return waitingText(waiting.kind, waiting.since, now);
   // Claudio Code a fine turno aspetta il prossimo prompt: non ha "terminato"
-  if (agent.agentType === 'main' && agent.status === 'done') return 'pronto';
+  if (agent.agentType === 'main' && agent.status === 'done') return SESSION_STATUS_LABEL.done;
   const time = `${agent.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`;
   return agent.tool && agent.status !== 'done' ? `${toolText(agent.tool)} · ${time}` : time;
 }

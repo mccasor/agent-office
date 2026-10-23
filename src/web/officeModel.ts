@@ -32,11 +32,9 @@ const BOSS_SEAT_IDS = createLayout(0).bossSeats.map((s) => s.id);
 
 export const EMPTY_SEATING: Seating = { seats: {}, lounge: {}, bossDesks: {}, capacity: 0 };
 
-const projectOf = (s: SessionState): string | null => s.cwd?.split('/').filter(Boolean).at(-1) ?? null;
-
 /** Una sessione principale vista come un agente: stessi comportamenti, posto nella stanza del boss. */
 export function bossOf(session: SessionState, named: boolean): AgentState {
-  const project = projectOf(session);
+  const { project } = session;
   return {
     id: `${BOSS_PREFIX}${session.id}`,
     sessionId: session.id,
