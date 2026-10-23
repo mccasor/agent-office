@@ -7,33 +7,22 @@
  * In ~/.agent-office/config.json gli interruttori stanno in `show: { [chiave]: boolean }`; chiavi mancanti o non
  * valide valgono il default del catalogo. Le chiavi sono stabili: rinominarle perde le scelte salvate.
  */
+import { isLocale, resolveLocale, type Locale } from './i18n/index.js';
 
-/** schede della finestra Impostazioni, nell'ordine della barra */
-export const SETTINGS_TABS = [
-  { id: 'general', label: 'Generali' },
-  { id: 'claude', label: 'Claude' },
-  { id: 'agents', label: 'Agenti' },
-  { id: 'git', label: 'Git' },
-  { id: 'instances', label: 'Istanze' },
-] as const;
+/** schede della finestra Impostazioni, nell'ordine della barra; i nomi sono i testi `tab.<id>` (src/shared/i18n) */
+export const SETTINGS_TABS = [{ id: 'general' }, { id: 'claude' }, { id: 'agents' }, { id: 'git' }, { id: 'instances' }] as const;
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
 /** dove compare una voce: ufficio 2D, accordion delle istanze, scheda dell'agente, vista lista, pannello della menu bar */
 export type SettingPlace = 'office' | 'instances' | 'card' | 'list' | 'panel';
 
-export const PLACE_LABEL: Record<SettingPlace, string> = {
-  office: 'Ufficio',
-  instances: 'Istanze',
-  card: 'Scheda',
-  list: 'Lista',
-  panel: 'Menu bar',
-};
+export const SETTING_PLACES: readonly SettingPlace[] = ['office', 'instances', 'card', 'list', 'panel'];
 
+/** Voce del catalogo: il nome è il testo `setting.<key>` (src/shared/i18n), i posti i testi `place.<posto>`. */
 export interface SettingItem {
   key: string;
   tab: Exclude<SettingsTab, 'general'>;
-  label: string;
   /** dove si vede: l'interruttore lo dice sotto l'etichetta */
   places: readonly SettingPlace[];
   default: boolean;
@@ -45,44 +34,44 @@ export interface SettingItem {
  */
 export const SETTINGS_CATALOG = [
   // Claude stesso (la sessione principale)
-  { key: 'session.model', tab: 'claude', label: 'Modello', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.effort', tab: 'claude', label: 'Effort', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.tokens', tab: 'claude', label: 'Token generati', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.cost', tab: 'claude', label: 'Costo stimato', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.context', tab: 'claude', label: 'Contesto usato', places: ['instances', 'list', 'card', 'panel'], default: true },
-  { key: 'session.turn', tab: 'claude', label: 'Durata del turno', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.title', tab: 'claude', label: 'Titolo della conversazione', places: ['list', 'card'], default: true },
-  { key: 'session.toolErrors', tab: 'claude', label: 'Errori dei tool', places: ['card'], default: true },
-  { key: 'session.activity', tab: 'claude', label: 'Attività sotto l\'istanza', places: ['panel'], default: true },
+  { key: 'session.model', tab: 'claude', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.effort', tab: 'claude', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.tokens', tab: 'claude', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.cost', tab: 'claude', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.context', tab: 'claude', places: ['instances', 'list', 'card', 'panel'], default: true },
+  { key: 'session.turn', tab: 'claude', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.title', tab: 'claude', places: ['list', 'card'], default: true },
+  { key: 'session.toolErrors', tab: 'claude', places: ['card'], default: true },
+  { key: 'session.activity', tab: 'claude', places: ['panel'], default: true },
   // subagenti
-  { key: 'agent.role', tab: 'agents', label: 'Ruolo', places: ['office', 'instances', 'list', 'card'], default: true },
-  { key: 'agent.task', tab: 'agents', label: 'Compito', places: ['instances', 'list', 'card', 'panel'], default: true },
-  { key: 'agent.type', tab: 'agents', label: 'Tipo di agente', places: ['card'], default: true },
-  { key: 'agent.description', tab: 'agents', label: 'Descrizione', places: ['card'], default: true },
-  { key: 'agent.issues', tab: 'agents', label: 'Issue', places: ['list', 'card'], default: true },
-  { key: 'agent.progress', tab: 'agents', label: 'Avanzamento', places: ['list', 'card'], default: true },
-  { key: 'agent.duration', tab: 'agents', label: 'Durata', places: ['list', 'card'], default: true },
-  { key: 'agent.model', tab: 'agents', label: 'Modello', places: ['card'], default: true },
-  { key: 'agent.effort', tab: 'agents', label: 'Effort', places: ['card'], default: true },
-  { key: 'agent.tokens', tab: 'agents', label: 'Token', places: ['list', 'card'], default: true },
-  { key: 'agent.cost', tab: 'agents', label: 'Costo stimato', places: ['list', 'card'], default: true },
-  { key: 'agent.outcome', tab: 'agents', label: 'Esito dei terminati', places: ['list', 'card'], default: true },
-  { key: 'agent.toolErrors', tab: 'agents', label: 'Errori dei tool', places: ['list', 'card'], default: true },
-  { key: 'agent.alerts', tab: 'agents', label: 'Avviso se fermo o in loop', places: ['office', 'instances', 'list', 'card'], default: true },
-  { key: 'office.labels', tab: 'agents', label: 'Nomi sopra i personaggi', places: ['office'], default: true },
-  { key: 'office.bubbles', tab: 'agents', label: 'Fumetto di chi aspetta', places: ['office'], default: true },
-  { key: 'panel.agents', tab: 'agents', label: 'Agenti sotto le istanze', places: ['panel'], default: true },
+  { key: 'agent.role', tab: 'agents', places: ['office', 'instances', 'list', 'card'], default: true },
+  { key: 'agent.task', tab: 'agents', places: ['instances', 'list', 'card', 'panel'], default: true },
+  { key: 'agent.type', tab: 'agents', places: ['card'], default: true },
+  { key: 'agent.description', tab: 'agents', places: ['card'], default: true },
+  { key: 'agent.issues', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.progress', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.duration', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.model', tab: 'agents', places: ['card'], default: true },
+  { key: 'agent.effort', tab: 'agents', places: ['card'], default: true },
+  { key: 'agent.tokens', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.cost', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.outcome', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.toolErrors', tab: 'agents', places: ['list', 'card'], default: true },
+  { key: 'agent.alerts', tab: 'agents', places: ['office', 'instances', 'list', 'card'], default: true },
+  { key: 'office.labels', tab: 'agents', places: ['office'], default: true },
+  { key: 'office.bubbles', tab: 'agents', places: ['office'], default: true },
+  { key: 'panel.agents', tab: 'agents', places: ['panel'], default: true },
   // repository
-  { key: 'session.branch', tab: 'git', label: 'Branch', places: ['instances', 'list', 'card', 'panel'], default: true },
-  { key: 'session.diff', tab: 'git', label: 'Modifiche non committate', places: ['instances', 'list', 'card'], default: true },
-  { key: 'session.issues', tab: 'git', label: 'Issue del branch', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.branch', tab: 'git', places: ['instances', 'list', 'card', 'panel'], default: true },
+  { key: 'session.diff', tab: 'git', places: ['instances', 'list', 'card'], default: true },
+  { key: 'session.issues', tab: 'git', places: ['instances', 'list', 'card'], default: true },
   // istanze e giornata
-  { key: 'instances.counts', tab: 'instances', label: 'Subagenti per stato', places: ['instances', 'list'], default: true },
-  { key: 'instances.done', tab: 'instances', label: 'Terminati ancora in ufficio', places: ['instances', 'list'], default: true },
-  { key: 'list.finishedToday', tab: 'instances', label: 'Terminati oggi, già usciti', places: ['list'], default: true },
-  { key: 'list.closedFinished', tab: 'instances', label: 'Terminati delle istanze chiuse', places: ['list'], default: true },
-  { key: 'today.list', tab: 'instances', label: 'Barra "Oggi" completa', places: ['list'], default: true },
-  { key: 'today.office', tab: 'instances', label: 'Barra "Oggi" compatta', places: ['office'], default: true },
+  { key: 'instances.counts', tab: 'instances', places: ['instances', 'list'], default: true },
+  { key: 'instances.done', tab: 'instances', places: ['instances', 'list'], default: true },
+  { key: 'list.finishedToday', tab: 'instances', places: ['list'], default: true },
+  { key: 'list.closedFinished', tab: 'instances', places: ['list'], default: true },
+  { key: 'today.list', tab: 'instances', places: ['list'], default: true },
+  { key: 'today.office', tab: 'instances', places: ['office'], default: true },
 ] as const satisfies readonly SettingItem[];
 
 export type SettingKey = (typeof SETTINGS_CATALOG)[number]['key'];
@@ -93,7 +82,10 @@ export type Language = (typeof LANGUAGES)[number];
 
 /** Preferenze di visualizzazione inviate alle pagine (evento SSE `config`, GET /api/config). */
 export interface DisplaySettings {
+  /** lingua scelta in config.json */
   language: Language;
+  /** lingua da usare, già risolta dal server ("system" → lingua del sistema se supportata, altrimenti italiano) */
+  locale: Locale;
   /** tutte le voci del catalogo, già risolte con i default */
   show: Record<SettingKey, boolean>;
 }
@@ -108,27 +100,31 @@ export function resolveShow(raw: unknown): Record<SettingKey, boolean> {
   ) as Record<SettingKey, boolean>;
 }
 
-export const DEFAULT_DISPLAY: DisplaySettings = { language: 'system', show: resolveShow(undefined) };
+export const DEFAULT_DISPLAY: DisplaySettings = { language: 'system', locale: 'it', show: resolveShow(undefined) };
 
 /** La voce è da mostrare: valore delle preferenze, o default del catalogo se manca (server vecchio). Pura. */
 export function isShown(settings: Pick<DisplaySettings, 'show'>, key: SettingKey): boolean {
   return settings.show[key] ?? DEFAULT_DISPLAY.show[key];
 }
 
-/** Preferenze ricevute dal server (JSON non fidato) → valide. Pura. */
+/**
+ * Preferenze ricevute dal server (JSON non fidato) → valide. Senza `locale` (server vecchio) vale la lingua scelta,
+ * o l'italiano con "system". Pura.
+ */
 export function toDisplaySettings(raw: unknown): DisplaySettings {
   const v = isObject(raw) ? raw : {};
   const language = LANGUAGES.find((l) => l === v.language) ?? 'system';
-  return { language, show: resolveShow(v.show) };
+  const locale = isLocale(v.locale) ? v.locale : resolveLocale(language, []);
+  return { language, locale, show: resolveShow(v.show) };
 }
 
 /**
  * Contenuto di `src-tauri/splash/settings-catalog.js`: le pagine locali dell'app (Impostazioni e pannello) non
- * importano moduli TypeScript, e devono funzionare anche se il server non risponde. Un test controlla che il file sia
- * aggiornato.
+ * importano moduli TypeScript, e devono funzionare anche se il server non risponde. I nomi di schede, posti e voci
+ * sono in `i18n.js` (src/shared/i18n). Un test controlla che il file sia aggiornato.
  */
 export function catalogScript(): string {
-  const data = { tabs: SETTINGS_TABS, places: PLACE_LABEL, items: SETTINGS_CATALOG, languages: LANGUAGES };
+  const data = { tabs: SETTINGS_TABS, places: SETTING_PLACES, items: SETTINGS_CATALOG, languages: LANGUAGES };
   return `// Generato da src/shared/settings.ts con \`npm run settings:catalog\`: non modificare a mano.\n` +
     `globalThis.AGENT_OFFICE_SETTINGS = ${JSON.stringify(data, null, 2)};\n`;
 }

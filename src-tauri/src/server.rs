@@ -9,6 +9,8 @@ use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::i18n::{t, tf};
+
 /// versione minima di Node (engines di package.json)
 pub const MIN_NODE: u64 = 22;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -72,8 +74,8 @@ pub fn find_node() -> Result<PathBuf, String> {
         }
     }
     Err(match too_old {
-        Some(major) => format!("Node {major} è troppo vecchio: serve Node {MIN_NODE} o successivo"),
-        None => "Node non trovato: installalo con `brew install node`".into(),
+        Some(major) => tf("server.nodeOld", &[("major", &major.to_string()), ("min", &MIN_NODE.to_string())]),
+        None => t("server.nodeMissing"),
     })
 }
 
@@ -152,7 +154,7 @@ impl Supervisor {
                 Ok(Some(code)) => {
                     self.child = None;
                     let detail = log_path().and_then(|p| last_log_line(&p)).map(|l| format!(": {l}")).unwrap_or_default();
-                    self.retry_later(format!("Il server si è chiuso ({code}){detail}"));
+                    self.retry_later(tf("server.exited", &[("code", &code.to_string()), ("detail", &detail)]));
                 }
                 Err(_) => self.child = None,
             }
@@ -165,7 +167,7 @@ impl Supervisor {
                 return;
             }
             Probe::Foreign => {
-                self.error = Some(format!("La porta {port} è occupata da un altro programma"));
+                self.error = Some(tf("server.portBusy", &[("port", &port.to_string())]));
                 return;
             }
             Probe::Down => {}
@@ -186,6 +188,8 @@ impl Supervisor {
         let spawned = Command::new(node)
             .arg(app_dir.join("bin/agent-office.mjs"))
             .args(["--all", "--no-open", "--exit-with-stdin", "--port", &port.to_string()])
+            // lingue preferite di macOS: il server ci risolve la lingua "system" come l'app (#93)
+            .env("AGENT_OFFICE_LANGUAGES", crate::i18n::system_languages().join(","))
             // pipe tenuta aperta dall'app: se l'app termina in qualunque modo il server si chiude da solo
             .stdin(Stdio::piped())
             .stdout(out)
@@ -193,7 +197,7 @@ impl Supervisor {
             .spawn();
         match spawned {
             Ok(child) => self.child = Some(child),
-            Err(e) => self.retry_later(format!("Avvio del server non riuscito: {e}")),
+            Err(e) => self.retry_later(tf("server.spawnFailed", &[("e", &e.to_string())])),
         }
     }
 

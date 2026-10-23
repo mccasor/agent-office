@@ -1,3 +1,4 @@
+import { t } from '../../shared/i18n';
 import './zoom.css';
 
 /** icone a tratto 16×16, come quelle del pannello della menu bar */
@@ -27,14 +28,14 @@ export function ZoomControls({ canZoomIn, canZoomOut, zoomIn, zoomOut, fit }: {
   fit: () => void;
 }) {
   return (
-    <div className="hud-zoom" role="group" aria-label="Zoom">
-      <button type="button" title="Riduci (⌘/ctrl + rotella)" aria-label="Riduci" disabled={!canZoomOut} onClick={zoomOut}>
+    <div className="hud-zoom" role="group" aria-label={t('zoom.aria')}>
+      <button type="button" title={t('zoom.outHint')} aria-label={t('zoom.out')} disabled={!canZoomOut} onClick={zoomOut}>
         <Icon d={ICON.out} />
       </button>
-      <button type="button" title="Ingrandisci (⌘/ctrl + rotella)" aria-label="Ingrandisci" disabled={!canZoomIn} onClick={zoomIn}>
+      <button type="button" title={t('zoom.inHint')} aria-label={t('zoom.in')} disabled={!canZoomIn} onClick={zoomIn}>
         <Icon d={ICON.in} />
       </button>
-      <button type="button" title="Adatta alla finestra" aria-label="Adatta alla finestra" disabled={!canZoomOut} onClick={fit}>
+      <button type="button" title={t('zoom.fit')} aria-label={t('zoom.fit')} disabled={!canZoomOut} onClick={fit}>
         <Icon d={ICON.fit} />
       </button>
     </div>

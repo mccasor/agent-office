@@ -1,13 +1,12 @@
 import { memo, useEffect, useMemo, useState } from 'react';
 import type { AgentState, DayStats, FinishedAgent, SessionState } from '../../shared/types';
+import { t, type TextKey } from '../../shared/i18n';
 import { useShown, type OfficeView } from '../store';
 import { byUrgency, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { sessionMeta, StateCounts } from './InstancesPanel';
 import {
-  agentName, agentTask, alertShort, DISMISS_HINT, DISMISS_LABEL, doneGroupLabel, FINISHED_TODAY_TITLE, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName,
-  SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
+  agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
-import { CLOSED_FINISHED_TITLE } from './historyLabels';
 import { finishedAsAgent } from './HistoryView';
 import { AlertMark, ContextGauge, DiffStat, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
@@ -104,17 +103,17 @@ function RoleCell({ area, shown }: { area: AgentState['area']; shown: boolean })
 }
 
 /** Agenti della sessione (o delle istanze chiuse, `title`) terminati oggi: nome, esito, durata, costo ed errori. Chiusa di default. */
-const FinishedToday = memo(function FinishedToday({ agents, title = FINISHED_TODAY_TITLE }: { agents: AgentState[]; title?: string }) {
+const FinishedToday = memo(function FinishedToday({ agents, title = 'finished.today' }: { agents: AgentState[]; title?: TextKey }) {
   const show = useShown();
   if (agents.length === 0) return null;
   return (
     <details className="list-finished">
-      <summary>{`${title} (${agents.length})`}</summary>
+      <summary>{`${t(title)} (${agents.length})`}</summary>
       <ul className="list-agents">
         {agents.map((a) => {
           const text = [
-            show('agent.duration') && `in ${formatDuration(a.updatedAt - a.startedAt)}`,
-            show('agent.tokens') && `${formatTokens(a.tokens.output)} token`,
+            show('agent.duration') && t('dur.in', { d: formatDuration(a.updatedAt - a.startedAt) }),
+            show('agent.tokens') && t('tokens.count', { n: formatTokens(a.tokens.output) }),
             show('agent.cost') && a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null,
           ]
             .filter(Boolean)
@@ -149,15 +148,15 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
   const text = [
     a.alert?.kind === 'loop' && alert,
     statusText(a, now),
-    show('agent.duration') && `${done ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`,
+    show('agent.duration') && t(done ? 'dur.in' : 'dur.for', { d: formatDuration(elapsed(a, now)) }),
     show('agent.cost') && done && a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null,
   ]
     .filter(Boolean)
     .join(' · ');
-  let last = pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />;
+  let last = pct === null ? <span /> : <ProgressBar value={pct} label={t('card.progressOf', { name: agentName(a) })} className="hud-bar--small" />;
   if (done && a.outcome && show('agent.outcome')) last = <OutcomeTag outcome={a.outcome} />;
   else if (alert && a.alert?.kind === 'stale' && onDismiss) {
-    last = <button type="button" className="hud-alert__dismiss" title={DISMISS_HINT} onClick={() => onDismiss(a.id)}>{DISMISS_LABEL}</button>;
+    last = <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={() => onDismiss(a.id)}>{t('alert.dismiss')}</button>;
   }
   return (
     <li className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}${alert ? ' list-agent--alert' : ''}`}>
@@ -214,7 +213,7 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         <StateCounts agents={all} />
         <label className="list-session__show">
           <input type="checkbox" checked={shown} onChange={() => onToggle(s.id)} />
-          Nell'ufficio
+          {t('list.inOffice')}
         </label>
       </header>
       {s.title && show('session.title') && <p className="list-session__title">{s.title}</p>}
@@ -246,19 +245,19 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
 }, sameProps);
 
 // "Ufficio" e non "2D": c'è una sola vista dell'ufficio, e il nome è lo stesso di "Apri ufficio" (menu bar) e "Nell'ufficio"
-const VIEW_LABEL: [OfficeView, string, string][] = [
-  ['pixel', 'Ufficio', 'Ufficio in pixel art'],
-  ['list', 'Lista', 'Lista delle istanze'],
-  ['history', 'Analisi', 'Analisi della giornata'],
+const VIEW_LABEL: [OfficeView, TextKey, TextKey][] = [
+  ['pixel', 'view.pixel', 'view.pixelHint'],
+  ['list', 'view.list', 'view.listHint'],
+  ['history', 'view.history', 'view.historyHint'],
 ];
 
 /** Selettore in alto a destra: ufficio, lista delle istanze o analisi della giornata. */
 export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (view: OfficeView) => void }) {
   return (
-    <div className="hud-toggle" role="group" aria-label="Vista">
+    <div className="hud-toggle" role="group" aria-label={t('view.aria')}>
       {VIEW_LABEL.map(([value, label, title]) => (
-        <button key={value} type="button" title={title} aria-pressed={view === value} onClick={() => onChange(value)}>
-          {label}
+        <button key={value} type="button" title={t(title)} aria-pressed={view === value} onClick={() => onChange(value)}>
+          {t(label)}
         </button>
       ))}
     </div>
@@ -310,30 +309,30 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
     [active, agentsBy, filter.waitingOnly, filter.query],
   );
   return (
-    <main className="list-view" aria-label="Istanze">
+    <main className="list-view" aria-label={t('instances.aria')}>
       {today && <TodayBar today={today} />}
-      <h1 className="list-view__title">{INSTANCES_TITLE}</h1>
+      <h1 className="list-view__title">{t('instances.title')}</h1>
       {active.length > 0 && (
         <div className="list-filter" role="search">
           <input
             type="search"
-            placeholder="Cerca progetto, branch o agente"
-            aria-label="Cerca"
+            placeholder={t('list.searchPlaceholder')}
+            aria-label={t('list.search')}
             value={filter.query}
             onChange={(e) => update({ query: e.target.value })}
           />
           <label>
             <input type="checkbox" checked={filter.waitingOnly} onChange={(e) => update({ waitingOnly: e.target.checked })} />
-            Solo in attesa
+            {t('list.waitingOnly')}
           </label>
           <label>
             <input type="checkbox" checked={filter.hideDone} onChange={(e) => update({ hideDone: e.target.checked })} />
-            Nascondi terminati
+            {t('list.hideDone')}
           </label>
         </div>
       )}
-      {active.length === 0 && <p className="list-view__empty">{NO_INSTANCES}</p>}
-      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">{NO_MATCH}</p>}
+      {active.length === 0 && <p className="list-view__empty">{t('instances.none')}</p>}
+      {active.length > 0 && shown.length === 0 && <p className="list-view__empty">{t('instances.noMatch')}</p>}
       {shown.map(({ s, all }) => (
         <SessionCard
           key={s.id}
@@ -349,8 +348,8 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
         />
       ))}
       {closed.length > 0 && show('list.closedFinished') && (
-        <section className="list-session list-closed" aria-label={CLOSED_FINISHED_TITLE}>
-          <FinishedToday agents={closed} title={CLOSED_FINISHED_TITLE} />
+        <section className="list-session list-closed" aria-label={t('finished.closed')}>
+          <FinishedToday agents={closed} title="finished.closed" />
         </section>
       )}
     </main>

@@ -29,6 +29,7 @@ const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
 mod cards;
 mod config;
+mod i18n;
 mod instance;
 mod notify;
 mod panel;
@@ -89,13 +90,14 @@ impl Status {
         }
     }
 
-    fn label(self) -> &'static str {
-        match self {
-            Status::Working => "Claude sta lavorando",
-            Status::Waiting => "Claude aspetta un tuo input",
-            Status::Idle => "Claude è inattivo",
-            Status::Offline => "Server non raggiungibile",
-        }
+    /// Stato a parole, nella lingua dell'app (i18n.rs).
+    fn label(self) -> String {
+        i18n::t(match self {
+            Status::Working => "tray.working",
+            Status::Waiting => "tray.waiting",
+            Status::Idle => "tray.idle",
+            Status::Offline => "tray.offline",
+        })
     }
 }
 
@@ -276,13 +278,13 @@ fn run_hooks(app: &AppHandle, command: &'static str) {
                 return Ok(());
             }
             let err = String::from_utf8_lossy(&out.stderr);
-            Err(err.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or("errore sconosciuto").to_string())
+            Err(err.lines().rev().map(str::trim).find(|l| !l.is_empty()).map_or_else(|| i18n::t("hooks.unknownError"), str::to_string))
         });
         set_notice(&app, match (result, install) {
-            (Ok(()), true) => "Hook di Claude Code installati".into(),
-            (Ok(()), false) => "Hook di Claude Code rimossi".into(),
-            (Err(e), true) => format!("Installazione degli hook non riuscita: {}", truncate(&e, 80)),
-            (Err(e), false) => format!("Rimozione degli hook non riuscita: {}", truncate(&e, 80)),
+            (Ok(()), true) => i18n::t("hooks.installed"),
+            (Ok(()), false) => i18n::t("hooks.removed"),
+            (Err(e), true) => i18n::tf("hooks.installFailed", &[("e", &truncate(&e, 80))]),
+            (Err(e), false) => i18n::tf("hooks.removeFailed", &[("e", &truncate(&e, 80))]),
         });
     });
 }
@@ -348,7 +350,9 @@ fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
         let _ = window.set_focus();
         return;
     }
-    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}&session={focus}").into());
+    // `lang`: lingua dello splash (#93), finché il server non risponde
+    let lang = i18n::current().code();
+    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}&session={focus}&lang={lang}").into());
     let window = WebviewWindowBuilder::new(app, WINDOW_ID, url)
         .title("Agent Office")
         .inner_size(1200.0, 800.0)
@@ -453,6 +457,8 @@ fn panel_state(app: AppHandle) -> Value {
         "serverError": app.state::<Server>().0.lock().unwrap().error(),
         "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": notice,
+        // lingua già risolta (#93): i testi li prende la pagina (i18n.js)
+        "locale": i18n::current().code(),
         // interruttori così come sono nel file: i default li applica la pagina (settings-catalog.js)
         "show": config::read().remove("show").unwrap_or(Value::Null),
     })
@@ -506,17 +512,23 @@ fn settings_state(app: AppHandle) -> Value {
         "hooks": settings::hooks_status(),
         "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": current_notice(&ui),
+        "locale": i18n::current().code(),
     })
 }
 
 /// Cambia un'impostazione in config.json (chiave e valore validati in config::set). Il server se ne accorge da solo;
-/// le notifiche e il pannello qui.
+/// le notifiche, la lingua (#93) e il pannello qui.
 #[tauri::command]
 fn settings_set(window: WebviewWindow, app: AppHandle, key: String, value: Value) -> Result<(), String> {
     settings::only_settings(&window)?;
     config::update(|c| config::set(c, &key, value))?;
     if key.starts_with("notify") {
         *app.state::<Ui>().prefs.lock().unwrap() = notify::load();
+    }
+    if key == "language" {
+        i18n::load();
+        // tooltip dell'icona subito, senza aspettare il prossimo giro
+        let _ = app.state::<Ui>().wake.lock().unwrap().send(());
     }
     refresh_panel(&app);
     Ok(())
@@ -583,6 +595,8 @@ fn main() {
             thread::spawn(register_bundle);
 
             let handle = app.handle().clone();
+            // lingua prima di tutto il resto: pannello, notifiche e tooltip la usano da subito
+            i18n::load();
             let (wake, woken) = mpsc::channel::<()>();
             app.manage(Ui {
                 update: Mutex::new(UpdateState::Unknown),
@@ -630,6 +644,8 @@ fn main() {
             let dir = app_dir(&handle);
             thread::spawn(move || {
                 let mut last: Option<(Overview, bool)> = None;
+                // tooltip mostrato: cambia con lo stato e con la lingua
+                let mut tooltip = String::new();
                 let mut etag: Option<String> = None;
                 // stato delle sessioni al giro precedente: al primo snapshot nessuna notifica (non è un cambiamento)
                 let mut seen: Option<Vec<SessionFacts>> = None;
@@ -640,6 +656,8 @@ fn main() {
                         Fetched::Failed => Probe::Down,
                     };
                     handle.state::<Server>().0.lock().unwrap().tick(&dir, PORT, status);
+                    // config.json cambiato a mano, o lingua di macOS cambiata: vale dal giro successivo
+                    i18n::load();
                     let dark = dark_menu_bar(&handle);
                     let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, ..)| o.clone())) else {
                         let _ = woken.recv_timeout(POLL);
@@ -652,13 +670,17 @@ fn main() {
                         seen = Some(overview.facts.clone());
                     }
                     // l'icona dipende solo da stato e aspetto della barra: non va ridisegnata a ogni snapshot nuovo
-                    if icon_changed(last.as_ref(), overview.status, dark) {
-                        if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+                    if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+                        if icon_changed(last.as_ref(), overview.status, dark) {
                             if let Ok(icon) = Image::from_bytes(overview.status.tray_icon(dark)) {
                                 let _ = tray.set_icon(Some(icon));
                                 let _ = tray.set_icon_as_template(false);
                             }
-                            let _ = tray.set_tooltip(Some(format!("Agent Office: {}", overview.status.label())));
+                        }
+                        let text = format!("Agent Office: {}", overview.status.label());
+                        if text != tooltip {
+                            let _ = tray.set_tooltip(Some(text.as_str()));
+                            tooltip = text;
                         }
                     }
                     let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);

@@ -1,7 +1,7 @@
 import type { DayStats } from '../../shared/types';
+import { t, tn } from '../../shared/i18n';
 import { useShow } from '../store';
 import { formatCost, formatDuration } from './format';
-import { plural, TODAY_HINT, TODAY_LABEL, TODAY_TITLE } from './labels';
 import './hud.css';
 
 interface Item {
@@ -12,15 +12,19 @@ interface Item {
   alarm?: boolean;
 }
 
-/** Voci della barra: costo di oggi e dell'ultima ora, agenti lanciati, terminati e falliti, tempo in attesa. Pura. */
-export function todayItems(t: DayStats): Item[] {
+/**
+ * Voci della barra: costo di oggi e dell'ultima ora, agenti lanciati, terminati e falliti, tempo in attesa. Etichette
+ * al singolare o al plurale secondo il valore, che si mostra a parte ("5" sopra "lanciati": i testi `today.*` non
+ * hanno `{n}`). Pura.
+ */
+export function todayItems(d: DayStats): Item[] {
   return [
-    { key: 'cost', value: formatCost(t.cost), label: TODAY_LABEL.cost },
-    { key: 'hour', value: `${formatCost(t.costLastHour)}${TODAY_LABEL.perHour}`, label: TODAY_LABEL.lastHour },
-    { key: 'launched', value: String(t.launched), label: plural(t.launched, TODAY_LABEL.launched) },
-    { key: 'finished', value: String(t.finished), label: plural(t.finished, TODAY_LABEL.finished) },
-    { key: 'failed', value: String(t.failed), label: plural(t.failed, TODAY_LABEL.failed), alarm: t.failed > 0 },
-    { key: 'waiting', value: t.waitingMs > 0 ? formatDuration(t.waitingMs) : TODAY_LABEL.noWait, label: TODAY_LABEL.waiting },
+    { key: 'cost', value: formatCost(d.cost), label: t('today.cost') },
+    { key: 'hour', value: `${formatCost(d.costLastHour)}${t('today.perHour')}`, label: t('today.lastHour') },
+    { key: 'launched', value: String(d.launched), label: tn('today.launched', d.launched) },
+    { key: 'finished', value: String(d.finished), label: tn('today.finished', d.finished) },
+    { key: 'failed', value: String(d.failed), label: tn('today.failed', d.failed), alarm: d.failed > 0 },
+    { key: 'waiting', value: d.waitingMs > 0 ? formatDuration(d.waitingMs) : t('today.noWait'), label: t('today.waiting') },
   ];
 }
 
@@ -35,8 +39,8 @@ export function TodayBar({ today, compact = false }: { today: DayStats; compact?
   if (!shown) return null;
   if (compact) {
     return (
-      <p className="hud-panel today-bar today-bar--compact" aria-label={TODAY_TITLE} title={TODAY_HINT}>
-        <strong>{TODAY_TITLE}</strong>
+      <p className="hud-panel today-bar today-bar--compact" aria-label={t('today.title')} title={t('today.hint')}>
+        <strong>{t('today.title')}</strong>
         {items.map((i) => (
           <span key={i.key} className={i.alarm ? 'today-bar__alarm' : undefined}>
             {/* costo e costo orario parlano da sé */}
@@ -47,8 +51,8 @@ export function TodayBar({ today, compact = false }: { today: DayStats; compact?
     );
   }
   return (
-    <section className="today-bar" aria-label={TODAY_TITLE} title={TODAY_HINT}>
-      <h2 className="today-bar__title">{TODAY_TITLE}</h2>
+    <section className="today-bar" aria-label={t('today.title')} title={t('today.hint')}>
+      <h2 className="today-bar__title">{t('today.title')}</h2>
       <dl className="today-bar__items">
         {items.map((i) => (
           <div key={i.key} className={`today-bar__item${i.alarm ? ' today-bar__alarm' : ''}`} data-kpi={i.key}>

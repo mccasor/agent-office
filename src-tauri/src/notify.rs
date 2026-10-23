@@ -1,7 +1,10 @@
 //! Notifiche di macOS: quando una sessione si blocca in attesa dell'utente e, se richiesto, quando finisce il
-//! lavoro. Preferenze in ~/.agent-office/config.json (config.rs), scelte nella finestra Impostazioni.
+//! lavoro. Preferenze in ~/.agent-office/config.json (config.rs), scelte nella finestra Impostazioni; testi nella
+//! lingua dell'app (i18n.rs).
 
 use serde_json::{Map, Value};
+
+use crate::i18n::t;
 
 /// Preferenze dell'app.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -43,12 +46,12 @@ pub struct SessionFacts {
     pub waiting: Option<String>,
 }
 
-fn waiting_title(kind: &str) -> &'static str {
+fn waiting_title(kind: &str) -> String {
     match kind {
-        "permission" => "Claude aspetta un tuo permesso",
-        "question" => "Claude ti ha fatto una domanda",
-        "plan" => "Claude aspetta l'ok al piano",
-        _ => "Claude aspetta un tuo input",
+        "permission" => t("notify.permission"),
+        "question" => t("notify.question"),
+        "plan" => t("notify.plan"),
+        _ => t("tray.waiting"),
     }
 }
 
@@ -60,13 +63,13 @@ pub fn messages(prev: &[SessionFacts], next: &[SessionFacts], prefs: Prefs) -> V
         let before = prev.iter().find(|p| p.id == s.id);
         if let Some(kind) = &s.waiting {
             if prefs.notify_waiting && before.is_none_or(|b| b.waiting.is_none()) {
-                out.push((waiting_title(kind).to_string(), s.place.clone()));
+                out.push((waiting_title(kind), s.place.clone()));
             }
             continue;
         }
         let was_busy = before.is_some_and(|b| b.waiting.is_none() && matches!(b.status.as_str(), "working" | "entering"));
         if prefs.notify_done && was_busy && s.status == "done" {
-            out.push(("Claude è pronto".to_string(), s.place.clone()));
+            out.push((t("notify.ready"), s.place.clone()));
         }
     }
     out

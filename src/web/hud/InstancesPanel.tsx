@@ -2,9 +2,10 @@ import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { useShow, useShown } from '../store';
 import type { SettingKey } from '../../shared/settings';
+import { t } from '../../shared/i18n';
 import { byUrgency, formatCost, formatTokens } from './format';
 import {
-  agentName, agentTask, alertShort, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
+  agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
 } from './labels';
 import { AlertMark, ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { useNow } from './useNow';
@@ -52,7 +53,7 @@ export const sessionMeta = (s: SessionState, show: (key: SettingKey) => boolean 
   [
     show('session.model') && s.model,
     show('session.effort') && s.effort,
-    show('session.tokens') && `${formatTokens(s.tokensUsed.output)} token generati`,
+    show('session.tokens') && t('tokens.generated', { n: formatTokens(s.tokensUsed.output) }),
     show('session.cost') && s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null,
   ]
     .filter(Boolean)
@@ -62,7 +63,7 @@ export const sessionMeta = (s: SessionState, show: (key: SettingKey) => boolean 
 export function StateCounts({ agents }: { agents: AgentState[] }) {
   const shown = useShow('instances.counts');
   const text = stateCounts(agents);
-  return text && shown ? <span className="hud-instance__count hud-muted" title="Subagenti">{text}</span> : null;
+  return text && shown ? <span className="hud-instance__count hud-muted" title={t('instance.subagents')}>{text}</span> : null;
 }
 
 /**
@@ -97,15 +98,15 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
   );
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
-      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : 'Un subagente') : null} />}
+      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : t('card.someSubagent')) : null} />}
       <div className="hud-instance__tools">
         {meta && <p className="hud-instance__meta hud-muted">{meta}</p>}
         {!inCard && <ContextGauge session={s} slot="inline" />}
-        {onPopOut && <PopOutButton label={`Apri ${projectName(s)} in una finestra`} onClick={() => onPopOut(s.id)} />}
+        {onPopOut && <PopOutButton label={t('popout.session', { project: projectName(s) })} onClick={() => onPopOut(s.id)} />}
       </div>
       {!inCard && <ContextGauge session={s} slot="block" />}
       {s.diff && <DiffStat diff={s.diff} />}
-      <ul className="hud-instance__agents" aria-label={`Agenti di ${projectName(s)}`}>
+      <ul className="hud-instance__agents" aria-label={t('instance.agentsOf', { project: projectName(s) })}>
         {boss && <AgentRow agent={boss} status={bossStatus} waiting={s.waiting && !s.waitingAgentId} selected={selected === boss.id} onSelect={onSelect} />}
         {live.map(row)}
         {done.length > 0 && show('instances.done') && (
@@ -156,13 +157,13 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
 
   if (active.length === 0) {
     return (
-      <section className="hud-panel hud-panel--empty" aria-label="Istanze">
-        {NO_INSTANCES}
+      <section className="hud-panel hud-panel--empty" aria-label={t('instances.aria')}>
+        {t('instances.none')}
       </section>
     );
   }
   return (
-    <section className="hud-panel hud-instances" aria-label="Istanze">
+    <section className="hud-panel hud-instances" aria-label={t('instances.aria')}>
       {active.map((s) => {
         const own = agents.filter((a) => a.sessionId === s.id);
         const isOpen = open[s.id] ?? s.id === first;

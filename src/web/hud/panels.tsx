@@ -1,11 +1,10 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentAlert, AgentOutcome, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import { t, tn } from '../../shared/i18n';
 import { useShow } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
-import {
-  alertText, AREA_LABEL, COMPACT_HINT, compactionText, DISMISS_HINT, DISMISS_LABEL, DOT_LABEL, OUTCOME_LABEL, projectName, waitingText,
-} from './labels';
+import { alertText, AREA_LABEL, compactionText, DOT_LABEL, OUTCOME_LABEL, projectName, waitingText } from './labels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -29,7 +28,7 @@ export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; 
 /** Etichetta colorata del ruolo (#88): stesso colore dell'area nel 2D, nella scheda, nell'accordion e nella lista. */
 export function RoleChip({ area }: { area: WorkArea }) {
   return (
-    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={`Ruolo: ${AREA_LABEL[area]}`}>
+    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={t('role.title', { role: AREA_LABEL[area] })}>
       {AREA_LABEL[area]}
     </span>
   );
@@ -51,7 +50,7 @@ export function DiffStat({ diff }: { diff: RepoDiff }) {
     <div className="hud-diff">
       <span className="hud-added">{`+${diff.linesAdded}`}</span>
       <span className="hud-removed">{`-${diff.linesRemoved}`}</span>
-      <span className="hud-muted">{`${diff.filesChanged} file`}</span>
+      <span className="hud-muted">{tn('diff.files', diff.filesChanged)}</span>
     </div>
   );
 }
@@ -80,8 +79,8 @@ export function AgentAlertNote({ alert, onDismiss }: { alert: AgentAlert; onDism
       <AlertMark />
       <p>{alertText(alert, now)}</p>
       {alert.kind === 'stale' && onDismiss && (
-        <button type="button" className="hud-alert__dismiss" title={DISMISS_HINT} onClick={onDismiss}>
-          {DISMISS_LABEL}
+        <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={onDismiss}>
+          {t('alert.dismiss')}
         </button>
       )}
     </div>
@@ -131,13 +130,13 @@ export function ContextGauge({ session: s, slot }: { session: SessionState; slot
     .join(' · ');
   const level = contextLevel(pct);
   if (slot === 'inline') {
-    return <span className="hud-pill" data-level={level} title={title}>{`Contesto ${pct}%`}</span>;
+    return <span className="hud-pill" data-level={level} title={title}>{t('context.pill', { pct })}</span>;
   }
   return (
     <div className="list-session__context" title={title}>
-      <span className="hud-muted">{`Contesto ${pct}%`}</span>
-      <ProgressBar value={pct} label={`Contesto usato ${projectName(s)}`} level={level} className="hud-bar--small" />
-      {level === 'danger' && <span className="hud-context__hint">{COMPACT_HINT}</span>}
+      <span className="hud-muted">{t('context.pill', { pct })}</span>
+      <ProgressBar value={pct} label={t('context.usedOf', { project: projectName(s) })} level={level} className="hud-bar--small" />
+      {level === 'danger' && <span className="hud-context__hint">{t('compact.hint')}</span>}
     </div>
   );
 }

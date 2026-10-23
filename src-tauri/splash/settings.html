@@ -104,54 +104,24 @@
 </head>
 <body>
   <div id="app"></div>
-  <!-- catalogo delle voci e delle schede, generato da src/shared/settings.ts -->
+  <!-- catalogo delle voci e delle schede e testi nelle tre lingue, generati da src/shared -->
   <script src="settings-catalog.js"></script>
+  <script src="i18n.js"></script>
   <script>
     'use strict';
     const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
     const CATALOG = window.AGENT_OFFICE_SETTINGS;
 
-    // testi della scheda Generali (le voci delle altre schede sono nel catalogo): qui per la traduzione (#93)
+    // testi nella lingua dell'app (#93), già risolta dall'app (settings_state.locale): italiano finché non risponde
+    let T = agentOfficeTexts('it');
     const TEXT = {
-      startup: 'Avvio e notifiche',
-      autostart: 'Avvia al login',
-      notifyWaiting: 'Notifica quando Claude aspetta',
-      notifyWaitingSub: 'Un permesso, una domanda o l\'ok a un piano',
-      notifyDone: 'Notifica quando Claude è pronto',
-      notifyDoneSub: 'Alla fine di ogni turno',
-      sessions: 'Sessioni',
-      activeWindow: 'Una sessione resta attiva per',
-      activeWindowSub: 'Senza attività per più di così sparisce da ufficio, lista e menu',
-      minutes: (m) => (m % 60 === 0 && m >= 60 ? `${m / 60} ${m === 60 ? 'ora' : 'ore'}` : `${m} min`),
-      claudeCode: 'Claude Code',
-      hooks: 'Hook di Claude Code',
-      hooksStatus: {
-        installed: 'Installati',
-        outdated: 'Di una versione precedente: reinstallali',
-        missing: 'Non installati: niente pallino rosso né stati immediati',
-        unknown: 'Stato non leggibile',
-      },
-      install: 'Installa',
-      remove: 'Rimuovi',
-      updates: 'Aggiornamenti',
+      minutes: (m) => (m % 60 === 0 && m >= 60 ? T.n('settings.hours', m / 60) : T('settings.minutes', { n: m })),
+      hooksStatus: { installed: 'settings.hooksInstalled', outdated: 'settings.hooksOutdated', missing: 'settings.hooksMissing', unknown: 'settings.hooksUnknown' },
       version: (v) => `Agent Office ${v}`,
-      checkUpdates: 'Cerca aggiornamenti',
-      upgrade: (v) => `Aggiorna alla ${v}`,
-      alerts: 'Avvisi',
-      staleAgent: 'Avviso agente fermo dopo',
-      staleAgentSub: 'Un subagente senza attività per più di così ha il "!" giallo',
-      loopRepeats: 'Avviso loop dopo',
-      loopRepeatsSub: 'Chiamate di fila allo stesso tool con lo stesso input',
-      calls: (n) => `${n} chiamate uguali`,
-      showNote: 'Le modifiche valgono subito in ufficio, nella lista, nelle schede e nel menu.',
-      showGroup: {
-        claude: 'Claude, la sessione principale',
-        agents: 'Subagenti',
-        git: 'Repository',
-        instances: 'Istanze',
-      },
-      saveError: (e) => `Impostazione non salvata: ${e}`,
+      calls: (n) => T('settings.calls', { n }),
     };
+    /** lingue (#93): ognuna col suo nome nella sua lingua; "Sistema" nella lingua corrente */
+    const LANGUAGE_NAMES = { it: 'Italiano', en: 'English', es: 'Español' };
     /** minuti proposti per activeWindowMinutes (1-1440 nel file); un valore diverso scritto a mano compare in più */
     const ACTIVE_WINDOW_CHOICES = [5, 10, 15, 30, 60, 120, 240];
     /** soglie degli avvisi sui subagenti (#97): minuti per "fermo" (1-1440) e chiamate uguali per "in loop" (2-100) */
@@ -161,6 +131,8 @@
     const RANGES = { activeWindowMinutes: [1, 1440], staleAgentMinutes: [1, 1440], loopRepeats: [2, 100] };
     /** default delle chiavi di config.json, come in src/server/config.ts e notify.rs */
     const DEFAULTS = { notifyWaiting: true, notifyDone: false, activeWindowMinutes: 10, staleAgentMinutes: 60, loopRepeats: 5, language: 'system' };
+    /** lingua: "system" o una di CATALOG.languages; un valore diverso scritto a mano vale "system", come nel server */
+    const language = () => (CATALOG.languages.includes(state.config.language) ? state.config.language : DEFAULTS.language);
 
     // icone a tratto nello spirito di SF Symbols, una per scheda
     const ICONS = {
@@ -216,57 +188,69 @@
     const group = (title, rows, note = '') =>
       `<section class="group">${title ? `<h2 class="group__title">${title}</h2>` : ''}<div class="group__box">${rows.join('')}</div>${note ? `<p class="group__note">${note}</p>` : ''}</section>`;
 
+    /** menu della lingua (#93): "system" e le lingue dell'interfaccia, ognuna col suo nome */
+    const languageMenu = () => {
+      const value = language();
+      return `<select data-key="language" aria-label="${esc(T('settings.language'))}">${CATALOG.languages
+        .map((l) => `<option value="${l}" ${l === value ? 'selected' : ''}>${esc(l === 'system' ? T('settings.languageSystem') : LANGUAGE_NAMES[l])}</option>`)
+        .join('')}</select>`;
+    };
+
     function general() {
       const hooks = state.hooks in TEXT.hooksStatus ? state.hooks : 'unknown';
       const hooksClass = hooks === 'installed' ? ' row__sub--ok' : hooks === 'outdated' ? ' row__sub--warn' : '';
       const u = state.update;
       const busy = u.kind === 'checking' || u.kind === 'upgrading';
       const updateButton = u.kind === 'available'
-        ? `<button class="button button--primary" data-action="update">${esc(TEXT.upgrade(u.latest))}</button>`
-        : `<button class="button" data-action="update" ${busy ? 'disabled' : ''}>${TEXT.checkUpdates}</button>`;
+        ? `<button class="button button--primary" data-action="update">${esc(T('settings.upgrade', { v: u.latest }))}</button>`
+        : `<button class="button" data-action="update" ${busy ? 'disabled' : ''}>${T('settings.checkUpdates')}</button>`;
       return [
-        group(TEXT.startup, [
-          row(TEXT.autostart, '', sw(state.autostart, 'data-action="autostart"')),
-          row(TEXT.notifyWaiting, TEXT.notifyWaitingSub, sw(config('notifyWaiting'), 'data-key="notifyWaiting"')),
-          row(TEXT.notifyDone, TEXT.notifyDoneSub, sw(config('notifyDone'), 'data-key="notifyDone"')),
+        group(T('settings.startup'), [
+          row(T('settings.autostart'), '', sw(state.autostart, 'data-action="autostart"')),
+          row(T('settings.notifyWaiting'), esc(T('settings.notifyWaitingSub')), sw(config('notifyWaiting'), 'data-key="notifyWaiting"')),
+          row(T('settings.notifyDone'), T('settings.notifyDoneSub'), sw(config('notifyDone'), 'data-key="notifyDone"')),
         ]),
-        group(TEXT.sessions, [
-          row(TEXT.activeWindow, TEXT.activeWindowSub, menu('activeWindowMinutes', TEXT.activeWindow, ACTIVE_WINDOW_CHOICES, TEXT.minutes)),
+        group(T('settings.sessions'), [
+          row(T('settings.activeWindow'), T('settings.activeWindowSub'), menu('activeWindowMinutes', T('settings.activeWindow'), ACTIVE_WINDOW_CHOICES, TEXT.minutes)),
         ]),
-        // Lingua (#93): qui un menu "Lingua" (Sistema, Italiano, English, Español) che salva la chiave `language`
-        // con settings_set; i valori ammessi sono CATALOG.languages.
-        group(TEXT.claudeCode, [
-          row(TEXT.hooks, TEXT.hooksStatus[hooks],
-            `<span class="row__actions"><button class="button" data-action="hooks-install">${TEXT.install}</button><button class="button" data-action="hooks-remove">${TEXT.remove}</button></span>`,
+        // lingua dell'interfaccia (#93): vale subito ovunque (app, pannello, ufficio, schede)
+        group('', [row(T('settings.language'), '', languageMenu())]),
+        group(T('settings.claudeCode'), [
+          row(T('settings.hooks'), T(TEXT.hooksStatus[hooks]),
+            `<span class="row__actions"><button class="button" data-action="hooks-install">${T('settings.install')}</button><button class="button" data-action="hooks-remove">${T('settings.remove')}</button></span>`,
             hooksClass),
         ]),
-        group(TEXT.updates, [row(esc(TEXT.version(state.version)), u.kind === 'unknown' ? '' : esc(u.label), updateButton)]),
+        group(T('settings.updates'), [row(esc(TEXT.version(state.version)), u.kind === 'unknown' ? '' : esc(u.label), updateButton)]),
       ].join('');
     }
 
     /** soglie degli avvisi sui subagenti (#97), in cima alla scheda Agenti */
     const alerts = () =>
-      group(TEXT.alerts, [
-        row(TEXT.staleAgent, esc(TEXT.staleAgentSub), menu('staleAgentMinutes', TEXT.staleAgent, STALE_AGENT_CHOICES, TEXT.minutes)),
-        row(TEXT.loopRepeats, TEXT.loopRepeatsSub, menu('loopRepeats', TEXT.loopRepeats, LOOP_REPEATS_CHOICES, TEXT.calls)),
+      group(T('settings.alerts'), [
+        row(T('settings.staleAgent'), esc(T('settings.staleAgentSub')), menu('staleAgentMinutes', T('settings.staleAgent'), STALE_AGENT_CHOICES, TEXT.minutes)),
+        row(T('settings.loopRepeats'), T('settings.loopRepeatsSub'), menu('loopRepeats', T('settings.loopRepeats'), LOOP_REPEATS_CHOICES, TEXT.calls)),
       ]);
 
     /** schede delle voci: un interruttore per voce del catalogo, con i posti in cui compare */
     function items(tabId) {
       const rows = CATALOG.items
         .filter((i) => i.tab === tabId)
-        .map((i) => row(esc(i.label), i.places.map((p) => CATALOG.places[p]).join(' · '), sw(shownItem(i), `data-key="show.${esc(i.key)}" aria-label="${esc(i.label)}"`)));
-      return (tabId === 'agents' ? alerts() : '') + group(TEXT.showGroup[tabId], rows, TEXT.showNote);
+        .map((i) => {
+          const label = T(`setting.${i.key}`);
+          return row(esc(label), i.places.map((p) => esc(T(`place.${p}`))).join(' · '), sw(shownItem(i), `data-key="show.${esc(i.key)}" aria-label="${esc(label)}"`));
+        });
+      return (tabId === 'agents' ? alerts() : '') + group(T(`settings.group.${tabId}`), rows, T('settings.showNote'));
     }
 
     function render() {
       if (!state) return;
       const current = CATALOG.tabs.find((t) => t.id === tab);
+      const title = T(`tab.${current.id}`);
       const notice = saveError || state.notice;
       const html = `<nav class="tabs" role="tablist">${CATALOG.tabs
-        .map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.id)}<span>${esc(t.label)}</span></button>`)
+        .map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.id)}<span>${esc(T(`tab.${t.id}`))}</span></button>`)
         .join('')}</nav>
-        <main class="content" role="tabpanel" aria-label="${esc(current.label)}">
+        <main class="content" role="tabpanel" aria-label="${esc(title)}">
           ${tab === 'general' ? general() : items(tab)}
           ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
         </main>`;
@@ -274,12 +258,16 @@
       if (html === shown || document.activeElement?.tagName === 'SELECT') return;
       shown = html;
       document.getElementById('app').innerHTML = html;
-      invoke('settings_layout', { height: document.getElementById('app').offsetHeight, title: current.label }).catch(() => {});
+      invoke('settings_layout', { height: document.getElementById('app').offsetHeight, title }).catch(() => {});
     }
 
     async function refresh() {
       try {
         state = await invoke('settings_state');
+        if (state.locale !== T.locale) {
+          T = agentOfficeTexts(state.locale);
+          document.documentElement.lang = T.locale;
+        }
         render();
       } catch {
         // app in chiusura
@@ -296,7 +284,7 @@
       try {
         await invoke('settings_set', { key, value });
       } catch (e) {
-        saveError = TEXT.saveError(e);
+        saveError = T('settings.saveError', { e });
       }
       refresh();
     }
@@ -323,6 +311,9 @@
       if (key in RANGES) {
         e.target.blur();
         save(key, Number(e.target.value));
+      } else if (key === 'language') {
+        e.target.blur();
+        save(key, e.target.value);
       }
     });
     document.addEventListener('keydown', (e) => {
