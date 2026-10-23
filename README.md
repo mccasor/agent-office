@@ -89,7 +89,7 @@ The hooks register these Claude Code events: `SessionStart`, `SessionEnd`, `Suba
 
 ## Menu bar app (macOS)
 
-The menu bar icon (a desk) has a status dot: **green** when Claude is working, **red** when it is waiting for your input (tool permission, question, plan approval), **grey** when nothing is active. Clicking it opens a panel with:
+The menu bar icon (a pixel-art monitor on a desk) has a status dot: **green** when Claude is working, **red** when it is waiting for your input (tool permission, question, plan approval), **grey** when nothing is active. Clicking it opens a panel with:
 
 | Section | Content |
 |---|---|
@@ -209,7 +209,7 @@ npm run dev     # server (tsx watch, port 4317) + Vite with /api proxy
 npm run check   # lint + typecheck + build + test
 cargo test --manifest-path src-tauri/Cargo.toml   # Rust tests of the app
 npx tsx scripts/pixel-preview.ts preview.png 2 pianta   # PNG preview of sprites ("pianta": whole floor plan)
-python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png   # regenerate icons (needs Pillow)
+python3 scripts/make-icons.py && npx tauri icon src-tauri/icons/app-icon.png   # regenerate icons (needs Pillow and NumPy; keep only the files listed in tauri.conf.json)
 ```
 
 ### Menu bar app
