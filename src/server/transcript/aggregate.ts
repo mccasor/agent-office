@@ -156,3 +156,13 @@ export function aggregate(
   agents.sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
   return { sessions, agents };
 }
+
+/**
+ * Dimentica i meta.json dei subagenti senza un transcript seguito (sessioni finite, dimenticate o rimosse): senza
+ * sfoltimento `metas` crescerebbe per tutta la vita del server. Un subagente visibile ha sempre il suo transcript.
+ */
+export function pruneMetas(metas: Map<string, AgentMeta>, files: Iterable<{ parsed: AggregateFile['parsed'] }>): void {
+  const followed = new Set<string>();
+  for (const { parsed: p } of files) if (p.kind === 'agent') followed.add(agentKey(p.sessionId, p.agentId));
+  for (const key of metas.keys()) if (!followed.has(key)) metas.delete(key);
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregate, type AgentMeta, type AggregateFile, type AggregateOptions } from './aggregate.js';
+import { aggregate, pruneMetas, type AgentMeta, type AggregateFile, type AggregateOptions } from './aggregate.js';
 import { createAccumulator, type FileSummary } from './parser.js';
 
 const S = 'sess-1';
@@ -25,6 +25,19 @@ const agent = (agentId: string, over: Partial<FileSummary> = {}, mtime = T, sess
   mtime,
 });
 const noMetas = new Map<string, AgentMeta>();
+
+describe('pruneMetas', () => {
+  it('tiene solo i meta dei subagenti con un transcript seguito', () => {
+    const meta = { agentType: 'Explore', description: 'x' };
+    const metas = new Map<string, AgentMeta>([
+      [`${S}/a1`, meta],
+      [`${S}/a2`, meta],
+      ['altra/a3', meta],
+    ]);
+    pruneMetas(metas, [session(), agent('a1'), agent('a3')]);
+    expect([...metas.keys()]).toEqual([`${S}/a1`]);
+  });
+});
 
 describe('aggregate', () => {
   it('nessun file: snapshot vuoto', () => {
