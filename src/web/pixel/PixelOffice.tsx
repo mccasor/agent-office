@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Snapshot } from '../../shared/types';
 import { StartQueue } from '../scene/motion';
 import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
+import { cameraViewport, type Camera } from './camera';
 import {
   actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
-  viewportFor, wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
+  wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
@@ -13,6 +14,8 @@ import {
   tileSprite, toCanvas, type PixelLook, type Sprite, type SpriteCanvas,
 } from './sprites';
 import { TILE, type PixelActor, type PixelModel } from './types';
+import { screenOf, useCamera } from './useCamera';
+import { ZoomControls } from './ZoomControls';
 
 /** animazioni semplici: 30 fotogrammi al secondo bastano, come nella vista 3D */
 const MAX_FPS = 30;
@@ -110,11 +113,16 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   const { model } = state;
 
   const canvas = useRef<HTMLCanvasElement>(null);
+  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
+  // zoom e trascinamento (#87); un clic senza trascinamento seleziona il personaggio sotto il puntatore
+  const { cameraRef, handlers, dragging, controls } = useCamera(canvas, plan, {
+    pick: (x, y) => hitTest(sim.current.rects, x, y),
+    onSelect,
+  });
   const live = useRef<Live>({ model, selectedId });
   useEffect(() => {
     live.current = { model, selectedId };
   }, [model, selectedId]);
-  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
 
   useEffect(() => {
     const el = canvas.current;
@@ -132,46 +140,34 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
       const now = t / 1000;
       const dt = prevTime === null ? 0 : now - prevTime;
       prevTime = now;
-      render(el, ctx, sim.current, live.current, now, dt);
+      render(el, ctx, sim.current, live.current, cameraRef.current, now, dt);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [active]);
-
-  const pick = (ev: MouseEvent<HTMLCanvasElement>): string | null => {
-    const el = ev.currentTarget;
-    const r = el.getBoundingClientRect();
-    const { scale, ox, oy } = sim.current.view;
-    const px = ((ev.clientX - r.left) * (el.width / r.width) - ox) / scale;
-    const py = ((ev.clientY - r.top) * (el.height / r.height) - oy) / scale;
-    return hitTest(sim.current.rects, px, py);
-  };
+  }, [active, cameraRef]);
 
   return (
-    <canvas
-      ref={canvas}
-      className="pixel-office"
-      onClick={(ev) => onSelect(pick(ev))}
-      onPointerMove={(ev) => {
-        ev.currentTarget.style.cursor = pick(ev) ? 'pointer' : '';
-      }}
-    />
+    <>
+      <canvas ref={canvas} className={`pixel-office${dragging ? ' pixel-office--dragging' : ''}`} {...handlers} />
+      <ZoomControls {...controls} />
+    </>
   );
 }
 
 /** aggiorna i movimenti e disegna un fotogramma */
-function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, live: Live, now: number, dt: number): void {
+function render(
+  el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, live: Live, camera: Camera, now: number, dt: number,
+): void {
   const { model, selectedId } = live;
 
   // backing store in pixel fisici
-  const dpr = window.devicePixelRatio || 1;
-  const bw = Math.max(1, Math.round(el.clientWidth * dpr));
-  const bh = Math.max(1, Math.round(el.clientHeight * dpr));
+  const surface = screenOf(el);
+  const { w: bw, h: bh, dpr } = surface;
   if (el.width !== bw || el.height !== bh) {
     el.width = bw;
     el.height = bh;
   }
-  const view = viewportFor(bw, bh, plan, Math.round(16 * dpr));
+  const view = cameraViewport(camera, surface, plan);
   s.view = view;
 
   // movimenti: chi sparisce dallo snapshot esce dalla porta con l'ultimo stato noto, poi viene dimenticato

@@ -216,8 +216,8 @@
   overscroll-behavior: contain;
   box-sizing: border-box;
 }
-/* a destra c'è sopra il selettore della vista */
-.hud-card { max-height: calc(100vh - 80px); width: 300px; max-width: 100%; }
+/* a destra c'è sopra il selettore della vista e sotto i pulsanti di zoom della vista 2D */
+.hud-card { max-height: calc(100vh - 124px); width: 300px; max-width: 100%; }
 .hud-instances { padding: 4px; width: 300px; max-width: 100%; }
 .hud-instance + .hud-instance { border-top: 1px solid var(--hud-border); }
 .hud-instance__head {
