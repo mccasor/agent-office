@@ -107,9 +107,10 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     dir: join(dataDir ?? join(homedir(), '.agent-office'), 'history'),
     filesOf: (sessionId, agentId) => transcript.filesOf(sessionId, agentId),
   });
+  // cruscotto della giornata (#97): conteggi dallo storico, costo ripreso da today.json dopo un riavvio (#102)
+  const today = createDayTracker(Date.now(), { file: join(dataDir ?? join(homedir(), '.agent-office'), 'today.json') });
   await Promise.all([transcript.start(), hooks.start(), history.start()]);
-  // cruscotto della giornata (#97): conteggi in memoria da quando il server è partito
-  const today = createDayTracker(Date.now());
+  await today.start();
   const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
   const snapshot = (): Snapshot => {
     const now = Date.now();
@@ -123,7 +124,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     // un confronto con lo stato già registrato a ogni pubblicazione; la lista dei terminati chiusi è in cache
     history.observe(next);
     const closedFinished = history.closedFinished();
-    const withToday = { ...next, today: today.observe(next, now) };
+    const withToday = { ...next, today: today.observe(next, now, history.counts(now)) };
     return closedFinished ? { ...withToday, closedFinished } : withToday;
   };
 
@@ -183,7 +184,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
       unwatchConfig();
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
-      await Promise.all([server.close(), history.flush()]);
+      await Promise.all([server.close(), history.flush(), today.flush()]);
     },
   };
 }

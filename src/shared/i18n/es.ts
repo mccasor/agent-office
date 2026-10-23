@@ -189,7 +189,7 @@ export const es: Texts = {
   'today.failed.other': 'fallidos',
   'today.waiting': 'esperando',
   'today.noWait': '0 min',
-  'today.hint': 'Desde que se abrió la app: coste estimado a precios de lista, agentes y esperas de hoy',
+  'today.hint': 'Desde medianoche, también tras reiniciar la app: coste estimado a precios de lista, agentes y esperas de hoy',
   'outcome.ok': 'ok',
   'outcome.interrupted': 'interrumpido',
   'outcome.failed': 'fallido',

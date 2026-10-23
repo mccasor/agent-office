@@ -5,6 +5,7 @@ import type {
   AgentOutcome,
   AgentState,
   AgentTypeStats,
+  DayStats,
   FinishedAgent,
   HistoryEvent,
   HistoryEventKind,
@@ -38,6 +39,8 @@ interface HistoryRecord extends HistoryEvent {
 
 interface DayState {
   day: string;
+  /** mezzanotte locale del giorno */
+  midnight: number;
   records: HistoryRecord[];
   /** ultima riga per chiave */
   byKey: Map<string, HistoryRecord>;
@@ -48,13 +51,20 @@ interface DayState {
   /** ultima attività nota e progetto per sessione (anche di quelle sparite dallo snapshot) */
   lastAt: Map<string, number>;
   projects: Map<string, string | null>;
+  /** conteggi della barra "Oggi" (#102), aggiornati riga per riga: agenti e attese chiuse (tagliate a mezzanotte) */
+  counts: DayCounts;
 }
+
+/** la parte della barra "Oggi" che si ricava dallo storico (#102) */
+export type DayCounts = Pick<DayStats, 'launched' | 'finished' | 'failed' | 'waitingMs'>;
 
 export interface History {
   /** crea la cartella, sfoltisce i giorni vecchi e ricarica la giornata in corso */
   start(): Promise<void>;
   /** confronta lo snapshot con lo storico e accoda in append gli eventi nuovi; sincrona e leggera */
   observe(snapshot: Snapshot): void;
+  /** agenti lanciati, finiti e falliti oggi e tempo in attesa fino a `now` (#102): anche di prima di un riavvio */
+  counts(now: number): DayCounts;
   /** terminati di oggi delle sessioni non più attive (B5), dal più recente; undefined se nessuno */
   closedFinished(): FinishedAgent[] | undefined;
   /** riepilogo di un giorno (default oggi); null se il giorno non è valido */
@@ -104,17 +114,33 @@ const midnightOf = (ms: number): number => new Date(ms).setHours(0, 0, 0, 0);
 
 const emptyDay = (day: string): DayState => ({
   day,
+  midnight: new Date(`${day}T00:00:00`).getTime(),
   records: [],
   byKey: new Map(),
   openWaits: new Map(),
   sessionOpen: new Map(),
   lastAt: new Map(),
   projects: new Map(),
+  counts: { launched: 0, finished: 0, failed: 0, waitingMs: 0 },
 });
+
+/** Contributo di una riga ai conteggi della barra "Oggi"; `sign` -1 toglie quello di una riga sostituita. */
+function tally(st: DayState, r: HistoryRecord, sign: 1 | -1): void {
+  const c = st.counts;
+  if (r.kind === 'agent-start') c.launched += sign;
+  else if (r.kind === 'agent-end') {
+    if (r.outcome === 'failed') c.failed += sign;
+    else c.finished += sign;
+  } else if (r.kind === 'unblock') c.waitingMs += sign * Math.max(0, Math.min(r.durationMs ?? 0, r.at - st.midnight)); // da mezzanotte
+}
 
 /** Aggiorna lo stato del giorno con una riga (letta dal file o appena registrata). */
 function apply(st: DayState, r: HistoryRecord): void {
   st.records.push(r);
+  // a parità di chiave vale l'ultima riga anche nei conteggi (agente ripreso e terminato di nuovo)
+  const prev = st.byKey.get(r.k);
+  if (prev) tally(st, prev, -1);
+  tally(st, r, 1);
   st.byKey.set(r.k, r);
   st.lastAt.set(r.sessionId, Math.max(st.lastAt.get(r.sessionId) ?? 0, r.at));
   if (r.project !== null || !st.projects.has(r.sessionId)) st.projects.set(r.sessionId, r.project);
@@ -384,6 +410,17 @@ export function createHistory(opts: HistoryOptions): History {
       const file = join(opts.dir, `${st.day}.jsonl`);
       const text = lines.map((l) => `${l}\n`).join('');
       enqueue(() => appendFile(file, text));
+    },
+
+    counts(t) {
+      // passata la mezzanotte prima della prossima osservazione: la giornata nuova non ha ancora nulla di chiuso
+      const fresh = dayOf(t) !== st.day;
+      const midnight = fresh ? midnightOf(t) : st.midnight;
+      // le attese ancora aperte contano fino a adesso, da mezzanotte
+      let open = 0;
+      for (const w of st.openWaits.values()) open += Math.max(0, t - Math.max(w.at, midnight));
+      const c = fresh ? { launched: 0, finished: 0, failed: 0, waitingMs: 0 } : st.counts;
+      return { ...c, waitingMs: c.waitingMs + open };
     },
 
     closedFinished() {

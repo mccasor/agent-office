@@ -189,7 +189,7 @@ export const en: Texts = {
   'today.failed.other': 'failed',
   'today.waiting': 'waiting',
   'today.noWait': '0m',
-  'today.hint': 'Since the app opened: estimated cost at list prices, today’s agents and waits',
+  'today.hint': 'Since midnight, even across app restarts: estimated cost at list prices, today’s agents and waits',
   'outcome.ok': 'ok',
   'outcome.interrupted': 'interrupted',
   'outcome.failed': 'failed',
