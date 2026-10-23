@@ -20,8 +20,9 @@ export function cardWindowName(kind: CardKind, id: string): string {
   return `agent-office-${kind}-${id.replace(/[^A-Za-z0-9_-]/g, '_')}`;
 }
 
-/** Apre (o porta in primo piano) la finestra della scheda; nell'app della menu bar la crea Tauri. */
+/** Apre (o porta in primo piano) la finestra della scheda; nell'app della menu bar la crea Tauri. L'altezza è una
+ *  stima: la pagina della scheda si porta poi a misura del contenuto (fit.ts). */
 export function openCardWindow(kind: CardKind, id: string): void {
-  const size = kind === 'agent' ? 'width=360,height=640' : 'width=380,height=600';
+  const size = kind === 'agent' ? 'width=360,height=480' : 'width=380,height=360';
   window.open(cardUrl(kind, id), cardWindowName(kind, id), `popup,${size}`)?.focus();
 }
