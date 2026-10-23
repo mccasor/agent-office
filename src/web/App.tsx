@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
 import type { AgentState } from '../shared/types';
-import { AgentActor, AlertBubble, DESK_CUP, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
+import { AgentActor, AlertBubble, DESK_CUP, FitCamera, Office, PostIt, StartQueue, TaskBoards, type CardPlace, type Seat, type TaskCard } from './scene';
 import { bossPreset, Character, CoffeeCup, pickPreset, type CharacterPreset } from './characters';
 import { AgentCard, AgentLabel, HudOverlay, InstancesPanel, type Waiting, ListView, RepoPanel, ViewToggle } from './hud';
 import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
@@ -86,7 +85,6 @@ export function App() {
   }, [selectedId, selected, select]);
   // 3D e 2D: pannello delle istanze a sinistra e scheda dell'agente a destra
   const scene = viewMode !== 'list';
-  const span = Math.max(layout.width, layout.depth);
 
   return (
     <>
@@ -95,7 +93,8 @@ export function App() {
         shadows
         // su schermi retina il pieno dpr quadruplica i pixel da disegnare senza un guadagno visibile
         dpr={[1, 1.5]}
-        camera={{ position: [span * 0.56, span * 0.66, span * 0.72], fov: 38 }}
+        // posizione calcolata da FitCamera in base a layout e aspect del canvas
+        camera={{ fov: 38 }}
         // in vista lista o 2D la scena resta montata (posizioni e post-it intatti) ma non viene disegnata
         frameloop={drawing ? 'demand' : 'never'}
         // clic sul vuoto (non un trascinamento della camera: r3f lo segnala solo sotto i 2 px) chiude la scheda
@@ -134,7 +133,7 @@ export function App() {
             onSelect={select}
           />
         ))}
-        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
+        <FitCamera width={layout.width} depth={layout.depth} />
       </Canvas>
       {/* vista 2D (#71): montata solo quando è mostrata; chi ha già un posto ricompare seduto */}
       {viewMode === 'pixel' && <PixelOffice snapshot={snapshot} selectedId={selectedId} onSelect={select} active={pageVisible} />}
