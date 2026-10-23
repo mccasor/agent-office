@@ -118,7 +118,13 @@ export function App() {
         <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.3} minDistance={5} maxDistance={span * 2} />
       </Canvas>
       {viewMode === 'list' && (
-        <ListView sessions={fullSnapshot?.sessions ?? []} agents={fullSnapshot?.agents ?? []} hidden={hidden} onToggle={toggleSession} />
+        <ListView
+          sessions={fullSnapshot?.sessions ?? []}
+          agents={fullSnapshot?.agents ?? []}
+          finished={fullSnapshot?.finished ?? []}
+          hidden={hidden}
+          onToggle={toggleSession}
+        />
       )}
       <HudOverlay side="left">{viewMode === 'office' && <SessionPanel session={shown} status={shownStatus} />}</HudOverlay>
       <HudOverlay side="right">

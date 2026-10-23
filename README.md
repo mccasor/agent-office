@@ -80,6 +80,23 @@ npm run app:dev      # sviluppo
 agent-office install-hooks --global   # hook per tutte le sessioni (servono per il pallino rosso)
 ```
 
+## Impostazioni
+
+Facoltative, in `~/.agent-office/config.json` (lo crea l'app della menu bar quando cambi le notifiche):
+
+```json
+{
+  "activeWindowMinutes": 10,
+  "notifyWaiting": true,
+  "notifyDone": false
+}
+```
+
+- `activeWindowMinutes`: dopo quanti minuti senza attività una sessione non è più considerata aperta
+  (sparisce da ufficio, lista e menu). Letto all'avvio del server.
+- `notifyWaiting` / `notifyDone`: notifiche di macOS quando Claude aspetta un tuo input o finisce il lavoro;
+  si cambiano anche dal menu dell'icona, in Impostazioni.
+
 ## Cosa mostra
 
 | Dato | Fonte |

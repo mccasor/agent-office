@@ -125,6 +125,8 @@ export interface Snapshot {
   repo: RepoState | null;
   sessions: SessionState[];
   agents: AgentState[];
+  /** agenti terminati oggi e già usciti dall'ufficio, dal più recente (cronologia); assente nei client vecchi */
+  finished?: AgentState[];
   generatedAt: number;
 }
 

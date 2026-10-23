@@ -156,6 +156,20 @@ function keepFinished(agents: AgentState[], now: number): AgentState[] {
   return agents.filter((a) => a.status !== 'done' || keep.has(a.id));
 }
 
+/** quanti agenti terminati oggi restano nello snapshot al massimo */
+export const MAX_FINISHED = 50;
+
+/** Agenti terminati da oggi (ora locale) e già usciti dall'ufficio, dal più recente: la cronologia della giornata. */
+function finishedToday(all: AgentState[], present: AgentState[], now: number): AgentState[] {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const inOffice = new Set(present.map((a) => a.id));
+  return all
+    .filter((a) => a.status === 'done' && !inOffice.has(a.id) && a.updatedAt >= midnight.getTime())
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, MAX_FINISHED);
+}
+
 /** Stato per l'icona: una sessione attiva bloccata sull'utente > qualcuno lavora > nessuna attività. */
 export function officeStatus(sessions: SessionState[], agents: AgentState[]): OfficeStatus {
   const active = sessions.filter((s) => s.active);
@@ -177,7 +191,8 @@ export function buildSnapshot(input: {
 }): Snapshot {
   const { transcript, hookEvents, repo, now } = input;
   const hooks = latestAgentHooks(hookEvents);
-  const agents = keepFinished(transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now)), now);
+  const resolved = transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now));
+  const agents = keepFinished(resolved, now);
   const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now);
-  return { status: officeStatus(sessions, agents), repo, sessions, agents, generatedAt: now };
+  return { status: officeStatus(sessions, agents), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }

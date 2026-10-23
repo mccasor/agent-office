@@ -1,9 +1,9 @@
 //! Notifiche di macOS: quando una sessione si blocca in attesa dell'utente e, se richiesto, quando finisce il
-//! lavoro. Preferenze in ~/.agent-office/app.json.
+//! lavoro. Preferenze in ~/.agent-office/config.json, file condiviso con il server (che ne legge altre chiavi).
 
 use std::path::PathBuf;
 
-use serde_json::{json, Value};
+use serde_json::{Map, Value};
 
 /// Preferenze dell'app.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -21,7 +21,7 @@ impl Default for Prefs {
 }
 
 fn prefs_path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/app.json"))
+    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/config.json"))
 }
 
 pub fn load() -> Prefs {
@@ -31,12 +31,22 @@ pub fn load() -> Prefs {
     Prefs { notify_waiting: flag("notifyWaiting", d.notify_waiting), notify_done: flag("notifyDone", d.notify_done) }
 }
 
+/// Salva le preferenze lasciando intatte le altre chiavi del file (es. activeWindowMinutes del server).
 pub fn save(p: Prefs) {
     let Some(path) = prefs_path() else { return };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let _ = std::fs::write(path, json!({ "notifyWaiting": p.notify_waiting, "notifyDone": p.notify_done }).to_string());
+    let mut config = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_else(Map::new);
+    config.insert("notifyWaiting".into(), Value::Bool(p.notify_waiting));
+    config.insert("notifyDone".into(), Value::Bool(p.notify_done));
+    if let Ok(text) = serde_json::to_string_pretty(&Value::Object(config)) {
+        let _ = std::fs::write(path, text + "\n");
+    }
 }
 
 /// Quanto serve per decidere le notifiche di una sessione attiva.

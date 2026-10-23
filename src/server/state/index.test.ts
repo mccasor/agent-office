@@ -235,6 +235,7 @@ describe('buildSnapshot: snapshot', () => {
       repo: null,
       sessions: [],
       agents: [],
+      finished: [],
       generatedAt: NOW,
     });
   });
@@ -271,6 +272,23 @@ describe('buildSnapshot: area relax', () => {
     const stale = agent({ id: 'stale', status: 'idle', updatedAt: NOW - LOUNGE_WAIT_MS - 1 });
     const done = agent({ id: 'done', status: 'done', updatedAt: NOW - DONE_LINGER_MS - 1 });
     expect(build([stale, done])).toEqual(['stale']);
+  });
+});
+
+describe('buildSnapshot: terminati di oggi', () => {
+  it('chi ha finito oggi ed è già uscito, dal più recente; non chi è ancora in ufficio né chi ha finito ieri', () => {
+    // istante in ora locale, lontano dalla mezzanotte: il test non dipende dal fuso orario
+    const now = new Date(2026, 0, 10, 15, 0).getTime();
+    const midnight = new Date(2026, 0, 10).getTime();
+    const done = (id: string, updatedAt: number) => agent({ id, status: 'done', startedAt: updatedAt - 60_000, updatedAt });
+    const busy = agent({ id: 'busy', startedAt: now - 20_000, updatedAt: now - 1_000 });
+    const transcript = {
+      sessions: [],
+      agents: [done('gone', now - 3 * 3_600_000), done('later', now - 3_600_000), done('ieri', midnight - 1), done('relax', now - 1_000), busy],
+    };
+    const snap = buildSnapshot({ transcript, hookEvents: [], repo: null, now });
+    expect(snap.agents.map((a) => a.id)).toEqual(['relax', 'busy']);
+    expect(snap.finished!.map((a) => a.id)).toEqual(['later', 'gone']);
   });
 });
 

@@ -88,9 +88,52 @@ describe('ListView', () => {
     expect(screen.getByText(/Edit parser\.ts/)).toBeTruthy();
   });
 
+  it('terminati oggi della sessione, chiusi di default', () => {
+    const t = Date.now();
+    const { container } = render(
+      <ListView
+        sessions={[session()]}
+        agents={[]}
+        finished={[agent({ id: 'f1', name: 'Ricerca finita', status: 'done', startedAt: t - 5 * 60_000, updatedAt: t - 60_000, cost: 0.42 }), agent({ id: 'f2', sessionId: 'altra' })]}
+        hidden={[]}
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByText('Terminati oggi (1)')).toBeTruthy();
+    expect(container.querySelector('details')?.open).toBe(false);
+    expect(screen.getByText(/in 4 min · .* token · ≈ \$0,42/)).toBeTruthy();
+  });
+
+  it('filtro: ricerca su progetto e agenti, solo in attesa, nascondi terminati', () => {
+    localStorage.clear();
+    render(
+      <ListView
+        sessions={[session(), session({ id: 's2', cwd: '/x/olimpo-ui', waiting: true })]}
+        agents={[agent(), agent({ id: 'a2', name: 'Vecchio lavoro', status: 'done' })]}
+        hidden={[]}
+        onToggle={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca' }), { target: { value: 'OLIMPO' } });
+    expect(screen.queryByRole('region', { name: 'agent-office' })).toBeNull();
+    expect(screen.getByRole('region', { name: 'olimpo-ui' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca' }), { target: { value: 'hud' } });
+    expect(screen.getByRole('region', { name: 'agent-office' })).toBeTruthy();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca' }), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Solo in attesa' }));
+    expect(screen.queryByRole('region', { name: 'agent-office' })).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Solo in attesa' }));
+    expect(screen.getByText('Vecchio lavoro')).toBeTruthy();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Nascondi terminati' }));
+    expect(screen.queryByText('Vecchio lavoro')).toBeNull();
+    // ricordato per la prossima volta
+    expect(JSON.parse(localStorage.getItem('agent-office:list-filter')!)).toMatchObject({ hideDone: true });
+    localStorage.clear();
+  });
+
   it('sessione nascosta: casella non spuntata; nessuna sessione: messaggio', () => {
     render(<ListView sessions={[session()]} agents={[]} hidden={['s1']} onToggle={() => {}} />);
-    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByRole('checkbox', { name: "Nell'ufficio" }) as HTMLInputElement).checked).toBe(false);
     cleanup();
     render(<ListView sessions={[]} agents={[]} hidden={[]} onToggle={() => {}} />);
     expect(screen.getByText(/Nessuna sessione/)).toBeTruthy();
