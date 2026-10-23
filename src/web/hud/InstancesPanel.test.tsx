@@ -32,6 +32,14 @@ describe('InstancesPanel', () => {
     expect(within(head(/agent-office/)).getByRole('img', { name: 'al lavoro' })).toBeTruthy();
   });
 
+  it('subagente: nome di persona, ruolo e compito; Claudio Code senza ruolo (#88)', () => {
+    render(<InstancesPanel sessions={[session()]} agents={[agent({ nickname: 'Dario Merge', area: 'test' })]} bosses={[boss('s1')]} onSelect={() => {}} />);
+    const row = screen.getByRole('button', { name: /Dario Merge/ });
+    expect(within(row).getByText('QA').getAttribute('data-area')).toBe('test');
+    expect(within(row).getByText('Build HUD panel')).toBeTruthy();
+    expect(within(screen.getByRole('button', { name: /Claudio Code/ })).queryByText('architect')).toBeNull();
+  });
+
   it('apri e chiudi: dati della sessione e agenti', () => {
     render(
       <InstancesPanel

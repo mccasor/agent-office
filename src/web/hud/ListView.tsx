@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import type { OfficeView } from '../store';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, StatusDot } from './panels';
+import {
+  agentName, agentTask, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText,
+} from './labels';
+import { DiffStat, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -37,11 +39,22 @@ function saveFilter(filter: ListFilter): void {
   }
 }
 
+/** Nome di persona in grassetto e compito accanto, in grigio. */
+function AgentName({ agent }: { agent: AgentState }) {
+  const task = agentTask(agent);
+  return (
+    <>
+      <strong>{agentName(agent)}</strong>
+      {task && <span className="list-agent__task">{task}</span>}
+    </>
+  );
+}
+
 /** La sessione corrisponde alla ricerca: progetto, branch, titolo o nome di un suo agente (senza maiuscole). */
 function matches(query: string, s: SessionState, agents: AgentState[]): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  return [projectName(s), s.branch ?? '', s.title ?? '', ...agents.map((a) => a.name)].some((text) => text.toLowerCase().includes(q));
+  return [projectName(s), s.branch ?? '', s.title ?? '', ...agents.flatMap((a) => [a.name, a.nickname ?? ''])].some((text) => text.toLowerCase().includes(q));
 }
 
 /** Agenti della sessione terminati oggi: nome, durata, costo. Chiusa di default. */
@@ -53,8 +66,8 @@ function FinishedToday({ agents }: { agents: AgentState[] }) {
       <ul className="list-agents">
         {agents.map((a) => (
           <li key={a.id} className="list-agent list-agent--done">
-            <span className="list-agent__name" title={a.name}>{a.name}</span>
-            <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
+            <span className="list-agent__name" title={a.name}><AgentName agent={a} /></span>
+            <RoleChip area={a.area} />
             <span className="list-agent__status hud-muted">
               {[`in ${formatDuration(a.updatedAt - a.startedAt)}`, `${formatTokens(a.tokens.output)} token`, a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null]
                 .filter(Boolean)
@@ -200,10 +213,10 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                   return (
                     <li key={a.id} className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}`}>
                       <span className="list-agent__name" title={a.name}>
-                        {a.name}
+                        <AgentName agent={a} />
                         {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
                       </span>
-                      <span className={`hud-chip hud-chip--${a.area}`}>{a.area}</span>
+                      <RoleChip area={a.area} />
                       <span className="list-agent__status hud-muted">
                         {[
                           // bloccato: il motivo al posto dello stato e del tool
@@ -214,7 +227,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
-                      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${a.name}`} className="hud-bar--small" />}
+                      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />}
                     </li>
                   );
                 })}

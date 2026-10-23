@@ -3,6 +3,7 @@
 export type WorkArea =
   | 'backend'
   | 'frontend'
+  | 'design'
   | 'architecture'
   | 'test'
   | 'docs'
@@ -46,6 +47,8 @@ export interface AgentState {
   sessionId: string;
   /** nome visualizzato: description del meta.json, altrimenti agentType */
   name: string;
+  /** nome di persona stabile dall'id (es. "Marta Commit"), calcolato dal server; assente nei client vecchi e per Claude stesso */
+  nickname?: string;
   agentType: string;
   description: string;
   area: WorkArea;

@@ -129,6 +129,17 @@ describe('ListView', () => {
     expect(screen.getByText(/in 4 min · .* token · ≈ \$0,42/)).toBeTruthy();
   });
 
+  it('agente: nome di persona, compito accanto e ruolo; la ricerca trova anche il nome di persona (#88)', () => {
+    localStorage.clear();
+    render(<ListView sessions={[session()]} agents={[agent({ nickname: 'Gaia Pixel', area: 'design' })]} hidden={[]} onToggle={() => {}} />);
+    expect(screen.getByText('Gaia Pixel').tagName).toBe('STRONG');
+    expect(screen.getByText('Build HUD panel')).toBeTruthy();
+    expect(screen.getByText('design').getAttribute('data-area')).toBe('design');
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Cerca' }), { target: { value: 'gaia' } });
+    expect(screen.getByRole('region', { name: 'agent-office' })).toBeTruthy();
+    localStorage.clear();
+  });
+
   it('filtro: ricerca su progetto e agenti, solo in attesa, nascondi terminati', () => {
     localStorage.clear();
     render(

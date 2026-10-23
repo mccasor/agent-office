@@ -1,11 +1,14 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Snapshot } from '../../shared/types';
 import { StartQueue } from './motion';
 import { arrivedAt, frameAt, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
+import { agentName } from '../hud/labels';
+import { cameraViewport, type Camera } from './camera';
 import {
   actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sceneFurniture, sortByDepth,
-  viewportFor, wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
+  wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
+import { ALL_LABELS_ZOOM, drawLabel, labelText } from './labels';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
 import {
@@ -13,6 +16,8 @@ import {
   tileSprite, toCanvas, type PixelLook, type Sprite, type SpriteCanvas,
 } from './sprites';
 import { TILE, type PixelActor, type PixelModel } from './types';
+import { screenOf, useCamera } from './useCamera';
+import { ZoomControls } from './ZoomControls';
 
 /** animazioni semplici: 30 fotogrammi al secondo bastano, come nella vista 3D */
 const MAX_FPS = 30;
@@ -71,9 +76,6 @@ function lookOf(actor: PixelActor, model: PixelModel): PixelLook {
   return bossLook(room ?? 5 + Math.max(0, model.roomless.indexOf(actor.sessionId)));
 }
 
-/** nome breve per l'etichetta */
-const shortName = (name: string): string => (name.length > 32 ? `${name.slice(0, 31)}…` : name);
-
 interface Entry {
   actor: PixelActor;
   motion: ActorMotion;
@@ -110,11 +112,16 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   const { model } = state;
 
   const canvas = useRef<HTMLCanvasElement>(null);
+  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
+  // zoom e trascinamento (#87); un clic senza trascinamento seleziona il personaggio sotto il puntatore
+  const { cameraRef, handlers, dragging, controls } = useCamera(canvas, plan, {
+    pick: (x, y) => hitTest(sim.current.rects, x, y),
+    onSelect,
+  });
   const live = useRef<Live>({ model, selectedId });
   useEffect(() => {
     live.current = { model, selectedId };
   }, [model, selectedId]);
-  const sim = useRef<Sim>({ entries: new Map(), queue: new StartQueue(), fresh: true, rects: [], view: { scale: 1, ox: 0, oy: 0 } });
 
   useEffect(() => {
     const el = canvas.current;
@@ -132,46 +139,34 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
       const now = t / 1000;
       const dt = prevTime === null ? 0 : now - prevTime;
       prevTime = now;
-      render(el, ctx, sim.current, live.current, now, dt);
+      render(el, ctx, sim.current, live.current, cameraRef.current, now, dt);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [active]);
-
-  const pick = (ev: MouseEvent<HTMLCanvasElement>): string | null => {
-    const el = ev.currentTarget;
-    const r = el.getBoundingClientRect();
-    const { scale, ox, oy } = sim.current.view;
-    const px = ((ev.clientX - r.left) * (el.width / r.width) - ox) / scale;
-    const py = ((ev.clientY - r.top) * (el.height / r.height) - oy) / scale;
-    return hitTest(sim.current.rects, px, py);
-  };
+  }, [active, cameraRef]);
 
   return (
-    <canvas
-      ref={canvas}
-      className="pixel-office"
-      onClick={(ev) => onSelect(pick(ev))}
-      onPointerMove={(ev) => {
-        ev.currentTarget.style.cursor = pick(ev) ? 'pointer' : '';
-      }}
-    />
+    <>
+      <canvas ref={canvas} className={`pixel-office${dragging ? ' pixel-office--dragging' : ''}`} {...handlers} />
+      <ZoomControls {...controls} />
+    </>
   );
 }
 
 /** aggiorna i movimenti e disegna un fotogramma */
-function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, live: Live, now: number, dt: number): void {
+function render(
+  el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, live: Live, camera: Camera, now: number, dt: number,
+): void {
   const { model, selectedId } = live;
 
   // backing store in pixel fisici
-  const dpr = window.devicePixelRatio || 1;
-  const bw = Math.max(1, Math.round(el.clientWidth * dpr));
-  const bh = Math.max(1, Math.round(el.clientHeight * dpr));
+  const surface = screenOf(el);
+  const { w: bw, h: bh, dpr } = surface;
   if (el.width !== bw || el.height !== bh) {
     el.width = bw;
     el.height = bh;
   }
-  const view = viewportFor(bw, bh, plan, Math.round(16 * dpr));
+  const view = cameraViewport(camera, surface, plan);
   s.view = view;
 
   // movimenti: chi sparisce dallo snapshot esce dalla porta con l'ultimo stato noto, poi viene dimenticato
@@ -196,6 +191,8 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
   const rects: HitRect[] = [];
   const typing = new Set<string>();
   const labels: { entry: Entry; x: number; y: number }[] = [];
+  // ingrandita abbastanza c'è posto per il nome di tutti (compatto, senza ruolo); altrimenti boss, bloccati e selezionato
+  const everyone = view.scale / dpr >= ALL_LABELS_ZOOM;
   for (const e of s.entries.values()) {
     if (!isVisible(e.motion)) continue;
     const pose = poseOf(e.actor, e.motion);
@@ -206,7 +203,7 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
       frame: frameAt(pose, now, seedOf(e.actor.id)), selected,
     }));
     rects.push(actorRect(e.actor.id, e.motion.pos));
-    if (selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
+    if (everyone || selected || e.actor.boss || e.actor.waiting) labels.push({ entry: e, ...feetOf(e.motion.pos) });
   }
   const screen = Math.floor(now * SCREEN_FPS);
   for (const f of solid) {
@@ -226,48 +223,23 @@ function render(el: HTMLCanvasElement, ctx: CanvasRenderingContext2D, s: Sim, li
     ctx.drawImage(sp.canvas, view.ox + (x - sp.ax) * k, view.oy + (y - sp.ay) * k, sp.w * k, sp.h * k);
   for (const op of sortByDepth(ops)) blit(spriteOf(op.sprite), op.x, op.y);
 
-  // sopra a tutto: fumetti di chi è bloccato ed etichette (boss, bloccati e selezionato)
+  // sopra a tutto: fumetti di chi è bloccato ed etichette; quelle in evidenza per ultime, sopra alle altre
   const bubble = cachedImage('x:bubble', bubbleImage);
-  for (const { entry, x, y } of labels) {
+  const rank = ({ entry }: { entry: Entry }) => (entry.actor.id === selectedId ? 3 : entry.actor.waiting ? 2 : entry.actor.boss ? 1 : 0);
+  for (const { entry, x, y } of [...labels].sort((a, b) => rank(a) - rank(b))) {
+    const { actor } = entry;
     let top = y - 21;
-    if (entry.actor.waiting) {
+    if (actor.waiting) {
       blit(bubble, x, top - 2);
       top -= bubble.h + 1;
     }
-    drawLabel(ctx, view, dpr, x, top, shortName(entry.actor.agent.name), {
-      selected: entry.actor.id === selectedId,
-      waiting: entry.actor.waiting,
-    });
+    const selected = actor.id === selectedId;
+    drawLabel(ctx, {
+      text: labelText(agentName(actor.agent)),
+      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
+      area: actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
+      selected,
+      waiting: actor.waiting,
+    }, view.ox + x * view.scale, view.oy + top * view.scale, dpr);
   }
-}
-
-/** Etichetta col nome: testo piccolo su una targhetta scura, centrata in x e con il fondo in y (pixel a scala 1). */
-function drawLabel(
-  ctx: CanvasRenderingContext2D,
-  view: Viewport,
-  dpr: number,
-  x: number,
-  bottom: number,
-  text: string,
-  { selected, waiting }: { selected: boolean; waiting: boolean },
-): void {
-  const font = Math.round(11 * dpr);
-  ctx.font = `600 ${font}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const padX = Math.round(4 * dpr);
-  const h = Math.round(font + 4 * dpr);
-  const w = Math.ceil(ctx.measureText(text).width) + 2 * padX;
-  const cx = view.ox + x * view.scale;
-  const left = Math.round(cx - w / 2);
-  const top = Math.round(view.oy + bottom * view.scale - h);
-  ctx.fillStyle = selected ? PALETTE.select[1] : waiting ? PALETTE.bubble[1] : PALETTE.outline;
-  ctx.globalAlpha = selected || waiting ? 1 : 0.85;
-  ctx.fillRect(left, top, w, h);
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = PALETTE.outline;
-  ctx.lineWidth = Math.max(1, Math.round(dpr));
-  ctx.strokeRect(left + ctx.lineWidth / 2, top + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
-  ctx.fillStyle = selected ? PALETTE.outline : '#ffffff';
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
-  ctx.fillText(text, left + w / 2, top + h / 2 + Math.round(dpr / 2));
 }

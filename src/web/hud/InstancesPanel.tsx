@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, formatCost, formatTokens, percent } from './format';
-import { NO_INSTANCES, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { DiffStat, SessionAlert, StatusDot } from './panels';
+import { agentName, agentTask, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
+import { DiffStat, RoleChip, SessionAlert, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
 
-/** Una riga dell'elenco agenti: nome e stato (o tool in uso); il clic apre la scheda. */
+/** Una riga dell'elenco agenti: nome, ruolo, compito e stato (o tool in uso); il clic apre la scheda. */
 function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
   agent: AgentState;
   status: string;
@@ -24,7 +24,11 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
         aria-pressed={selected}
         onClick={() => onSelect(agent.id)}
       >
-        <span className="hud-instance__agent-name" title={agent.name}>{agent.name}</span>
+        <span className="hud-instance__agent-head">
+          <span className="hud-instance__agent-name" title={agentName(agent)}>{agentName(agent)}</span>
+          {agent.agentType !== 'main' && <RoleChip area={agent.area} />}
+        </span>
+        {agentTask(agent) && <span className="hud-muted hud-instance__agent-task" title={agent.name}>{agent.name}</span>}
         <span className="hud-muted hud-instance__agent-status">{status}</span>
       </button>
     </li>
@@ -48,7 +52,7 @@ function InstanceBody({ session: s, boss, agents, selected, onSelect }: {
     : [SESSION_STATUS_LABEL[s.status], s.tool ? toolText(s.tool) : null].filter(Boolean).join(' · ');
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
-      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker?.name ?? 'Un subagente') : null} />}
+      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : 'Un subagente') : null} />}
       <p className="hud-instance__meta hud-muted">
         {[s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
           .filter(Boolean)
