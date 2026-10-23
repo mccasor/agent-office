@@ -15,6 +15,11 @@
   --hud-danger: #d4380d;
   --hud-added: #1f8a45;
   --hud-removed: #c62828;
+  /* arancione di git (sezione Git) e zone del contesto: arancione dal 70%, rosso dal 90% */
+  --hud-git: #f05033;
+  --hud-ctx-ok: #2f6fde;
+  --hud-ctx-warn: #f08c00;
+  --hud-ctx-danger: #e03131;
 
   --area-backend: #2f6fde;
   --area-frontend: #c2399a;
@@ -41,6 +46,10 @@
     --hud-danger: #ff6b4a;
     --hud-added: #5fd38a;
     --hud-removed: #ff7070;
+    --hud-git: #ff7a5c;
+    --hud-ctx-ok: #6c9cf0;
+    --hud-ctx-warn: #ffa94d;
+    --hud-ctx-danger: #ff6b6b;
 
     --area-backend: #6c9cf0;
     --area-frontend: #ec6fc7;
@@ -97,7 +106,65 @@
 .hud-title { font-weight: 600; font-size: 14px; }
 .hud-session__branch { font-family: var(--hud-mono); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-session__alert { margin: 0 0 6px; color: var(--hud-danger); font-weight: 600; }
-.hud-diff { display: flex; gap: 10px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.hud-diff { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hud-diff__blocks { display: inline-flex; gap: 2px; }
+.hud-diff__blocks > i { width: 8px; height: 8px; border-radius: 2px; background: var(--hud-track); }
+.hud-diff__blocks > i[data-kind='added'] { background: var(--hud-added); }
+.hud-diff__blocks > i[data-kind='removed'] { background: var(--hud-removed); }
+
+/* ---- sezione Git dell'istanza: branch, issue e modifiche non committate, nell'arancione di git ---- */
+.hud-git {
+  margin: 8px 0;
+  padding: 6px 8px 7px 10px;
+  border-left: 3px solid var(--hud-git);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--hud-git) 7%, transparent);
+}
+.hud-git__head { display: flex; align-items: center; gap: 5px; color: var(--hud-git); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.hud-git__icon { width: 12px; height: 12px; fill: currentColor; flex: none; }
+.hud-git__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; min-width: 0; }
+.hud-git__branch {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--hud-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- contesto: barra con le zone arancione (70%) e rossa (90%), riempita col colore della zona raggiunta ---- */
+.hud-ctx { margin: 8px 0; }
+.hud-ctx__head { display: flex; align-items: baseline; gap: 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.hud-ctx__label { flex: 1; font-weight: 600; }
+.hud-ctx__pct { min-width: 3ch; font-weight: 700; text-align: right; }
+.hud-ctx[data-level='warn'] .hud-ctx__pct { color: var(--hud-ctx-warn); }
+.hud-ctx[data-level='danger'] .hud-ctx__pct { color: var(--hud-ctx-danger); }
+.hud-ctx__track {
+  position: relative;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(
+    to right,
+    var(--hud-track) 0 70%,
+    color-mix(in srgb, var(--hud-ctx-warn) 28%, transparent) 70% 90%,
+    color-mix(in srgb, var(--hud-ctx-danger) 30%, transparent) 90% 100%
+  );
+}
+.hud-ctx__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(to right, color-mix(in srgb, var(--hud-ctx-ok) 70%, transparent), var(--hud-ctx-ok));
+  transition: width 300ms ease;
+}
+.hud-ctx[data-level='warn'] .hud-ctx__fill { background: linear-gradient(to right, var(--hud-ctx-ok), var(--hud-ctx-warn)); }
+.hud-ctx[data-level='danger'] .hud-ctx__fill { background: linear-gradient(to right, var(--hud-ctx-ok), var(--hud-ctx-warn) 75%, var(--hud-ctx-danger)); }
+.hud-ctx__note { margin: 3px 0 0; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .hud-ctx__fill { transition: none; }
+}
 .hud-added { color: var(--hud-added); font-weight: 600; }
 .hud-removed { color: var(--hud-removed); font-weight: 600; }
 
@@ -105,17 +172,7 @@
 .hud-tokens { margin-top: 2px; font-size: 12px; }
 .hud-tokens > summary { cursor: pointer; }
 
-/* contesto sotto il 50%: pillola compatta; oltre il 90% il suggerimento di compattare */
-.hud-pill {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: var(--hud-track);
-  color: var(--hud-muted);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
+/* oltre il 90% il suggerimento di compattare */
 .hud-context__hint { grid-column: 1 / -1; color: var(--hud-danger); font-weight: 600; }
 .hud-context__note { margin: 2px 0 0; font-size: 12px; }
 
@@ -332,8 +389,6 @@
 .list-session__meta { margin: 2px 0 0; }
 .list-session__metarow { display: flex; align-items: baseline; gap: 8px; }
 .list-session__metarow .list-session__meta { flex: 1; min-width: 0; }
-.list-session__context { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
-.list-session__context .hud-bar { margin-top: 0; }
 .list-dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: #9aa4b0; }
 .list-dot--working { background: var(--hud-ok); box-shadow: 0 0 0 3px rgb(46 157 87 / 0.2); }
 .list-dot--waiting { background: var(--hud-danger); box-shadow: 0 0 0 3px rgb(212 56 13 / 0.2); }

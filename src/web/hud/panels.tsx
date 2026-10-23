@@ -2,10 +2,9 @@ import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { AgentAlert, AgentOutcome, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
 import { t, tn } from '../../shared/i18n';
-import { useShow } from '../store';
+import { useShow, useShown } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
 import { alertText, AREA_LABEL, compactionText, DOT_LABEL, OUTCOME_LABEL, projectName, waitingText } from './labels';
-import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -43,15 +42,64 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** Righe aggiunte e tolte, file modificati (modifiche non committate); nascosta dalle impostazioni (`session.diff`). */
-export function DiffStat({ diff }: { diff: RepoDiff }) {
-  if (!useShow('session.diff')) return null;
+/** quadratini della barra del diff, come su GitHub: verdi e rossi in proporzione alle righe aggiunte e tolte */
+const DIFF_BLOCKS = 5;
+
+/** Quadratini verdi e rossi in proporzione alle righe aggiunte e tolte; grigi senza righe. Pura nei conti. */
+export function diffBlocks(diff: RepoDiff): ('added' | 'removed' | 'none')[] {
+  const total = diff.linesAdded + diff.linesRemoved;
+  if (total === 0) return Array<'none'>(DIFF_BLOCKS).fill('none');
+  const added = Math.round((diff.linesAdded / total) * DIFF_BLOCKS);
+  return Array.from({ length: DIFF_BLOCKS }, (_, i) => (i < added ? 'added' : 'removed'));
+}
+
+/** Righe aggiunte e tolte, file modificati (modifiche non committate) e la barra a quadratini. */
+function DiffLine({ diff }: { diff: RepoDiff }) {
   return (
-    <div className="hud-diff">
+    <div className="hud-diff" title={t('git.uncommitted')}>
       <span className="hud-added">{`+${diff.linesAdded}`}</span>
       <span className="hud-removed">{`-${diff.linesRemoved}`}</span>
+      <span className="hud-diff__blocks" aria-hidden="true">
+        {diffBlocks(diff).map((kind, i) => <i key={i} data-kind={kind} />)}
+      </span>
       <span className="hud-muted">{tn('diff.files', diff.filesChanged)}</span>
     </div>
+  );
+}
+
+/** Logo di git (il rombo con i rami), nel colore della sezione. */
+function GitIcon() {
+  return (
+    <svg className="hud-git__icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M15.7 7.3 8.7.3a1 1 0 0 0-1.4 0L5.8 1.8l1.8 1.8a1.2 1.2 0 0 1 1.5 1.5l1.8 1.8a1.2 1.2 0 1 1-.7.7L8.5 5.9v4.4a1.2 1.2 0 1 1-1-.1V5.8a1.2 1.2 0 0 1-.6-1.6L5.1 2.5.3 7.3a1 1 0 0 0 0 1.4l7 7a1 1 0 0 0 1.4 0l7-7a1 1 0 0 0 0-1.4Z" />
+    </svg>
+  );
+}
+
+/**
+ * Sezione "Git" dell'istanza, nell'arancione di git: branch, issue (dal nome del branch) e modifiche non committate
+ * (righe e file). Ogni riga segue la sua voce delle impostazioni; senza nulla da mostrare la sezione non c'è.
+ */
+export function GitSection({ session: s }: { session: Pick<SessionState, 'branch' | 'issues' | 'diff'> }) {
+  const show = useShown();
+  const branch = s.branch && show('session.branch') ? s.branch : null;
+  const issues = show('session.issues') ? s.issues : [];
+  const diff = s.diff && show('session.diff') ? s.diff : null;
+  if (!branch && issues.length === 0 && !diff) return null;
+  return (
+    <section className="hud-git" aria-label={t('git.title')}>
+      <div className="hud-git__head">
+        <GitIcon />
+        <span>{t('git.title')}</span>
+      </div>
+      {(branch || issues.length > 0) && (
+        <div className="hud-git__row">
+          {branch && <span className="hud-git__branch" title={branch}>{branch}</span>}
+          {issues.map((n) => <span key={n} className="hud-label__issue">{`#${n}`}</span>)}
+        </div>
+      )}
+      {diff && <DiffLine diff={diff} />}
+    </section>
   );
 }
 
@@ -109,29 +157,36 @@ export function PopOutButton({ label, onClick }: { label: string; onClick: () =>
   );
 }
 
-/** sotto questa percentuale il contesto è una pillola compatta, da qui una barra */
-export const CONTEXT_BAR_FROM = 50;
-
 /**
- * Contesto della sessione in una riga: sotto il 50% una pillola (`slot="inline"`, accanto alla riga meta), dal 50% una
- * barra (`slot="block"`, a tutta riga) con "conviene /compact" oltre il 90%. Token e compattazioni nel tooltip.
+ * Contesto della sessione: etichetta, token usati sulla finestra e percentuale sopra una barra con le zone
+ * colorate (arancione dal 70%, rosso dal 90%, come contextLevel); la barra prende il colore della zona in cui arriva.
+ * Oltre il 90% "conviene /compact"; con `compactions` anche quante volte è stato compattato.
  */
-export function ContextGauge({ session: s, slot }: { session: SessionState; slot: 'inline' | 'block' }) {
+export function ContextMeter({ session: s, compactions = false }: { session: SessionState; compactions?: boolean }) {
   const shown = useShow('session.context');
   const pct = percent(s.context.used, s.context.window);
-  if (!shown || pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
-  const title = [`${formatTokens(s.context.used)} / ${formatTokens(s.context.window ?? 0)}`, compactionText(s.compactions, s.lastCompaction)]
-    .filter(Boolean)
-    .join(' · ');
+  if (!shown || pct === null) return null;
   const level = contextLevel(pct);
-  if (slot === 'inline') {
-    return <span className="hud-pill" data-level={level} title={title}>{t('context.pill', { pct })}</span>;
-  }
+  const compacted = compactions ? compactionText(s.compactions, s.lastCompaction) : null;
   return (
-    <div className="list-session__context" title={title}>
-      <span className="hud-muted">{t('context.pill', { pct })}</span>
-      <ProgressBar value={pct} label={t('context.usedOf', { project: projectName(s) })} level={level} className="hud-bar--small" />
-      {level === 'danger' && <span className="hud-context__hint">{t('compact.hint')}</span>}
+    <div className="hud-ctx" data-level={level}>
+      <div className="hud-ctx__head">
+        <span className="hud-ctx__label">{t('card.context')}</span>
+        <span className="hud-ctx__tokens hud-muted">{`${formatTokens(s.context.used)} / ${s.context.window === null ? '?' : formatTokens(s.context.window)}`}</span>
+        <span className="hud-ctx__pct">{`${pct}%`}</span>
+      </div>
+      <div
+        className="hud-ctx__track"
+        role="progressbar"
+        aria-label={t('context.usedOf', { project: projectName(s) })}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+      >
+        <div className="hud-ctx__fill" style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+      {level === 'danger' && <p className="hud-ctx__note hud-context__hint">{t('compact.hint')}</p>}
+      {compacted && <p className="hud-ctx__note hud-muted">{compacted.charAt(0).toUpperCase() + compacted.slice(1)}</p>}
     </div>
   );
 }

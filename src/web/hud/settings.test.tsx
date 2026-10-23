@@ -47,11 +47,11 @@ describe('voci da mostrare (#94)', () => {
   it('accordion: diff, contesto e conteggio per stato spariscono e ricompaiono subito', () => {
     render(<InstancesPanel sessions={[session()]} agents={[agent()]} bosses={[boss]} onSelect={() => {}} />);
     expect(screen.getByText('+12')).toBeTruthy();
-    expect(screen.getByText('Contesto 25%')).toBeTruthy();
+    expect(screen.getByText('25%')).toBeTruthy();
     expect(screen.getByText('1 al lavoro')).toBeTruthy();
     hide('session.diff', 'session.context', 'instances.counts');
     expect(screen.queryByText('+12')).toBeNull();
-    expect(screen.queryByText('Contesto 25%')).toBeNull();
+    expect(screen.queryByText('25%')).toBeNull();
     expect(screen.queryByText('1 al lavoro')).toBeNull();
     // il resto resta
     expect(screen.getByText('feat/board')).toBeTruthy();
@@ -106,9 +106,9 @@ describe('voci da mostrare: scheda (#94)', () => {
   it('Claude stesso: voci della sessione, sezioni dei token sparite col titolo', () => {
     const s = session({ title: 'Rifare il pannello', issues: [7], toolErrors: { count: 1, tool: 'Bash', at: 0 }, turnStartedAt: 1, ownCost: 1, cost: 2 });
     render(<AgentCard agent={{ ...boss, description: 'Rifare il pannello', issues: [7] }} session={s} />);
-    for (const text of ['Rifare il pannello', '#7', 'Branch', 'Turno', 'Modello', 'Effort', 'Errori', 'Con i subagenti']) expect(screen.getByText(text), text).toBeTruthy();
+    for (const text of ['Rifare il pannello', '#7', 'feat/board', 'Turno', 'Modello', 'Effort', 'Errori', 'Con i subagenti']) expect(screen.getByText(text), text).toBeTruthy();
     hide('session.title', 'session.issues', 'session.branch', 'session.turn', 'session.model', 'session.effort', 'session.toolErrors', 'session.tokens', 'session.cost');
-    for (const text of ['Rifare il pannello', '#7', 'Branch', 'Turno', 'Modello', 'Effort', 'Errori', 'Con i subagenti', 'Claude', 'Token']) {
+    for (const text of ['Rifare il pannello', '#7', 'feat/board', 'Turno', 'Modello', 'Effort', 'Errori', 'Con i subagenti', 'Claude', 'Token']) {
       expect(screen.queryByText(text), text).toBeNull();
     }
     expect(document.querySelector('.hud-card__chips')).toBeNull();

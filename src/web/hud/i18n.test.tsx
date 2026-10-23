@@ -83,7 +83,7 @@ describe('lingua dell\'interfaccia (#93)', () => {
     expect(screen.getByRole('heading', { name: 'Open Instances' })).toBeTruthy();
     expect(screen.getByText('In the office')).toBeTruthy();
     expect(screen.getByPlaceholderText('Search project, branch or agent')).toBeTruthy();
-    expect(screen.getAllByText('Context 25%').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Context').length).toBeGreaterThan(0);
     expect(screen.getAllByText('2 files').length).toBeGreaterThan(0);
     // l'accordion resta aperto: i nomi propri non si traducono
     expect(screen.getAllByText('Marta Commit').length).toBeGreaterThan(0);

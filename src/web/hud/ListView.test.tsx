@@ -93,8 +93,8 @@ describe('ListView', () => {
     );
     expect(screen.getByText(/· pronto/)).toBeTruthy();
     expect(screen.getByText(/aspetta un tuo permesso · da 3 min/)).toBeTruthy();
-    expect(screen.getByText('Contesto 75%')).toBeTruthy();
-    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('warn');
+    expect(screen.getByText('75%')).toBeTruthy();
+    expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).closest('.hud-ctx')!.getAttribute('data-level')).toBe('warn');
     expect(screen.getByText(/Edit parser\.ts/)).toBeTruthy();
   });
 

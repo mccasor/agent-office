@@ -8,7 +8,7 @@ import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
 import { finishedAsAgent } from './HistoryView';
-import { AlertMark, ContextGauge, DiffStat, OutcomeTag, RoleChip, StatusDot } from './panels';
+import { AlertMark, ContextMeter, GitSection, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { CheckButton, useStatusCheck, VerdictNote } from './StatusCheck';
 import { TodayBar } from './TodayBar';
@@ -235,8 +235,6 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         <StatusDot status={s.dot} />
         <div className="list-session__name">
           <strong>{projectName(s)}</strong>
-          {s.branch && show('session.branch') && <span className="hud-muted">{s.branch}</span>}
-          {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{issueText(s.issues)}</span>}
         </div>
         <StateCounts agents={all} />
         <label className="list-session__show">
@@ -245,7 +243,6 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         </label>
       </header>
       {s.title && show('session.title') && <p className="list-session__title">{s.title}</p>}
-      {s.diff && <DiffStat diff={s.diff} />}
       <div className="list-session__metarow">
         <p className="list-session__meta hud-muted">
           {[
@@ -257,9 +254,9 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
             .filter(Boolean)
             .join(' · ')}
         </p>
-        <ContextGauge session={s} slot="inline" />
       </div>
-      <ContextGauge session={s} slot="block" />
+      <ContextMeter session={s} />
+      <GitSection session={s} />
       {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} onMarkDone={onMarkDone} />)}</ul>}
       {done.length > 0 && (
         <details className="list-finished">

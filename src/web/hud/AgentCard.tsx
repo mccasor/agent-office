@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { t } from '../../shared/i18n';
-import { useShow, useShown } from '../store';
-import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
+import { useShown } from '../store';
+import { elapsed, formatDuration, percent } from './format';
 import {
-  agentName, agentTask, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
+  agentName, agentTask, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
 } from './labels';
-import { AgentAlertNote, CONTEXT_BAR_FROM, DiffStat, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
+import { AgentAlertNote, ContextMeter, GitSection, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { StatusCheck } from './StatusCheck';
 import { TokenSummary } from './TokenBreakdown';
@@ -14,30 +14,6 @@ import { useNow } from './useNow';
 import './hud.css';
 
 const DASH = '—';
-
-/**
- * Contesto usato dalla sessione: token e percentuale; la barra solo dal 50% (sotto basta il numero), oltre il 90%
- * il suggerimento di compattare. Sotto, quante volte è stato compattato e l'ultima volta prima → dopo.
- */
-function SessionContext({ session }: { session: SessionState }) {
-  const shown = useShow('session.context');
-  const { used, window } = session.context;
-  const pct = percent(used, window);
-  const compacted = compactionText(session.compactions, session.lastCompaction);
-  if (!shown) return null;
-  return (
-    <div className="hud-context">
-      <div className="hud-context__head">
-        <span className="hud-muted">{t('card.context')}</span>
-        <span>{`${formatTokens(used)} / ${window === null ? '?' : formatTokens(window)}`}</span>
-        {pct !== null && <span className="hud-context__pct">{`${pct}%`}</span>}
-      </div>
-      {pct !== null && pct >= CONTEXT_BAR_FROM && <ProgressBar value={pct} label={t('card.contextUsed')} level={contextLevel(pct)} />}
-      {pct !== null && contextLevel(pct) === 'danger' && <p className="hud-context__note hud-context__hint">{t('compact.hint')}</p>}
-      {compacted && <p className="hud-context__note hud-muted">{compacted.charAt(0).toUpperCase() + compacted.slice(1)}</p>}
-    </div>
-  );
-}
 
 /**
  * Scheda di un agente, a destra, aperta al clic sul personaggio o nell'elenco delle istanze: nome, descrizione,
@@ -80,7 +56,8 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone
   // voci delle impostazioni (#94): per Claude stesso quelle della sessione, per i subagenti quelle degli agenti
   const toolErrors = show(session ? 'session.toolErrors' : 'agent.toolErrors') ? (session ? session.toolErrors : agent.toolErrors) : null;
   const role = !session && show('agent.role');
-  const issues = show(session ? 'session.issues' : 'agent.issues') && agent.issues.length > 0;
+  // le issue di Claude stesso sono quelle del branch: stanno nella sezione Git
+  const issues = !session && show('agent.issues') && agent.issues.length > 0;
   const description = show(session ? 'session.title' : 'agent.description') && agent.description && agent.description !== agent.name;
   const turn = session !== null && show('session.turn');
   const tokens = show(session ? 'session.tokens' : 'agent.tokens');
@@ -115,11 +92,10 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone
       {session && (
         <dl>
           <Row label={t('card.project')}>{projectName(session)}</Row>
-          {show('session.branch') && <Row label={t('card.branch')}>{session.branch ?? DASH}</Row>}
         </dl>
       )}
-      {session?.diff && <DiffStat diff={session.diff} />}
-      {session && <SessionContext session={session} />}
+      {session && <ContextMeter session={session} compactions />}
+      {session && <GitSection session={session} />}
       <dl>
         {!session && show('agent.type') && <Row label={t('card.type')}>{agent.agentType}</Row>}
         <Row label={t('card.status')}>{status}</Row>
