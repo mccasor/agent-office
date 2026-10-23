@@ -420,7 +420,7 @@
 /* gruppo richiudibile dei subagenti terminati, in fondo all'elenco */
 .hud-done-group > summary { padding: 4px 6px; font-size: 12px; color: var(--hud-muted); cursor: pointer; }
 .hud-done-group > ul { list-style: none; margin: 0; padding: 0; }
-.list-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 0 0 16px; font-size: 13px; }
+.list-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-top: 0; margin-bottom: 16px; font-size: 13px; }
 .list-filter input[type='search'] {
   flex: 1 1 220px;
   min-width: 0;
