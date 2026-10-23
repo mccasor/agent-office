@@ -3,7 +3,7 @@
 //! (anche quelle che non conosce, come le chiavi del server aggiunte in versioni future).
 //!
 //! Schema (chiavi mancanti o non valide valgono il default, lato app e lato server):
-//! - `notifyWaiting`, `notifyDone`: notifiche dell'app (notify.rs)
+//! - `notifyWaiting`, `notifyDone`, `notifyAlerts`: notifiche dell'app (notify.rs; `notifyAlerts` per gli avvisi, #100)
 //! - `activeWindowMinutes`: minuti dopo cui una sessione non è più attiva (server)
 //! - `staleAgentMinutes`, `loopRepeats`: soglie degli avvisi "fermo" e "in loop" sui subagenti (server, #97)
 //! - `language`: "system" | "it" | "en" | "es" (#93)
@@ -13,6 +13,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
+
+use crate::i18n::{t, tf};
 
 pub const LANGUAGES: [&str; 4] = ["system", "it", "en", "es"];
 /// minuti accettati per `activeWindowMinutes`, come in src/server/config.ts
@@ -36,7 +38,7 @@ pub fn read_at(path: &Path) -> io::Result<Map<String, Value>> {
     };
     match serde_json::from_str::<Value>(&text) {
         Ok(Value::Object(map)) => Ok(map),
-        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "config.json non è un oggetto JSON valido")),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, t("error.configInvalid"))),
     }
 }
 
@@ -63,7 +65,7 @@ pub fn update_at(path: &Path, change: impl FnOnce(&mut Map<String, Value>) -> Re
 }
 
 pub fn update(change: impl FnOnce(&mut Map<String, Value>) -> Result<(), String>) -> Result<(), String> {
-    update_at(&path().ok_or("cartella home sconosciuta")?, change)
+    update_at(&path().ok_or_else(|| t("error.noHome"))?, change)
 }
 
 /// Chiave di una voce di `show`: lettere, cifre e punti (es. `session.diff`), come nel catalogo.
@@ -73,9 +75,10 @@ fn valid_item(key: &str) -> bool {
 
 /// Imposta `key` a `value` se sono una chiave e un valore ammessi (`show.<voce>` per gli interruttori). Pura.
 pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(), String> {
-    let invalid = || format!("valore non valido per {key}");
+    // nella lingua dell'app: la finestra Impostazioni li mostra dopo "Impostazione non salvata" (#103)
+    let invalid = || tf("error.invalidValue", &[("key", key)]);
     match key {
-        "notifyWaiting" | "notifyDone" => {
+        "notifyWaiting" | "notifyDone" | "notifyAlerts" => {
             value.as_bool().ok_or_else(invalid)?;
         }
         "activeWindowMinutes" => {
@@ -91,7 +94,7 @@ pub fn set(config: &mut Map<String, Value>, key: &str, value: Value) -> Result<(
             value.as_str().filter(|l| LANGUAGES.contains(l)).ok_or_else(invalid)?;
         }
         _ => {
-            let item = key.strip_prefix("show.").filter(|k| valid_item(k)).ok_or_else(|| format!("impostazione sconosciuta: {key}"))?;
+            let item = key.strip_prefix("show.").filter(|k| valid_item(k)).ok_or_else(|| tf("error.unknownSetting", &[("key", key)]))?;
             value.as_bool().ok_or_else(invalid)?;
             let show = config.entry("show").or_insert_with(|| Value::Object(Map::new()));
             if !show.is_object() {
@@ -196,6 +199,24 @@ mod tests {
     }
 
     #[test]
+    fn errori_nella_lingua_scelta() {
+        use crate::i18n::{with_locale, Locale};
+        let mut c = Map::new();
+        assert_eq!(with_locale(Locale::En, || set(&mut c, "loopRepeats", json!(1))), Err("invalid value for loopRepeats".into()));
+        assert_eq!(with_locale(Locale::Es, || set(&mut c, "show.x", json!(true))), Err("ajuste desconocido: show.x".into()));
+        assert_eq!(with_locale(Locale::It, || set(&mut c, "language", json!("fr"))), Err("valore non valido per language".into()));
+        // file rotto: l'errore arriva alla pagina così com'è
+        let dir = temp_dir("lang");
+        let file = dir.join("config.json");
+        std::fs::write(&file, "[1]").unwrap();
+        let err = with_locale(Locale::En, || update_at(&file, |c| set(c, "notifyDone", json!(true))));
+        assert_eq!(err, Err("config.json is not a valid JSON object".into()));
+        let err = with_locale(Locale::Es, || update_at(&file, |c| set(c, "notifyDone", json!(true))));
+        assert_eq!(err, Err("config.json no es un objeto JSON válido".into()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn soglie_degli_avvisi() {
         // interi negli stessi limiti del server (src/server/config.ts)
         let mut c = Map::new();
@@ -217,6 +238,23 @@ mod tests {
         update_at(&file, |c| set(c, "loopRepeats", json!(3))).unwrap();
         assert!(update_at(&file, |c| set(c, "loopRepeats", json!(1))).is_err());
         assert_eq!(read_json(&file), json!({ "activeWindowMinutes": 30, "staleAgentMinutes": 15, "loopRepeats": 3 }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn notifica_degli_avvisi() {
+        // interruttore come le altre notifiche (#100): solo booleani
+        let mut c = Map::new();
+        assert!(set(&mut c, "notifyAlerts", json!(true)).is_ok());
+        for bad in [json!("true"), json!(1), json!(null)] {
+            assert!(set(&mut c, "notifyAlerts", bad.clone()).is_err(), "{bad}");
+        }
+        assert_eq!(Value::Object(c), json!({ "notifyAlerts": true }));
+        let dir = temp_dir("notify-alerts");
+        let file = dir.join("config.json");
+        std::fs::write(&file, "{\"notifyDone\":true}").unwrap();
+        update_at(&file, |c| set(c, "notifyAlerts", json!(false))).unwrap();
+        assert_eq!(read_json(&file), json!({ "notifyDone": true, "notifyAlerts": false }));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

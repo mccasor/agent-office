@@ -36,7 +36,7 @@ mod panel;
 mod server;
 mod settings;
 mod updates;
-use notify::{Prefs, SessionFacts};
+use notify::{Alert, AlertFacts, Prefs, SessionFacts};
 use server::{find_node, probe, Probe, Supervisor};
 use updates::{Upgrade, UpdateState};
 
@@ -107,12 +107,14 @@ struct Overview {
     status: Status,
     /// stato delle sessioni attive per le notifiche
     facts: Vec<SessionFacts>,
+    /// subagenti con un avviso, per le notifiche (#100)
+    alerts: Vec<AlertFacts>,
     snapshot: Value,
 }
 
 impl Overview {
     fn offline() -> Overview {
-        Overview { status: Status::Offline, facts: vec![], snapshot: Value::Null }
+        Overview { status: Status::Offline, facts: vec![], alerts: vec![], snapshot: Value::Null }
     }
 }
 
@@ -169,27 +171,41 @@ fn overview_from(snapshot: &str) -> Overview {
         return Overview::offline();
     };
     let str_of = |x: &Value, k: &str| x.get(k).and_then(Value::as_str).unwrap_or("").to_string();
-    let facts = v
-        .get("sessions")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
+    let list = |k: &str| v.get(k).and_then(Value::as_array).into_iter().flatten();
+    // "progetto · branch": progetto calcolato dal server; senza (cwd assente o server vecchio) l'inizio dell'id
+    let place_of = |s: &Value| {
+        let project = Some(str_of(s, "project")).filter(|p| !p.is_empty()).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
+        let branch = str_of(s, "branch");
+        if branch.is_empty() { project } else { format!("{project} · {branch}") }
+    };
+    let facts = list("sessions")
         .filter(|s| s.get("active").and_then(Value::as_bool) == Some(true))
         .map(|s| {
-            // progetto calcolato dal server; senza (cwd assente o server vecchio) l'inizio dell'id
-            let project = Some(str_of(s, "project")).filter(|p| !p.is_empty()).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
-            let branch = str_of(s, "branch");
             let waiting = (s.get("waiting").and_then(Value::as_bool) == Some(true))
                 .then(|| s.get("waitingKind").and_then(Value::as_str).unwrap_or("input").to_string());
-            SessionFacts {
-                id: str_of(s, "id"),
-                place: if branch.is_empty() { project } else { format!("{project} · {branch}") },
-                status: str_of(s, "status"),
-                waiting,
-            }
+            SessionFacts { id: str_of(s, "id"), place: place_of(s), status: str_of(s, "status"), waiting }
         })
         .collect();
-    Overview { status: Status::from_str(&str_of(&v, "status")), facts, snapshot: v }
+    // avvisi dei subagenti nell'ufficio (#100): nickname e mai la descrizione, che viene dal prompt
+    let now = v.get("generatedAt").and_then(Value::as_u64);
+    let alerts = list("agents")
+        .filter_map(|a| {
+            let alert = a.get("alert")?;
+            let alert = match alert.get("kind").and_then(Value::as_str)? {
+                "stale" => {
+                    let since = alert.get("since").and_then(Value::as_u64).unwrap_or(0);
+                    Alert::Stale { minutes: now.unwrap_or(since).saturating_sub(since) / 60_000 }
+                }
+                "loop" => Alert::Loop { tool: str_of(alert, "tool"), count: alert.get("count").and_then(Value::as_u64).unwrap_or(0) },
+                _ => return None,
+            };
+            let session = str_of(a, "sessionId");
+            let place = list("sessions").find(|s| str_of(s, "id") == session).map(place_of).unwrap_or_default();
+            let name = Some(str_of(a, "nickname")).filter(|n| !n.is_empty()).unwrap_or_else(|| str_of(a, "agentType"));
+            Some(AlertFacts { id: str_of(a, "id"), name, place, alert })
+        })
+        .collect();
+    Overview { status: Status::from_str(&str_of(&v, "status")), facts, alerts, snapshot: v }
 }
 
 /// Stato dal server; None se lo snapshot non è cambiato dall'ETag indicato (aggiornato in place).
@@ -271,6 +287,8 @@ fn run_hooks(app: &AppHandle, command: &'static str) {
                 .args([command, "--global"])
                 // gli hook useranno lo stesso Node, con percorso assoluto
                 .env("AGENT_OFFICE_NODE", &node)
+                // lingue di macOS, come per il server: l'errore della CLI arriva nell'esito nella lingua dell'app (#103)
+                .env("AGENT_OFFICE_LANGUAGES", i18n::system_languages().join(","))
                 .stdin(Stdio::null())
                 .output()
                 .map_err(|e| e.to_string())?;
@@ -382,9 +400,11 @@ fn set_notice(app: &AppHandle, text: String) {
 }
 
 /// Mostra le notifiche per il passaggio da uno snapshot al successivo.
-fn send_notifications(app: &AppHandle, prev: &[SessionFacts], next: &[SessionFacts]) {
+fn send_notifications(app: &AppHandle, prev: &Overview, next: &Overview) {
     let prefs = *app.state::<Ui>().prefs.lock().unwrap();
-    for (title, body) in notify::messages(prev, next, prefs) {
+    let mut messages = notify::messages(&prev.facts, &next.facts, prefs);
+    messages.extend(notify::alert_messages(&prev.alerts, &next.alerts, prefs));
+    for (title, body) in messages {
         let _ = app.notification().builder().title(title).body(body).sound("default").show();
     }
 }
@@ -546,7 +566,7 @@ fn settings_action(window: WebviewWindow, app: AppHandle, action: String) -> Res
         "close" => {
             let _ = window.close();
         }
-        _ => return Err(format!("azione sconosciuta: {action}")),
+        _ => return Err(i18n::tf("error.unknownAction", &[("action", &action)])),
     }
     Ok(())
 }
@@ -647,8 +667,9 @@ fn main() {
                 // tooltip mostrato: cambia con lo stato e con la lingua
                 let mut tooltip = String::new();
                 let mut etag: Option<String> = None;
-                // stato delle sessioni al giro precedente: al primo snapshot nessuna notifica (non è un cambiamento)
-                let mut seen: Option<Vec<SessionFacts>> = None;
+                // stato delle sessioni e avvisi al giro precedente: al primo snapshot nessuna notifica (non è un
+                // cambiamento)
+                let mut seen: Option<Overview> = None;
                 loop {
                     let status = match http_get("/api/status", None) {
                         Fetched::Body(body, _) => probe(Some(&body)),
@@ -665,9 +686,10 @@ fn main() {
                     };
                     if overview.status != Status::Offline {
                         if let Some(prev) = &seen {
-                            send_notifications(&handle, prev, &overview.facts);
+                            send_notifications(&handle, prev, &overview);
                         }
-                        seen = Some(overview.facts.clone());
+                        // senza lo snapshot, che le notifiche non leggono
+                        seen = Some(Overview { facts: overview.facts.clone(), alerts: overview.alerts.clone(), ..Overview::offline() });
                     }
                     // l'icona dipende solo da stato e aspetto della barra: non va ridisegnata a ogni snapshot nuovo
                     if let Some(tray) = handle.tray_by_id(TRAY_ID) {
@@ -744,6 +766,27 @@ mod tests {
             vec![
                 SessionFacts { id: "s1".into(), place: "agent-office · feat/board".into(), status: "working".into(), waiting: Some("permission".into()) },
                 SessionFacts { id: "s2".into(), place: "olimpo-ui".into(), status: "done".into(), waiting: None },
+            ]
+        );
+    }
+
+    #[test]
+    fn avvisi_dei_subagenti_dallo_snapshot() {
+        let o = overview_from(
+            r#"{"status":"working","generatedAt":3900000,"sessions":[{"id":"s1","active":true,"project":"agent-office","branch":"main","status":"working"}],
+            "agents":[
+              {"id":"a1","sessionId":"s1","name":"Testo del prompt","nickname":"Flavia Fetch","agentType":"Explore","alert":{"kind":"stale","since":300000}},
+              {"id":"a2","sessionId":"s9","name":"Altro","agentType":"general-purpose","alert":{"kind":"loop","tool":"Bash","count":5}},
+              {"id":"a3","sessionId":"s1","nickname":"Leo Lint","alert":null},
+              {"id":"a4","sessionId":"s1","nickname":"Ugo Git","alert":{"kind":"nuovo"}}
+            ]}"#,
+        );
+        assert_eq!(
+            o.alerts,
+            vec![
+                AlertFacts { id: "a1".into(), name: "Flavia Fetch".into(), place: "agent-office · main".into(), alert: Alert::Stale { minutes: 60 } },
+                // senza nickname (server vecchio) il tipo, mai la descrizione; sessione sconosciuta: nessun luogo
+                AlertFacts { id: "a2".into(), name: "general-purpose".into(), place: String::new(), alert: Alert::Loop { tool: "Bash".into(), count: 5 } },
             ]
         );
     }

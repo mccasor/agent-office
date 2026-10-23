@@ -130,7 +130,7 @@
     /** chiavi numeriche di config.json: interi ammessi, come in src/server/config.ts e config.rs */
     const RANGES = { activeWindowMinutes: [1, 1440], staleAgentMinutes: [1, 1440], loopRepeats: [2, 100] };
     /** default delle chiavi di config.json, come in src/server/config.ts e notify.rs */
-    const DEFAULTS = { notifyWaiting: true, notifyDone: false, activeWindowMinutes: 10, staleAgentMinutes: 60, loopRepeats: 5, language: 'system' };
+    const DEFAULTS = { notifyWaiting: true, notifyDone: false, notifyAlerts: false, activeWindowMinutes: 10, staleAgentMinutes: 60, loopRepeats: 5, language: 'system' };
     /** lingua: "system" o una di CATALOG.languages; un valore diverso scritto a mano vale "system", come nel server */
     const language = () => (CATALOG.languages.includes(state.config.language) ? state.config.language : DEFAULTS.language);
 
@@ -209,6 +209,7 @@
           row(T('settings.autostart'), '', sw(state.autostart, 'data-action="autostart"')),
           row(T('settings.notifyWaiting'), esc(T('settings.notifyWaitingSub')), sw(config('notifyWaiting'), 'data-key="notifyWaiting"')),
           row(T('settings.notifyDone'), T('settings.notifyDoneSub'), sw(config('notifyDone'), 'data-key="notifyDone"')),
+          row(T('settings.notifyAlerts'), T('settings.notifyAlertsSub'), sw(config('notifyAlerts'), 'data-key="notifyAlerts"')),
         ]),
         group(T('settings.sessions'), [
           row(T('settings.activeWindow'), T('settings.activeWindowSub'), menu('activeWindowMinutes', T('settings.activeWindow'), ACTIVE_WINDOW_CHOICES, TEXT.minutes)),

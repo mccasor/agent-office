@@ -4,11 +4,11 @@ import { AgentCard } from './hud/AgentCard';
 import { appTitle, followHeight, inApp, MAX_SCREEN_FRACTION } from './hud/fit';
 import { InstanceBody, StateCounts } from './hud/InstancesPanel';
 import { projectName } from './hud/labels';
-import { StatusDot } from './hud/panels';
+import { DismissedNote, StatusDot } from './hud/panels';
 import { openCardWindow, type CardKind } from './hud/popout';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { t } from '../shared/i18n';
-import { connectSnapshotStream, useLocale, useOfficeStore, useShown } from './store';
+import { connectSnapshotStream, isDismissed, useLocale, useOfficeStore, useShown, watchDismissed } from './store';
 
 interface AgentView {
   agent: AgentState;
@@ -61,12 +61,29 @@ interface WindowProps {
 function AgentWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findAgent(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
+  const dismissed = useOfficeStore((s) => s.dismissed);
+  const dismiss = useOfficeStore((s) => s.dismiss);
+  const restore = useOfficeStore((s) => s.restore);
   const name = shown ? (shown.agent.nickname ?? shown.agent.name) : null;
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
   if (!shown) return <Note>{t('cardWindow.agentMissing')}</Note>;
-  if (current) return <AgentCard agent={current.agent} session={current.session} />;
+  // Claude stesso non esce; un subagente si può far uscire anche da qui (#101): sparisce da ufficio, lista e altre
+  // schede (watchDismissed), e qui resta la scheda con "Fallo rientrare"
+  if (current?.session) return <AgentCard agent={current.agent} session={current.session} />;
+  if (current && isDismissed(current.agent, dismissed)) {
+    return (
+      <>
+        <div className="card-window__note card-window__note--out" role="status">
+          <span>{t('cardWindow.dismissed')}</span>
+          <button type="button" className="hud-alert__dismiss" onClick={() => restore([id])}>{t('cardWindow.restore')}</button>
+        </div>
+        <AgentCard agent={current.agent} session={null} />
+      </>
+    );
+  }
+  if (current) return <AgentCard agent={current.agent} session={null} onDismiss={() => dismiss(id)} />;
   // sparito dallo snapshot: ultimo stato noto, senza tool in uso né attese
   const isBoss = shown.session !== null;
   const agent: AgentState = { ...shown.agent, status: isBoss ? shown.agent.status : 'done', tool: undefined, waiting: false };
@@ -83,12 +100,17 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findSession(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
   const show = useShown();
+  const dismissed = useOfficeStore((s) => s.dismissed);
+  const restore = useOfficeStore((s) => s.restore);
   const name = shown ? projectName(shown.session) : null;
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
   if (!shown) return <Note>{t('cardWindow.sessionMissing')}</Note>;
-  const { session: s, boss, agents } = shown;
+  const { session: s, boss } = shown;
+  // come nell'ufficio, senza i subagenti fatti uscire (#101), che si possono far rientrare da qui
+  const out = shown.agents.filter((a) => isDismissed(a, dismissed));
+  const agents = out.length > 0 ? shown.agents.filter((a) => !out.includes(a)) : shown.agents;
   return (
     <>
       {!current && <Note>{t('cardWindow.sessionClosed')}</Note>}
@@ -110,6 +132,7 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
           // il clic su un agente apre la sua scheda in un'altra finestra
           onSelect={(agentId) => openCardWindow('agent', agentId)}
         />
+        <DismissedNote agents={out} onRestore={restore} />
       </section>
     </>
   );
@@ -161,6 +184,8 @@ export function CardWindow({ kind, id }: { kind: CardKind; id: string }) {
   useLocale();
   useFitWindow(ref, name);
   useEffect(() => connectSnapshotStream(), []);
+  // agenti fatti uscire o rientrati nell'ufficio o in un'altra scheda (#101)
+  useEffect(() => watchDismissed(), []);
   return (
     <main className="card-window" ref={ref}>
       {!snapshot ? (

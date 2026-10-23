@@ -8,7 +8,7 @@ import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
 import { finishedAsAgent } from './HistoryView';
-import { AlertMark, ContextGauge, DiffStat, OutcomeTag, RoleChip, StatusDot } from './panels';
+import { AlertMark, ContextGauge, DiffStat, DismissedNote, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { TodayBar } from './TodayBar';
 import { useNow } from './useNow';
@@ -138,6 +138,7 @@ const FinishedToday = memo(function FinishedToday({ agents, title = 'finished.to
 /**
  * Riga di un subagente: nome, issue, ruolo, stato (o attesa, tool, da quanto è fermo), durata e avanzamento; per un
  * terminato esito e costo; l'avviso se è fermo o in loop ("!" giallo, con "Fallo uscire" se è fermo); gli errori.
+ * Con `onDismiss` "Fallo uscire" anche per un terminato ancora in area relax (#101), che altrimenti aspetta gli altri.
  */
 const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent: AgentState; now: number; onDismiss?: (id: string) => void }) {
   const show = useShown();
@@ -155,7 +156,14 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
     .join(' · ');
   let last = pct === null ? <span /> : <ProgressBar value={pct} label={t('card.progressOf', { name: agentName(a) })} className="hud-bar--small" />;
   if (done && a.outcome && show('agent.outcome')) last = <OutcomeTag outcome={a.outcome} />;
-  else if (alert && a.alert?.kind === 'stale' && onDismiss) {
+  if (done && onDismiss) {
+    last = (
+      <span className="list-agent__end">
+        {a.outcome && show('agent.outcome') && <OutcomeTag outcome={a.outcome} />}
+        <button type="button" className="hud-alert__dismiss" title={t('alert.dismissDoneHint')} onClick={() => onDismiss(a.id)}>{t('alert.dismiss')}</button>
+      </span>
+    );
+  } else if (alert && a.alert?.kind === 'stale' && onDismiss) {
     last = <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={() => onDismiss(a.id)}>{t('alert.dismiss')}</button>;
   }
   return (
@@ -179,16 +187,19 @@ const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent:
  * Scheda di un'istanza nella lista: si ridisegna solo se cambiano la sessione, i suoi agenti, il filtro dei
  * terminati, la casella, l'evidenza o l'ora corrente (useNow, ogni 15 s, per gli orari relativi).
  */
-const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, hideDone, shown, focused, now, onToggle, onDismiss }: {
+const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, dismissed, hideDone, shown, focused, now, onToggle, onDismiss, onRestore }: {
   session: SessionState;
   agents: AgentState[];
   finished: AgentState[];
+  /** subagenti della sessione fatti uscire a mano (#101) */
+  dismissed: AgentState[];
   hideDone: boolean;
   shown: boolean;
   focused: boolean;
   now: number;
   onToggle: (sessionId: string) => void;
   onDismiss?: (agentId: string) => void;
+  onRestore?: (agentIds: string[]) => void;
 }) {
   const show = useShown();
   const own = hideDone || !show('instances.done') ? all.filter((a) => a.status !== 'done') : all;
@@ -236,9 +247,10 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
       {done.length > 0 && (
         <details className="list-finished">
           <summary>{doneGroupLabel(done.length)}</summary>
-          <ul className="list-agents">{done.map((a) => <AgentLine key={a.id} agent={a} now={now} />)}</ul>
+          <ul className="list-agents">{done.map((a) => <AgentLine key={a.id} agent={a} now={now} onDismiss={onDismiss} />)}</ul>
         </details>
       )}
+      {onRestore && <DismissedNote agents={dismissed} onRestore={onRestore} />}
       {show('list.finishedToday') && <FinishedToday agents={finished} />}
     </section>
   );
@@ -268,21 +280,25 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
  * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
-export function ListView({ sessions, agents, finished = [], closedFinished, hidden, onToggle, focus = null, today, onDismiss }: {
+export function ListView({ sessions, agents, finished = [], closedFinished, dismissed = NONE, hidden, onToggle, focus = null, today, onDismiss, onRestore }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** terminati oggi e già usciti dall'ufficio */
   finished?: AgentState[];
   /** terminati oggi delle istanze già chiuse (dallo storico del server) */
   closedFinished?: FinishedAgent[];
+  /** subagenti fatti uscire a mano (#101), tolti da `agents` */
+  dismissed?: AgentState[];
   hidden: readonly string[];
   onToggle: (sessionId: string) => void;
   /** sessione da evidenziare e portare in vista */
   focus?: string | null;
   /** cruscotto della giornata (#97); assente con un server vecchio */
   today?: DayStats;
-  /** fa uscire un subagente fermo */
+  /** fa uscire un subagente fermo, o un terminato ancora in area relax */
   onDismiss?: (agentId: string) => void;
+  /** fa rientrare i subagenti fatti uscire (#101) */
+  onRestore?: (agentIds: string[]) => void;
 }) {
   const now = useNow();
   const show = useShown();
@@ -301,6 +317,7 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
   const active = useMemo(() => sessions.filter((s) => s.active), [sessions]);
   const agentsBy = useMemo(() => bySession(agents), [agents]);
   const finishedBy = useMemo(() => bySession(finished), [finished]);
+  const dismissedBy = useMemo(() => bySession(dismissed), [dismissed]);
   const closed = useMemo(() => closedFinished?.map(finishedAsAgent) ?? NONE, [closedFinished]);
   const shown = useMemo(
     () => active
@@ -339,12 +356,14 @@ export function ListView({ sessions, agents, finished = [], closedFinished, hidd
           session={s}
           agents={all}
           finished={finishedBy.get(s.id) ?? NONE}
+          dismissed={dismissedBy.get(s.id) ?? NONE}
           hideDone={filter.hideDone}
           shown={!hidden.includes(s.id)}
           focused={s.id === focus}
           now={now}
           onToggle={onToggle}
           onDismiss={onDismiss}
+          onRestore={onRestore}
         />
       ))}
       {closed.length > 0 && show('list.closedFinished') && (

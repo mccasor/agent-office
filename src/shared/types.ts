@@ -209,9 +209,9 @@ export interface Snapshot {
   generatedAt: number;
 }
 
-/** Numeri della giornata (dalla mezzanotte locale), solo da quanto il server ha osservato in memoria. */
+/** Numeri della giornata (dalla mezzanotte locale): conteggi dallo storico, costo ripreso dopo un riavvio (#102). */
 export interface DayStats {
-  /** da quando valgono i numeri (epoch ms): la mezzanotte, o l'avvio del server se è partito oggi */
+  /** da quando vale il costo (epoch ms): la mezzanotte, o il primo avvio del server di oggi */
   since: number;
   /** costo stimato di oggi in dollari (sessioni e subagenti); null se nessun modello è nel listino */
   cost: number | null;

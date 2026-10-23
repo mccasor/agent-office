@@ -44,7 +44,7 @@ pub fn only_settings(window: &WebviewWindow) -> Result<(), String> {
     if window.label() == SETTINGS_ID {
         Ok(())
     } else {
-        Err("comando riservato alla finestra Impostazioni".into())
+        Err(crate::i18n::t("error.settingsOnly"))
     }
 }
 

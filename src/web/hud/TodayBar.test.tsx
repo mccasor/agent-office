@@ -19,7 +19,7 @@ describe('TodayBar', () => {
     render(<TodayBar today={{ ...today, failed: 2 }} compact />);
     const bar = screen.getByLabelText('Oggi');
     expect(bar.textContent).toBe('Oggi≈ $12,40≈ $1,20/h1 lanciato0 terminati2 falliti0 min in attesa');
-    expect(bar.getAttribute('title')).toMatch(/^Da quando l'app è aperta/);
+    expect(bar.getAttribute('title')).toMatch(/^Da mezzanotte, anche dopo un riavvio/);
     expect(screen.getByText('2 falliti').className).toBe('today-bar__alarm');
   });
 });

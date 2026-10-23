@@ -249,4 +249,30 @@ describe('cruscotto della giornata (#97)', () => {
     expect(onDismiss).toHaveBeenCalledWith('fermo');
     expect(screen.getByText(/^Read ripetuto 7 volte · al lavoro/)).toBeTruthy();
   });
+
+  it('terminato ancora in area relax: "Fallo uscire" accanto all\'esito; senza onDismiss niente pulsante (#101)', () => {
+    const onDismiss = vi.fn();
+    const done = agent({ id: 'finito', status: 'done', outcome: 'ok', progress: null });
+    const { rerender } = render(<ListView sessions={[session()]} agents={[agent(), done]} hidden={[]} onToggle={() => {}} onDismiss={onDismiss} />);
+    const row = screen.getByText('ok').closest('li')!;
+    expect(row.className).toContain('list-agent--done');
+    fireEvent.click(row.querySelector('button')!);
+    expect(onDismiss).toHaveBeenCalledWith('finito');
+    expect(row.querySelector('button')!.getAttribute('title')).toMatch(/area relax/);
+    rerender(<ListView sessions={[session()]} agents={[agent(), done]} hidden={[]} onToggle={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+  });
+
+  it('"N fatti uscire · Mostra" nella scheda dell\'istanza li fa rientrare (#101)', () => {
+    const onRestore = vi.fn();
+    const out = [agent({ id: 'x1' }), agent({ id: 'x2' }), agent({ id: 'y1', sessionId: 's2' })];
+    render(
+      <ListView sessions={[session(), session({ id: 's2', project: 'altro' })]} agents={[agent()]} dismissed={out} hidden={[]} onToggle={() => {}} onRestore={onRestore} />,
+    );
+    const first = screen.getByRole('region', { name: 'agent-office' });
+    expect(first.querySelector('.hud-dismissed')!.textContent).toBe('2 fatti uscire · Mostra');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Mostra' })[0]!);
+    expect(onRestore).toHaveBeenCalledWith(['x1', 'x2']);
+    expect(screen.getByRole('region', { name: 'altro' }).querySelector('.hud-dismissed')!.textContent).toBe('1 fatto uscire · Mostra');
+  });
 });

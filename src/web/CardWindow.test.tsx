@@ -123,4 +123,48 @@ describe('CardWindow', () => {
     expect(screen.getByRole('region', { name: 'Istanza agent-office' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /Marta Commit/ })).toBeTruthy();
   });
+
+  describe('fatti uscire (#101)', () => {
+    const stale = () => agent({ status: 'idle', updatedAt: 1_000, alert: { kind: 'stale', since: 1_000 } });
+    beforeEach(() => {
+      useOfficeStore.setState({ dismissed: {} });
+      localStorage.clear();
+    });
+
+    it('"Fallo uscire" dalla scheda staccata: lo salva per le altre finestre, poi "Fallo rientrare"', () => {
+      render(<CardWindow kind="agent" id="a1" />);
+      push(snap({ agents: [stale()] }));
+      fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
+      expect(Object.keys(JSON.parse(localStorage.getItem('agent-office.dismissed')!))).toEqual(['a1']);
+      expect(screen.getAllByRole('status')[0]!.textContent).toMatch(/^Fatto uscire dall'ufficio/);
+      expect(screen.getByRole('region', { name: 'Scheda di Marta Commit' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Fallo uscire' })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Fallo rientrare' }));
+      expect(JSON.parse(localStorage.getItem('agent-office.dismissed')!)).toEqual({});
+      expect(screen.getByRole('button', { name: 'Fallo uscire' })).toBeTruthy();
+    });
+
+    it('fatto uscire in un\'altra finestra: l\'evento storage aggiorna la scheda; tornato attivo, rientra da solo', () => {
+      render(<CardWindow kind="agent" id="a1" />);
+      push(snap({ agents: [stale()] }));
+      act(() => {
+        localStorage.setItem('agent-office.dismissed', JSON.stringify({ a1: 2_000 }));
+        window.dispatchEvent(new StorageEvent('storage', { key: 'agent-office.dismissed' }));
+      });
+      expect(screen.getByRole('button', { name: 'Fallo rientrare' })).toBeTruthy();
+      push(snap({ agents: [agent({ updatedAt: 3_000 })] }));
+      expect(screen.queryByRole('button', { name: 'Fallo rientrare' })).toBeNull();
+    });
+
+    it('scheda di un\'istanza: senza i fatti uscire, con "Mostra" per farli rientrare', () => {
+      useOfficeStore.setState({ dismissed: { a2: 5_000 } });
+      render(<CardWindow kind="session" id="s1" />);
+      push(snap({ agents: [agent(), agent({ id: 'a2', nickname: 'Gino Fermo', updatedAt: 1_000 })] }));
+      expect(screen.queryByText('Gino Fermo')).toBeNull();
+      expect(document.querySelector('.hud-dismissed')!.textContent).toBe('1 fatto uscire · Mostra');
+      fireEvent.click(screen.getByRole('button', { name: 'Mostra' }));
+      expect(screen.getByText('Gino Fermo')).toBeTruthy();
+      expect(document.querySelector('.hud-dismissed')).toBeNull();
+    });
+  });
 });

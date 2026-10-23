@@ -170,6 +170,46 @@ describe('storico della giornata', () => {
     expect(r.days).toEqual(['2026-10-23', '2026-10-20']);
   });
 
+  // #102: gli stessi scenari e valori del vecchio cruscotto in memoria (state/today), in un giorno senza riavvii
+  it('barra "Oggi": agenti partiti, terminati e falliti oggi; un agente si conta una volta sola', () => {
+    history.observe(snap([], [agent(), agent({ id: 'a2' }), agent({ id: 'vecchio', startedAt: T0 - 24 * 60 * MIN })]));
+    history.observe(snap([], [agent({ id: 'a2', status: 'done', outcome: 'interrupted', updatedAt: T0 + 1000 })], [
+      agent({ status: 'done', outcome: 'failed', updatedAt: T0 + 2000 }),
+      agent({ id: 'a3', status: 'done', updatedAt: T0 - 60 * MIN, startedAt: T0 - 120 * MIN }),
+    ]));
+    // ripreso e terminato di nuovo, stavolta bene: cambia categoria senza contarsi due volte
+    t += 10 * MIN;
+    history.observe(snap([], [], [agent({ status: 'done', outcome: 'ok', updatedAt: t })]));
+    expect(history.counts(t)).toMatchObject({ launched: 3, finished: 3, failed: 0 });
+  });
+
+  it('barra "Oggi": attesa delle sessioni bloccate, anche quella ancora aperta, e dopo un riavvio', async () => {
+    history.observe(snap([session({ waiting: true, waitingSince: T0 - 10 * MIN })]));
+    t = T0 + 5 * MIN;
+    history.observe(snap([session({ updatedAt: t })]));
+    t = T0 + 20 * MIN;
+    history.observe(snap([session({ id: 's2', waiting: true, waitingSince: t })]));
+    t = T0 + 23 * MIN;
+    expect(history.counts(t).waitingMs).toBe((15 + 3) * MIN);
+
+    await history.flush();
+    t = T0 + 30 * MIN;
+    history = await open();
+    expect(history.counts(t)).toMatchObject({ waitingMs: (15 + 10) * MIN });
+    history.observe(snap([session({ id: 's2', waiting: true, waitingSince: T0 + 20 * MIN })]));
+    expect(history.counts(t).waitingMs).toBe((15 + 10) * MIN);
+  });
+
+  it('barra "Oggi": un\'attesa a cavallo della mezzanotte conta da mezzanotte', () => {
+    const late = new Date(2026, 9, 23, 23, 50).getTime();
+    t = late;
+    history.observe(snap([session({ waiting: true, waitingSince: late })]));
+    t = new Date(2026, 9, 24, 0, 10).getTime();
+    expect(history.counts(t).waitingMs).toBe(10 * MIN);
+    history.observe(snap([session({ updatedAt: t })]));
+    expect(history.counts(t + MIN)).toMatchObject({ waitingMs: 10 * MIN, launched: 0 });
+  });
+
   it('dayOf usa l\'ora locale', () => {
     expect(dayOf(new Date(2026, 0, 2, 23, 59).getTime())).toBe('2026-01-02');
   });

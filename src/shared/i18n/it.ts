@@ -90,6 +90,33 @@ export const it = {
   'panel.contextUsed': 'Contesto usato',
   'panel.settings': 'Impostazioni…',
   'panel.quit': 'Esci da Agent Office',
+  // #100
+  'notify.alertStale': '{name} è senza attività da {d}',
+  'notify.alertLoop': '{name} ripete {tool} {n} volte di fila',
+  'notify.min': '{m} min',
+  'notify.h': '{h} h',
+  'notify.hm': '{h} h {m} min',
+  // #103: errori di config.json e dei comandi dell'app (Impostazioni), riga di comando e server.log
+  'error.invalidValue': 'valore non valido per {key}',
+  'error.unknownSetting': 'impostazione sconosciuta: {key}',
+  'error.configInvalid': 'config.json non è un oggetto JSON valido',
+  'error.noHome': 'cartella home sconosciuta',
+  'error.settingsOnly': 'comando riservato alla finestra Impostazioni',
+  'error.unknownAction': 'azione sconosciuta: {action}',
+  /** riga di comando (src/cli.ts): lingua di config.json, altrimenti quella del terminale */
+  'cli.usage': 'Uso: agent-office [--port N] [--no-open] [--cwd DIR | --all] | install-hooks [--global] | uninstall-hooks [--global]',
+  'cli.help': '  --port N     porta del server (predefinita {port})\n  --no-open    non apre il browser\n  --cwd DIR    cartella da monitorare (predefinita quella corrente)\n  --all        tutte le sessioni attive, di qualunque cartella\n  --global     hook nelle impostazioni globali di Claude Code\n  --help       mostra questo aiuto',
+  'cli.badPort': 'Porta non valida: {value}',
+  'cli.unknownArg': 'Argomento sconosciuto: {arg}',
+  'cli.serving': 'Agent Office: {url}  ({scope})',
+  'cli.allSessions': 'tutte le sessioni attive',
+  'cli.watchedFolder': 'cartella monitorata: {cwd}',
+  'cli.hooksInstalled': 'Hook installati in {file}',
+  'cli.hooksPresent': 'Hook già presenti in {file}',
+  'cli.hooksRemoved': 'Hook rimossi da {file}',
+  'cli.noHooks': 'Nessun hook agent-office da rimuovere',
+  'cli.notAnObject': '{file}: atteso un oggetto JSON',
+  'cli.unhandled': 'agent-office: errore non gestito:',
 
   // --- finestra Impostazioni ---
   'settings.startup': 'Avvio e notifiche',
@@ -175,6 +202,9 @@ export const it = {
   'setting.list.closedFinished': 'Terminati delle istanze chiuse',
   'setting.today.list': 'Barra "Oggi" completa',
   'setting.today.office': 'Barra "Oggi" compatta',
+  // #100
+  'settings.notifyAlerts': 'Notifica gli avvisi degli agenti',
+  'settings.notifyAlertsSub': 'Quando un subagente è fermo o in loop',
 
   // --- ufficio, lista e schede (pagine web) ---
   'turn.current': 'turno da {d}',
@@ -207,7 +237,7 @@ export const it = {
   'today.failed.other': 'falliti',
   'today.waiting': 'in attesa',
   'today.noWait': '0 min',
-  'today.hint': 'Da quando l\'app è aperta: costo stimato a prezzi di listino, agenti e attese di oggi',
+  'today.hint': 'Da mezzanotte, anche dopo un riavvio dell\'app: costo stimato a prezzi di listino, agenti e attese di oggi',
   'outcome.ok': 'ok',
   'outcome.interrupted': 'interrotto',
   'outcome.failed': 'fallito',
@@ -284,6 +314,14 @@ export const it = {
   'zoom.in': 'Ingrandisci',
   'zoom.inHint': 'Ingrandisci (⌘/ctrl + rotella)',
   'zoom.fit': 'Adatta alla finestra',
+  // #101
+  'alert.dismissDoneHint': 'Toglie il terminato dall\'area relax senza aspettare gli altri agenti',
+  'dismissed.count.one': '{n} fatto uscire',
+  'dismissed.count.other': '{n} fatti uscire',
+  'dismissed.show': 'Mostra',
+  'dismissed.showHint': 'Fa rientrare nell\'ufficio gli agenti fatti uscire',
+  'cardWindow.dismissed': 'Fatto uscire dall\'ufficio: rientra da solo se torna attivo.',
+  'cardWindow.restore': 'Fallo rientrare',
 
   // --- vista Analisi (#98) ---
   'history.title': 'Analisi della giornata',

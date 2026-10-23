@@ -82,16 +82,20 @@ describe('watchConfig', () => {
     return { changes, onChange };
   };
 
+  /** su macOS l'osservazione (FSEvents) parte con un attimo di ritardo: una scrittura immediata può andare persa */
+  const settle = () => new Promise((r) => setTimeout(r, 100));
+
   it('notifica le impostazioni nuove, anche con il file sostituito da un rename, e una volta sola per raffica', async () => {
     const { changes, onChange } = seen();
     stop = await watchConfig(onChange, { dataDir: dir, debounceMs: 20 });
+    await settle();
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 5 }));
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 15 }));
-    await vi.waitFor(() => expect(changes.at(-1)?.activeWindowMinutes).toBe(15));
+    await vi.waitFor(() => expect(changes.at(-1)?.activeWindowMinutes).toBe(15), { timeout: 3000 });
     // come l'app: scrive un file temporaneo e lo rinomina
     await writeFile(join(dir, 'config.json.tmp'), JSON.stringify({ activeWindowMinutes: 15, show: { 'panel.agents': false } }));
     await rename(join(dir, 'config.json.tmp'), join(dir, 'config.json'));
-    await vi.waitFor(() => expect(changes.at(-1)?.show['panel.agents']).toBe(false));
+    await vi.waitFor(() => expect(changes.at(-1)?.show['panel.agents']).toBe(false), { timeout: 3000 });
     const calls = onChange.mock.calls.length;
     // contenuto diverso ma impostazioni uguali (chiave sconosciuta): nessuna notifica
     await writeFile(join(dir, 'config.json'), JSON.stringify({ activeWindowMinutes: 15, show: { 'panel.agents': false }, altro: 1 }));
@@ -103,8 +107,9 @@ describe('watchConfig', () => {
     const { onChange } = seen();
     const nested = join(dir, 'nuova');
     stop = await watchConfig(onChange, { dataDir: nested, debounceMs: 20 });
+    await settle();
     await writeFile(join(nested, 'config.json'), JSON.stringify({ language: 'es' }));
-    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(onChange).toHaveBeenCalledTimes(1), { timeout: 3000 });
     stop();
     stop = null;
     await writeFile(join(nested, 'config.json'), JSON.stringify({ language: 'it' }));
