@@ -199,11 +199,7 @@ function Actor({ agent, preset, target, layout, card = null, onCard, queue, wait
           <>
             <Character
               preset={preset}
-              walking={motion.walking}
-              seated={motion.seated}
-              holding={!atDesk}
-              typing={atDesk}
-              reaching={motion.reaching}
+              pose={motion.seated ? (atDesk ? 'type' : 'lounge') : motion.walking ? 'walk' : motion.reaching ? 'reach' : 'stand'}
               leftHand={card?.place === 'carry' ? <PostIt card={card} size={0.2} /> : undefined}
             />
             {atDesk && <CoffeeCup position={DESK_CUP} />}
