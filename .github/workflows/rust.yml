@@ -1,0 +1,27 @@
+name: Rust
+# workflow a parte perché il filtro sui percorsi vale per l'intero workflow: il job macOS (10 volte più caro)
+# parte solo se cambia l'app Tauri, la versione in package.json (letta da tauri.conf.json) o questo file
+on:
+  push:
+    branches: [main]
+    paths: ['src-tauri/**', 'package.json', '.github/workflows/rust.yml']
+  pull_request:
+    paths: ['src-tauri/**', 'package.json', '.github/workflows/rust.yml']
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: clippy }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      # tauri-build verifica che le risorse dichiarate in tauri.conf.json esistano: per i test basta la cartella
+      # vuota, senza Node né build web (splash, il frontendDist, è nel repository)
+      - run: mkdir -p src-tauri/resources/app
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
