@@ -84,13 +84,13 @@ describe('InstancesPanel', () => {
     const t = Date.now();
     render(
       <InstancesPanel
-        sessions={[session({ waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000, waitingAgentId: 'a1' })]}
+        sessions={[session({ dot: 'waiting', waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000, waitingAgentId: 'a1' })]}
         agents={[agent({ waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 })]}
         bosses={[boss('s1')]}
         onSelect={() => {}}
       />,
     );
-    expect(within(head(/agent-office/)).getByRole('img', { name: /in attesa/ })).toBeTruthy();
+    expect(within(head(/agent-office/)).getByRole('img', { name: /aspetta un tuo input/ })).toBeTruthy();
     expect(screen.getByText('Build HUD panel aspetta un tuo permesso · da 3 min')).toBeTruthy();
     const row = screen.getByRole('button', { name: /Build HUD panel/ });
     expect(row.className).toContain('hud-instance__agent--waiting');

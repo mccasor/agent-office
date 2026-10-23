@@ -97,7 +97,7 @@ describe('ListView', () => {
     const t = Date.now();
     const { container } = render(
       <ListView
-        sessions={[session({ waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000, waitingAgentId: 'a1' })]}
+        sessions={[session({ dot: 'waiting', waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000, waitingAgentId: 'a1' })]}
         agents={[
           agent({ waiting: true, waitingKind: 'question', waitingSince: t - 2 * 60_000, startedAt: t, tool: { name: 'Bash', target: null, since: t } }),
           agent({ id: 'a2', name: 'Altro' }),
@@ -110,7 +110,7 @@ describe('ListView', () => {
     expect(rows[0]?.className).toContain('list-agent--waiting');
     expect(rows[1]?.className).not.toContain('list-agent--waiting');
     expect(rows[0]?.querySelector('.list-agent__status')?.textContent).toBe('ti ha fatto una domanda · da 2 min · da <1 min');
-    expect(screen.getByRole('img', { name: /in attesa/ })).toBeTruthy();
+    expect(screen.getByRole('img', { name: /aspetta un tuo input/ })).toBeTruthy();
   });
 
   it('terminati oggi della sessione, chiusi di default', () => {
