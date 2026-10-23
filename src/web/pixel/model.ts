@@ -44,7 +44,7 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
   const { rooms, roomless } = assignRooms(prev.rooms, active);
 
   // chi ha finito aspetta in sala relax finché lavora un subagente della sua sessione, solo se era già presente
-  // (come in officeModel: un terminato mai visto lavorare, o già uscito, non rientra)
+  // (un terminato mai visto lavorare, o già uscito, non rientra)
   const busy = new Set(agents.filter((a) => a.status !== 'done').map((a) => a.sessionId));
   const present = (a: AgentState) => a.id.startsWith(BOSS_PREFIX) || Object.hasOwn(prev.spots, a.id);
   const resting = [...agents, ...bosses].filter((a) => a.status === 'done' && busy.has(a.sessionId) && present(a));

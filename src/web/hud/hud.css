@@ -1,4 +1,4 @@
-/* HUD agent-office: pannelli overlay ed etichette 3D.
+/* HUD agent-office: pannelli overlay ed etichette.
    Niente backdrop-filter: sopra il canvas WebGL la sfocatura andrebbe ricalcolata a ogni frame. */
 :root {
   --hud-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -265,7 +265,7 @@
   .hud-instances, .hud-card { width: auto; max-height: 38vh; }
 }
 
-/* ---- selettore 3D / 2D / lista ---- */
+/* ---- selettore ufficio / lista ---- */
 .hud-toggle {
   display: inline-flex;
   padding: 3px;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentState } from '../../shared/types';
 import { START_GAP, StartQueue, WALK_SPEED } from './motion';
-import { arrivedAt, facingOf, frameAt, isDeskSpot, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
+import { arrivedAt, facingOf, frameAt, isDeskSpot, isFoosballSpot, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
 import { createPlan } from './plan';
 import type { PixelActor, Spot } from './types';
 
@@ -10,7 +10,8 @@ const room = plan.rooms[0]!;
 const desk = room.desks[0]!;
 const lounge = plan.rooms.find((r) => r.kind === 'lounge')!;
 const sofa = lounge.seats.find((s) => s.seated)!;
-const standing = lounge.seats.find((s) => !s.seated)!;
+const standing = lounge.seats.find((s) => s.id.startsWith('stand-'))!;
+const foosball = lounge.seats.find((s) => s.id.startsWith('foos-'))!;
 
 /** avanza a passi da 0.1 s finché `until` o per al massimo `max` secondi */
 function run(m: ActorMotion | undefined, target: Spot | null, from: number, max: number, until?: (m: ActorMotion) => boolean) {
@@ -96,6 +97,14 @@ describe('poseOf', () => {
     expect(poseOf(actor('working'), arrivedAt(sofa, 0))).toBe('sit');
     expect(poseOf(actor('done'), arrivedAt(standing, 0))).toBe('stand');
     expect(poseOf(actor('working'), arrivedAt(plan.overflow[0]!, 0))).toBe('stand');
+  });
+
+  it('al biliardino gioca, con la sua animazione', () => {
+    expect(isFoosballSpot(foosball)).toBe(true);
+    expect(isFoosballSpot(standing)).toBe(false);
+    expect(poseOf(actor('done'), arrivedAt(foosball, 0))).toBe('play');
+    expect(poseOf(actor('done'), run(undefined, foosball, 0, 0.1).m)).toBe('walk');
+    expect(frameAt('play', 1, 0) - frameAt('play', 0, 0)).toBeGreaterThanOrEqual(4);
   });
 
   it('riconosce postazioni e scrivanie del boss', () => {
