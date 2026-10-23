@@ -207,7 +207,7 @@ export const it = {
   'today.failed.other': 'falliti',
   'today.waiting': 'in attesa',
   'today.noWait': '0 min',
-  'today.hint': 'Da quando l\'app è aperta: costo stimato a prezzi di listino, agenti e attese di oggi',
+  'today.hint': 'Da mezzanotte, anche dopo un riavvio dell\'app: costo stimato a prezzi di listino, agenti e attese di oggi',
   'outcome.ok': 'ok',
   'outcome.interrupted': 'interrotto',
   'outcome.failed': 'fallito',
