@@ -247,6 +247,23 @@ describe('task in background', () => {
   });
 });
 
+describe('turno interrotto', () => {
+  const working = JSON.stringify({ type: 'assistant', message: { id: 'm1', role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: {} }], stop_reason: 'tool_use' } });
+  const user = (content: unknown) => JSON.stringify({ type: 'user', message: { role: 'user', content } });
+
+  it('un agente fermato o un turno interrotto risulta finito, un prompt normale no', () => {
+    const acc = createAccumulator();
+    acc.ingest(working);
+    acc.ingest(user([{ type: 'text', text: '[Request interrupted by user]' }]));
+    expect(acc.state.finished).toBe('confirmed');
+    acc.ingest(user('continua'));
+    expect(acc.state.finished).toBe(false);
+    acc.ingest(working);
+    acc.ingest(user([{ type: 'tool_result', tool_use_id: 't1', content: 'no' }, { type: 'text', text: '[Request interrupted by user for tool use]' }]));
+    expect(acc.state.finished).toBe('confirmed');
+  });
+});
+
 describe('tool in uso e domande aperte', () => {
   const assistant = (id: string, content: unknown[], at = '2026-01-01T10:00:00.000Z') =>
     JSON.stringify({ type: 'assistant', timestamp: at, message: { id, role: 'assistant', content, stop_reason: 'tool_use' } });
