@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, formatCost, formatTokens, percent } from './format';
-import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
-import { sessionDot } from './ListView';
-import { DiffStat, projectName, SessionAlert, StatusDot } from './panels';
+import { NO_INSTANCES, projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText, waitingText } from './labels';
+import { DiffStat, SessionAlert, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -107,7 +106,7 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
   if (active.length === 0) {
     return (
       <section className="hud-panel hud-panel--empty" aria-label="Istanze">
-        Nessuna sessione attiva
+        {NO_INSTANCES}
       </section>
     );
   }
@@ -125,7 +124,7 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
               aria-controls={`instance-${s.id}`}
               onClick={() => setOpen((o) => ({ ...o, [s.id]: !isOpen }))}
             >
-              <StatusDot status={sessionDot(s, own)} />
+              <StatusDot status={s.dot} />
               <span className="hud-instance__name">
                 <span className="hud-title">{projectName(s)}</span>
                 {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}

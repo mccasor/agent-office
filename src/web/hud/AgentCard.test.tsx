@@ -15,7 +15,7 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
 const session = (over: Partial<SessionState> = {}): SessionState => ({
   id: 's1', title: 'Vista 2D', model: 'claude-opus-5-5', effort: 'high', context: { used: 150_000, window: 200_000 },
   tokensUsed: tokens, startedAt: 0, updatedAt: 0, active: true, status: 'working', issues: [71],
-  cwd: '/Users/x/agent-office', branch: 'feat/vista-2d', waiting: false, cost: 3.5, ...over,
+  cwd: '/Users/x/agent-office', branch: 'feat/vista-2d', waiting: false, cost: 3.5, dot: 'working', project: 'agent-office', ...over,
 });
 
 describe('AgentCard', () => {
@@ -70,7 +70,7 @@ describe('AgentCard', () => {
     expect(screen.getByText('agent-office')).toBeTruthy();
     expect(screen.getByText('feat/vista-2d')).toBeTruthy();
     expect(screen.getByText('Aspetta un tuo permesso · da 3 min')).toBeTruthy();
-    expect(screen.getByText('pronta')).toBeTruthy();
+    expect(screen.getByText('pronto')).toBeTruthy();
     expect(screen.getByText('75%')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: 'Contesto usato' }).getAttribute('data-level')).toBe('warn');
     expect(screen.getByText('+12')).toBeTruthy();

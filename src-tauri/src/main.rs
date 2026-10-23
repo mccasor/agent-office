@@ -90,7 +90,7 @@ impl Status {
         match self {
             Status::Working => "Claude sta lavorando",
             Status::Waiting => "Claude aspetta un tuo input",
-            Status::Idle => "Nessuna attività",
+            Status::Idle => "Claude è inattivo",
             Status::Offline => "Server non raggiungibile",
         }
     }
@@ -171,8 +171,8 @@ fn overview_from(snapshot: &str) -> Overview {
         .flatten()
         .filter(|s| s.get("active").and_then(Value::as_bool) == Some(true))
         .map(|s| {
-            let cwd = str_of(s, "cwd");
-            let project = cwd.rsplit('/').find(|p| !p.is_empty()).map(str::to_string).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
+            // progetto calcolato dal server; senza (cwd assente o server vecchio) l'inizio dell'id
+            let project = Some(str_of(s, "project")).filter(|p| !p.is_empty()).unwrap_or_else(|| str_of(s, "id").chars().take(8).collect());
             let branch = str_of(s, "branch");
             let waiting = (s.get("waiting").and_then(Value::as_bool) == Some(true))
                 .then(|| s.get("waitingKind").and_then(Value::as_str).unwrap_or("input").to_string());
@@ -619,9 +619,9 @@ mod tests {
     const SNAPSHOT: &str = r#"{
       "status": "waiting",
       "sessions": [
-        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "branch": "feat/board", "status": "working", "waiting": true, "waitingKind": "permission"},
-        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "branch": null, "status": "done", "waiting": false},
-        {"id": "s3", "active": false, "cwd": "/old", "branch": "main", "status": "done", "waiting": false}
+        {"id": "s1", "active": true, "cwd": "/Users/x/agent-office", "project": "agent-office", "branch": "feat/board", "status": "working", "waiting": true, "waitingKind": "permission"},
+        {"id": "s2", "active": true, "cwd": "/Users/x/olimpo-ui", "project": "olimpo-ui", "branch": null, "status": "done", "waiting": false},
+        {"id": "s3", "active": false, "cwd": "/old", "project": "old", "branch": "main", "status": "done", "waiting": false}
       ],
       "agents": []
     }"#;
@@ -637,6 +637,18 @@ mod tests {
                 SessionFacts { id: "s2".into(), place: "olimpo-ui".into(), status: "done".into(), waiting: None },
             ]
         );
+    }
+
+    #[test]
+    fn progetto_assente_inizio_dell_id() {
+        let o = overview_from(r#"{"status":"idle","sessions":[{"id":"0123456789ab","active":true,"cwd":"/x/y","project":null,"status":"done"}]}"#);
+        assert_eq!(o.facts[0].place, "01234567");
+    }
+
+    #[test]
+    fn etichette_di_stato() {
+        assert_eq!(Status::Idle.label(), "Claude è inattivo");
+        assert_eq!(Status::Waiting.label(), "Claude aspetta un tuo input");
     }
 
     #[test]

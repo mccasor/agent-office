@@ -6,6 +6,7 @@ import type {
   RepoState,
   SessionState,
   Snapshot,
+  TranscriptSession,
   TranscriptSnapshot,
   WaitingKind,
 } from '../../shared/types.js';
@@ -70,12 +71,12 @@ export function branchIssue(branch: string | null): number | null {
 }
 
 function resolveSessions(
-  sessions: SessionState[],
+  sessions: TranscriptSession[],
   events: HookEvent[],
   repo: RepoState | null,
   repoAt: ((cwd: string) => RepoState | null) | undefined,
   now: number,
-): SessionState[] {
+): TranscriptSession[] {
   const endedAt = new Map<string, number>();
   const mainHook = new Map<string, HookEvent>();
   /** ultima notifica "bloccato su input" e ultima attività successiva, per sessione */
@@ -170,14 +171,22 @@ function finishedToday(all: AgentState[], present: AgentState[], now: number): A
     .slice(0, MAX_FINISHED);
 }
 
-/** Stato per l'icona: una sessione attiva bloccata sull'utente > qualcuno lavora > nessuna attività. */
-export function officeStatus(sessions: SessionState[], agents: AgentState[]): OfficeStatus {
-  const active = sessions.filter((s) => s.active);
-  if (active.some((s) => s.waiting)) return 'waiting';
-  const busy = (st: AgentStatus) => st === 'working' || st === 'entering';
-  const ids = new Set(active.map((s) => s.id));
-  if (active.some((s) => busy(s.status)) || agents.some((a) => ids.has(a.sessionId) && busy(a.status))) return 'working';
-  return 'idle';
+/** Nome del progetto: ultima cartella del cwd; null senza cwd. */
+export const projectOf = (cwd: string | null): string | null => cwd?.split('/').filter(Boolean).at(-1) ?? null;
+
+const busy = (st: AgentStatus) => st === 'working' || st === 'entering';
+
+/** Pallino di una sessione: attiva e bloccata sull'utente > lei o un suo agente lavora > inattiva. */
+export function sessionDot(session: TranscriptSession, agents: AgentState[]): OfficeStatus {
+  if (!session.active) return 'idle';
+  if (session.waiting) return 'waiting';
+  return busy(session.status) || agents.some((a) => a.sessionId === session.id && busy(a.status)) ? 'working' : 'idle';
+}
+
+/** Stato per l'icona: il pallino più urgente tra le sessioni (waiting > working > idle). */
+export function officeStatus(sessions: SessionState[]): OfficeStatus {
+  if (sessions.some((s) => s.dot === 'waiting')) return 'waiting';
+  return sessions.some((s) => s.dot === 'working') ? 'working' : 'idle';
 }
 
 /** Funzione pura: combina transcript + eventi hook + git nello Snapshot inviato al browser. */
@@ -193,6 +202,8 @@ export function buildSnapshot(input: {
   const hooks = latestAgentHooks(hookEvents);
   const resolved = transcript.agents.map((a) => resolveAgent(a, hooks.get(a.id), now));
   const agents = keepFinished(resolved, now);
-  const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now);
-  return { status: officeStatus(sessions, agents), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
+  const sessions = resolveSessions(transcript.sessions, hookEvents, repo, input.repoAt, now).map(
+    (s): SessionState => ({ ...s, dot: sessionDot(s, agents), project: projectOf(s.cwd) }),
+  );
+  return { status: officeStatus(sessions), repo, sessions, agents, finished: finishedToday(resolved, agents, now), generatedAt: now };
 }

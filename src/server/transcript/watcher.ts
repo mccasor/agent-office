@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import { estimateCost } from '../../shared/pricing.js';
-import type { AgentState, AgentStatus, SessionState, TokenUsage, TranscriptSnapshot, Watcher } from '../../shared/types.js';
+import type { AgentState, AgentStatus, TokenUsage, TranscriptSession, TranscriptSnapshot, Watcher } from '../../shared/types.js';
 import { classifyArea } from './classify.js';
 import { scanCwd } from './cwdscan.js';
 import { encodeProjectPath } from './encode.js';
@@ -197,7 +197,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Watcher
       });
     }
 
-    const sessions: SessionState[] = [];
+    const sessions: TranscriptSession[] = [];
     for (const [sessionId, g] of bySession) {
       const main = g.files.find((f) => f.parsed.kind === 'session');
       if (!main) continue;

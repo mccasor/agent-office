@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AgentState, SessionState } from '../../shared/types';
-import { ListView, sessionDot, ViewToggle } from './ListView';
+import { ListView, ViewToggle } from './ListView';
 
 afterEach(cleanup);
 
@@ -10,20 +10,25 @@ const tokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 123
 const session = (over: Partial<SessionState> = {}): SessionState => ({
   id: 's1', title: 'Rifare la board', model: 'claude-opus-5-5', effort: 'high', context: { used: 0, window: null },
   tokensUsed: tokens, startedAt: 0, updatedAt: 0, active: true, status: 'working', issues: [14],
-  cwd: '/Users/x/agent-office', branch: 'feat/board', waiting: false, ...over,
+  cwd: '/Users/x/agent-office', branch: 'feat/board', waiting: false, dot: 'working', project: 'agent-office', ...over,
 });
 const agent = (over: Partial<AgentState> = {}): AgentState => ({
   id: 'a1', sessionId: 's1', name: 'Build HUD panel', agentType: 'Explore', description: '', area: 'frontend',
   status: 'working', model: null, tokens, progress: { completed: 1, total: 4 }, issues: [22], startedAt: 0, updatedAt: 0, ...over,
 });
 
-describe('sessionDot', () => {
-  it('rosso se aspetta un input, verde se lavora (anche solo un agente), grigio altrimenti', () => {
-    expect(sessionDot(session({ waiting: true }), [])).toBe('waiting');
-    expect(sessionDot(session(), [])).toBe('working');
-    expect(sessionDot(session({ status: 'done' }), [agent()])).toBe('working');
-    expect(sessionDot(session({ status: 'done' }), [agent({ status: 'done' })])).toBe('idle');
-    expect(sessionDot(session({ active: false, waiting: true }), [])).toBe('idle');
+describe('pallino e progetto dal server', () => {
+  it('il pallino è quello calcolato dal server, il progetto il suo nome (o l\'inizio dell\'id)', () => {
+    const { container } = render(
+      <ListView
+        sessions={[session({ dot: 'idle', status: 'working' }), session({ id: 'abcdef1234', project: null, updatedAt: 1 })]}
+        agents={[agent()]}
+        hidden={[]}
+        onToggle={() => {}}
+      />,
+    );
+    expect([...container.querySelectorAll('.list-dot')].map((d) => d.className)).toEqual(['list-dot list-dot--idle', 'list-dot list-dot--working']);
+    expect(screen.getByRole('region', { name: 'abcdef12' })).toBeTruthy();
   });
 });
 
@@ -32,7 +37,7 @@ describe('ListView', () => {
     const onToggle = vi.fn();
     render(
       <ListView
-        sessions={[session(), session({ id: 's2', active: false, cwd: '/old' })]}
+        sessions={[session(), session({ id: 's2', active: false, cwd: '/old', project: 'old' })]}
         agents={[agent()]}
         hidden={[]}
         onToggle={onToggle}
@@ -62,7 +67,7 @@ describe('ListView', () => {
     );
     expect(screen.getByText('+12')).toBeTruthy();
     expect(screen.getByText('-3')).toBeTruthy();
-    expect(screen.getByText(/attiva da 1 h 30/)).toBeTruthy();
+    expect(screen.getByText(/aperta da 1 h 30/)).toBeTruthy();
     expect(screen.getByText('al lavoro · da 5 min')).toBeTruthy();
     expect(screen.getByText('terminato · in 2 min')).toBeTruthy();
     expect(screen.getAllByRole('progressbar')).toHaveLength(1);
@@ -74,14 +79,14 @@ describe('ListView', () => {
       <ListView
         sessions={[
           session({ status: 'done', context: { used: 150_000, window: 200_000 } }),
-          session({ id: 's2', cwd: '/x/blocco', waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 }),
+          session({ id: 's2', cwd: '/x/blocco', project: 'blocco', dot: 'waiting', waiting: true, waitingKind: 'permission', waitingSince: t - 3 * 60_000 }),
         ]}
         agents={[agent({ tool: { name: 'Edit', target: 'parser.ts', since: t }, startedAt: t })]}
         hidden={[]}
         onToggle={() => {}}
       />,
     );
-    expect(screen.getByText(/· pronta/)).toBeTruthy();
+    expect(screen.getByText(/· pronto/)).toBeTruthy();
     expect(screen.getByText(/aspetta un tuo permesso · da 3 min/)).toBeTruthy();
     expect(screen.getByText('Contesto 75%')).toBeTruthy();
     expect(screen.getByRole('progressbar', { name: /Contesto usato/ }).getAttribute('data-level')).toBe('warn');
@@ -108,7 +113,7 @@ describe('ListView', () => {
     localStorage.clear();
     render(
       <ListView
-        sessions={[session(), session({ id: 's2', cwd: '/x/olimpo-ui', waiting: true })]}
+        sessions={[session(), session({ id: 's2', cwd: '/x/olimpo-ui', project: 'olimpo-ui', dot: 'waiting', waiting: true })]}
         agents={[agent(), agent({ id: 'a2', name: 'Vecchio lavoro', status: 'done' })]}
         hidden={[]}
         onToggle={() => {}}
@@ -136,7 +141,7 @@ describe('ListView', () => {
     expect((screen.getByRole('checkbox', { name: "Nell'ufficio" }) as HTMLInputElement).checked).toBe(false);
     cleanup();
     render(<ListView sessions={[]} agents={[]} hidden={[]} onToggle={() => {}} />);
-    expect(screen.getByText(/Nessuna sessione/)).toBeTruthy();
+    expect(screen.getByText('Nessuna istanza di Claude Code aperta')).toBeTruthy();
   });
 });
 

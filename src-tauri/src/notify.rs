@@ -63,7 +63,7 @@ pub struct SessionFacts {
 
 fn waiting_title(kind: &str) -> &'static str {
     match kind {
-        "permission" => "Claude chiede un permesso",
+        "permission" => "Claude aspetta un tuo permesso",
         "question" => "Claude ti ha fatto una domanda",
         "plan" => "Claude aspetta l'ok al piano",
         _ => "Claude aspetta un tuo input",
@@ -84,7 +84,7 @@ pub fn messages(prev: &[SessionFacts], next: &[SessionFacts], prefs: Prefs) -> V
         }
         let was_busy = before.is_some_and(|b| b.waiting.is_none() && matches!(b.status.as_str(), "working" | "entering"));
         if prefs.notify_done && was_busy && s.status == "done" {
-            out.push(("Claude ha finito".to_string(), s.place.clone()));
+            out.push(("Claude è pronto".to_string(), s.place.clone()));
         }
     }
     out
@@ -103,7 +103,7 @@ mod tests {
         let prefs = Prefs::default();
         let working = [facts("a", "working", None)];
         let blocked = [facts("a", "working", Some("permission"))];
-        assert_eq!(messages(&working, &blocked, prefs), vec![("Claude chiede un permesso".into(), "a · main".into())]);
+        assert_eq!(messages(&working, &blocked, prefs), vec![("Claude aspetta un tuo permesso".into(), "a · main".into())]);
         // ancora bloccata al giro dopo: niente doppioni
         assert!(messages(&blocked, &blocked, prefs).is_empty());
         // nuova sessione già bloccata
@@ -117,7 +117,7 @@ mod tests {
         let working = [facts("a", "working", None)];
         let done = [facts("a", "done", None)];
         assert!(messages(&working, &done, Prefs::default()).is_empty());
-        assert_eq!(messages(&working, &done, on), vec![("Claude ha finito".into(), "a · main".into())]);
+        assert_eq!(messages(&working, &done, on), vec![("Claude è pronto".into(), "a · main".into())]);
         assert!(messages(&done, &done, on).is_empty());
         // dopo una domanda a cui si risponde no: il turno non era "al lavoro"
         assert!(messages(&[facts("a", "working", Some("question"))], &done, on).is_empty());

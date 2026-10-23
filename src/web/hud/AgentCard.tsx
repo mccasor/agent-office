@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { contextLevel, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
-import { SESSION_STATUS_LABEL, STATUS_LABEL, toolText } from './labels';
-import { DiffStat, projectName, Row, SessionAlert } from './panels';
+import { projectName, SESSION_STATUS_LABEL, STATUS_LABEL, toolText } from './labels';
+import { DiffStat, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { TokenBreakdown } from './TokenBreakdown';
 import { useNow } from './useNow';
