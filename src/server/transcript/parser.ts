@@ -121,6 +121,8 @@ function userTexts(row: Json, results?: ReadonlySet<string>): string[] {
 
 /** avvio di un comando o di un agente in background, cercato solo nel tool_result del Bash o dell'Agent che lo lancia */
 const BACKGROUND_STARTED_RE = /(?:running in background with ID|agentId): ([\w-]+)/g;
+/** riga scritta da Claude Code quando il turno viene interrotto ("... by user" o "... by user for tool use") */
+const INTERRUPTED = '[Request interrupted by user';
 /** notifica di fine di un task in background */
 const BACKGROUND_DONE_RE = /<task-id>([\w-]+)<\/task-id>/g;
 
@@ -355,6 +357,8 @@ export function createAccumulator(): Accumulator {
         // un nuovo input (prompt o tool_result) riapre il lavoro, salvo il tool_result di StructuredOutput
         if (!structuredOutputPending) state.finished = false;
         structuredOutputPending = false;
+        // interrotto (Esc, tool rifiutato, agente fermato): il turno è finito, non arriverà altro
+        if (userTexts(row).some((t) => t.startsWith(INTERRUPTED))) state.finished = 'confirmed';
         break;
       }
       case 'attachment':
