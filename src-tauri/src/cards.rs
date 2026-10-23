@@ -86,7 +86,7 @@ pub fn clamp_height(height: u32, screen: Option<f64>) -> f64 {
 
 /// Porta la finestra all'altezza chiesta, stessa larghezza, senza spostarne l'angolo in alto a sinistra (in AppKit
 /// `setContentSize` tiene fermo quello in basso).
-fn fit(window: &WebviewWindow, height: u32) {
+pub(crate) fn fit(window: &WebviewWindow, height: u32) {
     let (Ok(scale), Ok(size), Ok(position)) = (window.scale_factor(), window.inner_size(), window.outer_position()) else {
         return;
     };

@@ -74,7 +74,40 @@ export interface AgentState {
   waitingSince?: number | null;
   /** effort dell'ultima richiesta del subagente ("low" ... "max"); null o assente se non dichiarato */
   effort?: string | null;
+
+  // --- cruscotto della giornata (#97): esito, errori dei tool, avvisi; tutti assenti nei client vecchi ---
+  /** con status 'done': com'è finito; null o assente finché lavora */
+  outcome?: AgentOutcome | null;
+  /** errori dei tool; null o assente se nessuno */
+  toolErrors?: ToolErrors | null;
+  /** chiamate consecutive allo stesso tool con lo stesso input (solo nome e numero); null o assente se meno di 2 */
+  repeat?: ToolRepeat | null;
+  /** avviso calcolato dal server: fermo da troppo tempo o in loop; null o assente se nessuno */
+  alert?: AgentAlert | null;
 }
+
+/** Esito di un subagente terminato: ok, interrotto (Esc, fermato) o fallito (errore dell'API, task fallito). */
+export type AgentOutcome = 'ok' | 'interrupted' | 'failed';
+
+/** Errori dei tool (tool_result con is_error, esclusi i rifiuti dell'utente): mai il testo dell'errore o del comando. */
+export interface ToolErrors {
+  count: number;
+  /** nome del tool dell'ultimo errore e quando (epoch ms) */
+  tool: string;
+  at: number;
+}
+
+/** Stesso tool con lo stesso input più volte di fila: l'input si confronta per hash e non esce dal server. */
+export interface ToolRepeat {
+  tool: string;
+  count: number;
+}
+
+/**
+ * Avviso su un subagente non terminato: `stale` senza attività da `staleAgentMinutes` (potrebbe aver finito senza
+ * che l'ufficio se ne accorgesse), `loop` stesso tool con lo stesso input almeno `loopRepeats` volte di fila.
+ */
+export type AgentAlert = { kind: 'stale'; since: number } | { kind: 'loop'; tool: string; count: number };
 
 /** Compattazione del contesto (riga compact_boundary del transcript): solo contatori e orario. */
 export interface Compaction {
@@ -141,6 +174,8 @@ export interface SessionState {
   dot: OfficeStatus;
   /** nome del progetto: ultima cartella del cwd; null senza cwd */
   project: string | null;
+  /** errori dei tool di Claude stesso (#97); null o assente se nessuno */
+  toolErrors?: ToolErrors | null;
 }
 
 /** Sessione letta dal transcript, prima dei campi che il server deriva nello Snapshot. */
@@ -167,7 +202,27 @@ export interface Snapshot {
   agents: AgentState[];
   /** agenti terminati oggi e già usciti dall'ufficio, dal più recente (cronologia); assente nei client vecchi */
   finished?: AgentState[];
+  /** terminati oggi delle sessioni già chiuse, dallo storico (#98), dal più recente; assente se nessuno */
+  closedFinished?: FinishedAgent[];
+  /** cruscotto della giornata (#97), da quello che il server ha visto da quando è partito; assente nei client vecchi */
+  today?: DayStats;
   generatedAt: number;
+}
+
+/** Numeri della giornata (dalla mezzanotte locale), solo da quanto il server ha osservato in memoria. */
+export interface DayStats {
+  /** da quando valgono i numeri (epoch ms): la mezzanotte, o l'avvio del server se è partito oggi */
+  since: number;
+  /** costo stimato di oggi in dollari (sessioni e subagenti); null se nessun modello è nel listino */
+  cost: number | null;
+  /** costo dell'ultima ora (dollari all'ora); null se nessun modello è nel listino */
+  costLastHour: number | null;
+  /** subagenti partiti oggi, terminati oggi (ok o interrotti) e falliti oggi */
+  launched: number;
+  finished: number;
+  failed: number;
+  /** tempo passato oggi con una sessione bloccata in attesa dell'utente (somma sulle sessioni, a minuti interi) */
+  waitingMs: number;
 }
 
 /** Evento scritto dall'hook di Claude Code (una riga JSON per evento). */
@@ -196,4 +251,90 @@ export interface Watcher<T> {
 export interface TranscriptSnapshot {
   sessions: TranscriptSession[];
   agents: AgentState[];
+}
+
+/*
+ * ---- Storico della giornata (#98): attese, cronologia, terminati, statistiche per tipo, file toccati ----
+ * Salvato dal server in <dataDir>/history, un file per giorno. Solo orari, contatori, nomi di tool, nickname,
+ * tipi di agente e basename di file e progetti: mai testo dei prompt, comandi, errori o descrizioni.
+ */
+
+/** Tipo di evento della cronologia. */
+export type HistoryEventKind =
+  | 'agent-start'
+  | 'agent-end'
+  /** sessione bloccata su un permesso o una domanda (non il pallino grigio di fine turno) */
+  | 'wait'
+  | 'unblock'
+  | 'compact'
+  | 'session-open'
+  | 'session-close';
+
+/** Evento della cronologia. */
+export interface HistoryEvent {
+  /** epoch ms */
+  at: number;
+  kind: HistoryEventKind;
+  sessionId: string;
+  /** basename del cwd della sessione; null se sconosciuto */
+  project: string | null;
+  /** nickname del subagente (o del subagente che blocca la sessione); assente per Claude stesso */
+  agent?: string;
+  agentType?: string;
+  /** nome del tool (in uso all'inizio dell'attesa), mai input o comandi */
+  tool?: string;
+  /** con wait/unblock: il motivo; con unblock e agent-end: la durata */
+  waitingKind?: WaitingKind;
+  durationMs?: number;
+  /** con agent-end: com'è finito (#97); assente nelle righe scritte prima */
+  outcome?: AgentOutcome;
+}
+
+/** Subagente terminato oggi in una sessione già chiusa (B5): l'essenziale per la riga dei terminati. */
+export interface FinishedAgent {
+  id: string;
+  sessionId: string;
+  project: string | null;
+  nickname: string;
+  agentType: string;
+  area: WorkArea;
+  startedAt: number;
+  endedAt: number;
+  outputTokens: number;
+  cost: number | null;
+  /** com'è finito (#97); assente nelle righe scritte prima */
+  outcome?: AgentOutcome;
+}
+
+/** Attese di una sessione nella giornata. */
+export interface WaitStats {
+  sessionId: string;
+  project: string | null;
+  count: number;
+  /** tempo in attesa cumulato (le attese in corso fino a ora) */
+  totalMs: number;
+}
+
+/** Statistiche dei subagenti terminati nella giornata, per agentType. */
+export interface AgentTypeStats {
+  agentType: string;
+  count: number;
+  avgMs: number;
+  /** null se nessun agente del tipo ha un costo stimato */
+  cost: number | null;
+  avgCost: number | null;
+}
+
+/** Risposta di GET /api/history?day=YYYY-MM-DD. */
+export interface HistoryReport {
+  /** giorno (ora locale del server) */
+  day: string;
+  /** giorni con uno storico, dal più recente */
+  days: string[];
+  /** cronologia dal più recente (al più le ultime 200) */
+  events: HistoryEvent[];
+  waits: { count: number; totalMs: number; sessions: WaitStats[] };
+  byType: AgentTypeStats[];
+  /** file più toccati: basename e numero di agenti e sessioni che l'hanno letto o modificato */
+  files: { name: string; count: number }[];
 }

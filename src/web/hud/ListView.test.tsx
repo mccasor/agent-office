@@ -182,11 +182,11 @@ describe('ListView', () => {
 });
 
 describe('ViewToggle', () => {
-  it('due viste (ufficio, lista): evidenzia quella corrente e notifica il cambio', () => {
+  it('tre viste (ufficio, lista, analisi): evidenzia quella corrente e notifica il cambio', () => {
     const onChange = vi.fn();
     const { rerender } = render(<ViewToggle view="pixel" onChange={onChange} />);
     expect(screen.getByRole('group', { name: 'Vista' })).toBeTruthy();
-    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Ufficio', 'Lista']);
+    expect(screen.getAllByRole('button').map((b) => b.textContent)).toEqual(['Ufficio', 'Lista', 'Analisi']);
     expect(screen.getByRole('button', { name: 'Ufficio' }).getAttribute('aria-pressed')).toBe('true');
     fireEvent.click(screen.getByRole('button', { name: 'Lista' }));
     expect(onChange).toHaveBeenCalledWith('list');
@@ -195,5 +195,58 @@ describe('ViewToggle', () => {
     expect(screen.getByRole('button', { name: 'Ufficio' }).getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(screen.getByRole('button', { name: 'Ufficio' }));
     expect(onChange).toHaveBeenCalledWith('pixel');
+  });
+});
+
+describe('cruscotto della giornata (#97)', () => {
+  const today = { since: 0, cost: 3.4, costLastHour: 0.25, launched: 5, finished: 3, failed: 1, waitingMs: 12 * 60_000 };
+
+  it('barra in alto con costo, costo orario, agenti e attesa; i falliti in evidenza', () => {
+    const { container } = render(<ListView sessions={[session()]} agents={[]} hidden={[]} onToggle={() => {}} today={today} />);
+    const bar = screen.getByRole('region', { name: 'Oggi' });
+    expect(container.querySelector('.list-view')?.firstElementChild).toBe(bar);
+    const kpi = (k: string) => bar.querySelector(`[data-kpi="${k}"]`)?.textContent;
+    expect([kpi('cost'), kpi('hour'), kpi('launched'), kpi('finished'), kpi('failed'), kpi('waiting')]).toEqual([
+      '≈ $3,40costo', '≈ $0,25/hultima ora', '5lanciati', '3terminati', '1fallito', '12 minin attesa',
+    ]);
+    expect(bar.querySelector('[data-kpi="failed"]')?.className).toContain('today-bar__alarm');
+  });
+
+  it('esito e costo dei terminati, errori dei tool in breve con il dettaglio nel tooltip', () => {
+    const t = Date.now();
+    render(
+      <ListView
+        sessions={[session()]}
+        agents={[]}
+        finished={[agent({ id: 'f1', status: 'done', outcome: 'interrupted', cost: 0.42, toolErrors: { count: 2, tool: 'Bash', at: t }, startedAt: t - 60_000, updatedAt: t })]}
+        hidden={[]}
+        onToggle={() => {}}
+      />,
+    );
+    expect(screen.getByText('interrotto').className).toContain('hud-outcome--interrupted');
+    expect(screen.getByText(/≈ \$0,42/)).toBeTruthy();
+    expect(screen.getByText('· 2 errori').getAttribute('title')).toMatch(/^2 errori dei tool · ultimo Bash alle \d\d:\d\d$/);
+  });
+
+  it('agente fermo: "!" e "Fallo uscire"; in loop: quante ripetizioni', () => {
+    const t = Date.now();
+    const onDismiss = vi.fn();
+    const { container } = render(
+      <ListView
+        sessions={[session()]}
+        agents={[
+          agent({ id: 'fermo', status: 'idle', updatedAt: t - 90 * 60_000, alert: { kind: 'stale', since: t - 90 * 60_000 } }),
+          agent({ id: 'loop', alert: { kind: 'loop', tool: 'Read', count: 7 } }),
+        ]}
+        hidden={[]}
+        onToggle={() => {}}
+        onDismiss={onDismiss}
+      />,
+    );
+    expect(container.querySelectorAll('.list-agent--alert')).toHaveLength(2);
+    expect([...container.querySelectorAll('.hud-alert__mark')].map((m) => m.getAttribute('title'))).toEqual(['Read ripetuto 7 volte', 'fermo da 1 h 30 min']);
+    fireEvent.click(screen.getByRole('button', { name: 'Fallo uscire' }));
+    expect(onDismiss).toHaveBeenCalledWith('fermo');
+    expect(screen.getByText(/^Read ripetuto 7 volte · al lavoro/)).toBeTruthy();
   });
 });

@@ -16,7 +16,6 @@
       --ok: #28a745;
       --danger: #e5383b;
       --idle: #9aa1a9;
-      --switch-off: rgb(0 0 0 / 0.14);
       --pill: rgb(0 0 0 / 0.06);
     }
     @media (prefers-color-scheme: dark) {
@@ -29,7 +28,6 @@
         --ok: #32d74b;
         --danger: #ff453a;
         --idle: #8e8e93;
-        --switch-off: rgb(255 255 255 / 0.2);
         --pill: rgb(255 255 255 / 0.1);
       }
     }
@@ -82,14 +80,8 @@
     .row__hint { color: var(--muted); font-size: 12px; }
 
     /* interruttore stile macOS */
-    .switch { position: relative; width: 30px; height: 18px; border-radius: 9px; background: var(--switch-off); transition: background 120ms; flex: none; }
-    .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 120ms; }
-    .switch--on { background: var(--accent); }
-    .switch--on::after { transform: translateX(12px); }
-
-    .mini { padding: 2px 8px; border-radius: 6px; background: var(--pill); font-size: 12px; }
-    .mini:hover { background: var(--hover); filter: brightness(0.95); }
-    .notice { margin: 2px 10px 4px 37px; font-size: 12px; color: var(--muted); }
+    .row__key { color: var(--muted); font-size: 12px; letter-spacing: 0.04em; }
+    .notice { margin: 0 10px 6px 32px; font-size: 12px; color: var(--muted); }
 
     .session { display: grid; gap: 1px; width: 100%; padding: 6px 10px; border-radius: 8px; }
     .session:hover { background: var(--hover); }
@@ -118,6 +110,9 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- catalogo delle voci (default degli interruttori) e testi nelle tre lingue, generati da src/shared -->
+  <script src="settings-catalog.js"></script>
+  <script src="i18n.js"></script>
   <script>
     'use strict';
     const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
@@ -125,11 +120,7 @@
     // icone semplici a tratto, nello spirito di SF Symbols
     const ICONS = {
       office: '<path d="M3 20.5h18M5 20.5V5.5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v15M15 9.5h3a1 1 0 0 1 1 1v10M8 8h4M8 11.5h4M8 15h4"/>',
-      power: '<path d="M12 3.5v8M7.05 6.4a7.5 7.5 0 1 0 9.9 0"/>',
-      bell: '<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/>',
-      check: '<path d="M6 16.5V11a6 6 0 0 1 9-5.2M18 11v5.5l1.5 2h-15M10 20.5a2 2 0 0 0 4 0M14.5 7.5l2 2 4-4"/>',
-      link: '<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>',
-      refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>',
+      gear: '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4z"/>',
       quit: '<path d="M14 4.5h4a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 16l4-4-4-4M14 12H4.5"/>',
     };
     const icon = (name, cls = 'row__icon') =>
@@ -147,24 +138,34 @@
     const project = (s) => s.project || s.id.slice(0, 8);
     const dotOf = (s) => s.dot || 'idle';
     const busy = (st) => st === 'working' || st === 'entering';
+    // testi nella lingua dell'app (#93), già risolta dall'app (panel_state.locale): italiano finché non risponde
+    let T = agentOfficeTexts('it');
+    // come formatDuration in format.ts: "<1 min", "12 min", "2 h", "2 h 05"
     const minutes = (ms) => {
       const m = Math.floor(ms / 60000);
-      if (m < 1) return '<1 min';
-      if (m < 60) return `${m} min`;
+      if (m < 1) return T('dur.lessMin');
+      if (m < 60) return T('dur.min', { m });
       const h = Math.floor(m / 60), r = m % 60;
-      return r ? `${h} h ${String(r).padStart(2, '0')}` : `${h} h`;
+      return r ? T('dur.hm', { h, mm: String(r).padStart(2, '0') }) : T('dur.h', { h });
     };
-    const WAITING = { permission: 'aspetta un tuo permesso', question: 'ti ha fatto una domanda', plan: "aspetta l'ok al piano", input: 'aspetta un tuo input' };
-    const waitingText = (s) => (WAITING[s.waitingKind] || WAITING.input) + (s.waitingSince ? ` · da ${minutes(Date.now() - s.waitingSince)}` : '');
+    const WAITING = ['permission', 'question', 'plan', 'input'];
+    const waitingText = (s) => {
+      const label = T(`waiting.${WAITING.includes(s.waitingKind) ? s.waitingKind : 'input'}`);
+      return s.waitingSince ? T('waiting.since', { label, d: minutes(Date.now() - s.waitingSince) }) : label;
+    };
     const toolText = (t) => (t ? (t.target ? `${t.name} ${t.target}` : t.name) : '');
     // come activityText in labels.ts: tool in uso e da quanto ("Bash da 4 min"), un inattivo "fermo da 12 min"
     const activity = (a) => {
       if (a.status === 'done') return '';
-      if (a.tool) return toolText(a.tool) + (a.tool.since > 0 && Date.now() - a.tool.since >= 60000 ? ` da ${minutes(Date.now() - a.tool.since)}` : '');
-      return a.status === 'idle' && a.updatedAt ? `fermo da ${minutes(Date.now() - a.updatedAt)}` : '';
+      if (a.tool) return a.tool.since > 0 && Date.now() - a.tool.since >= 60000 ? T('activity.toolSince', { tool: toolText(a.tool), d: minutes(Date.now() - a.tool.since) }) : toolText(a.tool);
+      return a.status === 'idle' && a.updatedAt ? T('activity.idleSince', { d: minutes(Date.now() - a.updatedAt) }) : '';
     };
-    // stesse etichette dell'ufficio (src/web/hud/labels.ts): stato di Claude stesso nell'istanza
-    const SESSION_STATUS = { working: 'al lavoro', entering: 'in arrivo', idle: 'inattivo', done: 'pronto' };
+    // stesse etichette dell'ufficio (src/web/hud/labels.ts): stato di Claude stesso nell'istanza ("pronto" a fine turno)
+    const SESSION_STATUS = { working: 'status.working', entering: 'status.entering', idle: 'status.idle', done: 'status.ready' };
+
+    // voci da mostrare (finestra Impostazioni, #94): il valore in config.json o il default del catalogo
+    const ITEMS = new Map((window.AGENT_OFFICE_SETTINGS?.items ?? []).map((i) => [i.key, i.default]));
+    const show = (key) => (typeof state.show?.[key] === 'boolean' ? state.show[key] : ITEMS.get(key) ?? true);
 
     let state = null;
     /** ultimo contenuto mostrato: se non cambia, niente DOM da rifare né ridimensionamento */
@@ -183,79 +184,80 @@
       let html = '';
 
       if (['available', 'upgrading', 'upgradefailed'].includes(u.kind)) {
-        const sub = u.kind === 'upgrading' ? 'Aggiornamento in corso…'
-          : u.kind === 'upgradefailed' ? 'Non riuscito: riprova (dettagli in ~/.agent-office/upgrade.log)'
-          : u.behind > 1 ? `Sei indietro di ${u.behind} versioni` : `Hai la ${esc(state.version)}`;
-        const title = u.latest ? `Aggiorna alla versione ${esc(u.latest)}` : 'Aggiornamento';
+        const sub = u.kind === 'upgrading' ? T('update.upgrading')
+          : u.kind === 'upgradefailed' ? T('panel.upgradeFailed')
+          : u.behind > 1 ? T('panel.behind', { n: u.behind }) : T('panel.current', { v: esc(state.version) });
+        const title = u.latest ? T('update.available', { v: esc(u.latest) }) : T('panel.update');
         html += `<button class="banner" data-action="update" ${u.kind === 'upgrading' ? 'disabled' : ''}>${bannerIcon(u.outdated)}
           <span class="banner__text"><span class="banner__title">${title}</span><span class="banner__sub">${sub}</span></span></button>`;
       }
 
       // stato dell'IA
-      let dot = 'idle', title = 'Claude è inattivo', sub = sessions.length ? `${sessions.length} ${sessions.length === 1 ? 'istanza aperta' : 'istanze aperte'}` : 'Nessuna istanza di Claude Code aperta';
+      let dot = 'idle', title = T('tray.idle'), sub = sessions.length ? T.n('panel.open', sessions.length) : T('instances.none');
       let subClass = '';
       if (!state.snapshot) {
-        title = 'Server non raggiungibile';
-        sub = state.serverError || 'Avvio in corso…';
+        title = T('tray.offline');
+        sub = esc(state.serverError) || T('panel.starting');
         subClass = state.serverError ? ' status__sub--error' : '';
       } else if (waitingOnes.length) {
         dot = 'waiting';
-        title = waitingOnes.length === 1 ? 'Claude aspetta un tuo input' : `${waitingOnes.length} istanze aspettano un tuo input`;
-        sub = waitingOnes.map((s) => `${esc(project(s))}: ${waitingText(s)}`).join(' · ');
+        title = waitingOnes.length === 1 ? T('tray.waiting') : T('panel.waitingMany', { n: waitingOnes.length });
+        sub = waitingOnes.map((s) => `${esc(project(s))}: ${esc(waitingText(s))}`).join(' · ');
       } else if (snap.status === 'working') {
         dot = 'working';
-        title = 'Claude sta lavorando';
-        sub = working ? `${working} ${working === 1 ? 'agente al lavoro' : 'agenti al lavoro'}` : sub;
+        title = T('tray.working');
+        sub = working ? T.n('panel.agentsWorking', working) : sub;
       }
       html += `<div class="status"><span class="dot dot--big dot--${dot}"></span><div class="status__text">
         <span class="status__title">${title}</span><span class="status__sub${subClass}">${sub}</span></div></div>`;
 
-      // impostazioni
-      const sw = (on) => `<span class="switch${on ? ' switch--on' : ''}"></span>`;
-      const showCheck = !['available', 'upgrading', 'upgradefailed'].includes(u.kind);
-      html += `<hr><div class="section">Impostazioni</div>
-        <button class="row" data-action="open-office">${icon('office')}<span class="row__label">Apri ufficio</span></button>
-        <button class="row" data-action="autostart">${icon('power')}<span class="row__label">Avvia al login</span>${sw(state.autostart)}</button>
-        <button class="row" data-action="notify-waiting">${icon('bell')}<span class="row__label">Notifica quando Claude aspetta</span>${sw(state.prefs.notifyWaiting)}</button>
-        <button class="row" data-action="notify-done">${icon('check')}<span class="row__label">Notifica quando Claude è pronto</span>${sw(state.prefs.notifyDone)}</button>
-        <div class="row">${icon('link')}<span class="row__label">Hook di Claude Code</span>
-          <button class="mini" data-action="hooks-install">Installa</button><button class="mini" data-action="hooks-remove">Rimuovi</button></div>
-        ${showCheck ? `<button class="row" data-action="update" ${u.kind === 'checking' ? 'disabled' : ''}>${icon('refresh')}<span class="row__label">${u.kind === 'checking' || u.kind === 'failed' ? esc(u.label) : 'Cerca aggiornamenti'}</span></button>` : ''}
-        ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}`;
+      html += `<button class="row" data-action="open-office">${icon('office')}<span class="row__label">${T('panel.openOffice')}</span></button>`;
+      if (state.notice) html += `<div class="notice">${esc(state.notice)}</div>`;
 
       // istanze e agenti
-      html += `<hr><div class="section">Istanze aperte</div>`;
-      if (!sessions.length) html += `<div class="empty">Nessuna istanza di Claude Code aperta</div>`;
+      html += `<hr><div class="section">${T('instances.title')}</div>`;
+      if (!sessions.length) html += `<div class="empty">${T('instances.none')}</div>`;
       for (const s of sessions) {
         const own = agents.filter((a) => a.sessionId === s.id && a.status !== 'done');
         const d = dotOf(s);
-        const ctx = s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
+        const ctx = show('session.context') && s.context && s.context.window ? Math.round((s.context.used / s.context.window) * 100) : null;
         const ctxClass = ctx > 90 ? ' pill--danger' : ctx > 70 ? ' pill--warn' : '';
-        const line = s.waiting ? waitingText(s) : activity(s) || SESSION_STATUS[s.status] || '';
+        // l'attesa si vede sempre; l'attività (session.activity) si può spegnere, e senza niente da dire niente riga
+        const line = s.waiting ? waitingText(s) : show('session.activity') ? activity(s) || (SESSION_STATUS[s.status] ? T(SESSION_STATUS[s.status]) : '') : '';
+        const branch = show('session.branch') && s.branch ? ` <span>${esc(s.branch)}</span>` : '';
         html += `<button class="session" data-action="open-session" data-arg="${esc(s.id)}">
           <span class="session__head"><span class="dot dot--${d}"></span>
-            <span class="session__name"><b>${esc(project(s))}</b>${s.branch ? ` <span>${esc(s.branch)}</span>` : ''}</span>
-            ${ctx !== null ? `<span class="pill${ctxClass}" title="Contesto usato">${ctx}%</span>` : ''}</span>
-          <span class="session__sub${s.waiting ? ' session__sub--waiting' : ''}">${esc(line)}</span></button>`;
-        for (const a of own) {
+            <span class="session__name"><b>${esc(project(s))}</b>${branch}</span>
+            ${ctx !== null ? `<span class="pill${ctxClass}" title="${esc(T('panel.contextUsed'))}">${ctx}%</span>` : ''}</span>
+          ${line ? `<span class="session__sub${s.waiting ? ' session__sub--waiting' : ''}">${esc(line)}</span>` : ''}</button>`;
+        for (const a of show('panel.agents') ? own : []) {
           const ad = busy(a.status) ? 'working' : 'idle';
+          // nome di persona e, se non è spento (agent.task), il compito; senza nome di persona il compito fa da nome
+          const name = a.nickname ? `<b>${esc(a.nickname)}</b>${show('agent.task') ? ` <span>${esc(a.name)}</span>` : ''}` : esc(a.name);
           html += `<button class="agent" data-action="open-session" data-arg="${esc(s.id)}"><span class="dot dot--${ad}"></span>
-            <span class="agent__name" title="${esc(a.name)}">${a.nickname ? `<b>${esc(a.nickname)}</b> <span>${esc(a.name)}</span>` : esc(a.name)}</span><span class="agent__tool">${esc(activity(a))}</span></button>`;
+            <span class="agent__name" title="${esc(a.name)}">${name}</span><span class="agent__tool">${esc(activity(a))}</span></button>`;
         }
       }
 
-      html += `<hr><button class="row" data-action="quit">${icon('quit')}<span class="row__label">Esci da Agent Office</span></button>
+      html += `<hr><button class="row" data-action="settings">${icon('gear')}<span class="row__label">${T('panel.settings')}</span><span class="row__key">⌘,</span></button>
+        <button class="row" data-action="quit">${icon('quit')}<span class="row__label">${T('panel.quit')}</span></button>
         <div class="footer">Agent Office ${esc(state.version)}</div>`;
 
       if (html === shown) return;
       shown = html;
       document.getElementById('root').innerHTML = html;
-      invoke('panel_resize', { height: Math.ceil(document.documentElement.scrollHeight) });
+      // altezza del contenuto (body), non del documento: quella non scende sotto la finestra e il pannello non si
+      // accorcerebbe mai quando il contenuto cala
+      invoke('panel_resize', { height: Math.ceil(document.body.getBoundingClientRect().height) });
     }
 
     async function refresh() {
       try {
         state = await invoke('panel_state');
+        if (state.locale !== T.locale) {
+          T = agentOfficeTexts(state.locale);
+          document.documentElement.lang = T.locale;
+        }
         render();
       } catch {
         // app in chiusura: niente da mostrare
@@ -270,6 +272,8 @@
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') invoke('panel_action', { action: 'close', arg: null });
+      // ⌘, come in ogni app di macOS
+      if (e.metaKey && e.key === ',') invoke('panel_action', { action: 'settings', arg: null });
     });
     // tempi ("da 3 min") aggiornati anche senza nuovi snapshot: l'app chiama agentPanelRefresh a ogni giro di polling,
     // solo a pannello visibile (un timer qui raddoppierebbe le letture)

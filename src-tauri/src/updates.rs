@@ -8,6 +8,8 @@ use std::process::{Child, Command, Stdio};
 
 use serde_json::Value;
 
+use crate::i18n::{t, tf};
+
 /// Repository del tap: le sue release contengono il .dmg di ogni versione.
 pub const TAP: &str = "mccasor/homebrew-agent-office";
 const CASK: &str = "mccasor/agent-office/agent-office";
@@ -68,18 +70,19 @@ impl UpdateState {
         }
     }
 
+    /// Testo della voce nella lingua dell'app (i18n.rs).
     pub fn label(&self, current: &str) -> String {
         match self {
-            UpdateState::Unknown => "Aggiornamenti".into(),
-            UpdateState::Checking => "Ricerca aggiornamenti…".into(),
-            UpdateState::UpToDate => format!("Aggiornamenti: la {current} è la più recente"),
+            UpdateState::Unknown => t("update.idle"),
+            UpdateState::Checking => t("update.checking"),
+            UpdateState::UpToDate => tf("update.upToDate", &[("v", current)]),
             UpdateState::Available { latest, behind } if *behind >= OUTDATED_AFTER => {
-                format!("Aggiorna alla versione {latest} ({behind} versioni indietro)")
+                tf("update.availableBehind", &[("v", latest), ("n", &behind.to_string())])
             }
-            UpdateState::Available { latest, .. } => format!("Aggiorna alla versione {latest}"),
-            UpdateState::Upgrading => "Aggiornamento in corso…".into(),
-            UpdateState::Failed => "Aggiornamenti: ricerca non riuscita, riprova".into(),
-            UpdateState::UpgradeFailed => "Aggiornamento non riuscito (~/.agent-office/upgrade.log), riprova".into(),
+            UpdateState::Available { latest, .. } => tf("update.available", &[("v", latest)]),
+            UpdateState::Upgrading => t("update.upgrading"),
+            UpdateState::Failed => t("update.failed"),
+            UpdateState::UpgradeFailed => t("update.upgradeFailed"),
         }
     }
 
@@ -198,7 +201,7 @@ pub fn take_updated_from() -> Option<String> {
 
 /// Testo dell'esito per chi è passato da `from` a `current`; None se la versione non è cambiata. Pura.
 pub fn updated_message(from: &str, current: &str) -> Option<String> {
-    (from != current).then(|| format!("Aggiornata alla versione {current}"))
+    (from != current).then(|| tf("update.done", &[("v", current)]))
 }
 
 #[cfg(test)]

@@ -26,7 +26,7 @@ function run(m: ActorMotion | undefined, target: Spot | null, from: number, max:
 }
 
 const actor = (status: AgentState['status']): PixelActor => ({
-  id: 'a1', sessionId: 's1', boss: false, target: null, waiting: false,
+  id: 'a1', sessionId: 's1', boss: false, target: null, waiting: false, alert: false,
   agent: { id: 'a1', sessionId: 's1', status } as AgentState,
 });
 

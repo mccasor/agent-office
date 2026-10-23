@@ -3,12 +3,15 @@ import { realpath, stat } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
-import type { Snapshot } from '../../shared/types.js';
+import { DEFAULT_DISPLAY, type DisplaySettings } from '../../shared/settings.js';
+import type { HistoryReport, Snapshot } from '../../shared/types.js';
 
 export interface OfficeServer {
   url: string;
   /** `json`: lo snapshot già serializzato da chi pubblica (altrimenti lo serializza il server) */
   publish(snapshot: Snapshot, json?: string): void;
+  /** preferenze di visualizzazione nuove (config.json cambiato): ai client SSE come evento `config` */
+  setSettings(settings: DisplaySettings): void;
   close(): Promise<void>;
 }
 
@@ -53,12 +56,24 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
   res.end(res.req.method === 'HEAD' ? undefined : body);
 }
 
-/** Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/events (SSE), statici da webDir. */
-export async function startServer(opts: { port: number; webDir: string; initial: Snapshot }): Promise<OfficeServer> {
+/**
+ * Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/config (preferenze di visualizzazione),
+ * GET /api/events (SSE: eventi `snapshot` e `config`), GET /api/history (storico della giornata, se c'è `history`),
+ * statici da webDir. Nessuna scrittura: config.json lo scrive l'app della menu bar.
+ */
+export async function startServer(opts: {
+  port: number;
+  webDir: string;
+  initial: Snapshot;
+  settings?: DisplaySettings;
+  /** riepilogo di un giorno ("YYYY-MM-DD", null = oggi); null se il giorno non è valido */
+  history?: (day: string | null) => Promise<HistoryReport | null>;
+}): Promise<OfficeServer> {
   let current = opts.initial;
   // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
   let currentJson = JSON.stringify(current);
   let version = 1;
+  let settingsJson = JSON.stringify(opts.settings ?? DEFAULT_DISPLAY);
   const etag = () => `"v${version}"`;
   const clients = new Set<ServerResponse>();
   // realpath: confronto coerente anche se webDir passa per symlink (es. /var → /private/var su macOS)
@@ -71,6 +86,9 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       return;
     }
     res.write(`event: snapshot\ndata: ${json}\n\n`);
+  };
+  const sseSettings = (res: ServerResponse): void => {
+    res.write(`event: config\ndata: ${settingsJson}\n\n`);
   };
 
   /** Risolve il path richiesto dentro root; null se non valido o fuori da root. */
@@ -143,7 +161,7 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       return;
     }
 
-    const pathname = (req.url ?? '/').split('?')[0] ?? '/';
+    const [pathname = '/', query = ''] = (req.url ?? '/').split('?');
 
     if (pathname === '/api/snapshot') {
       // l'app della menu bar lo interroga ogni 2 s: senza cambiamenti risponde 304 senza corpo
@@ -170,6 +188,11 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       return;
     }
 
+    if (pathname === '/api/config') {
+      send(res, 200, settingsJson, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return;
+    }
+
     if (pathname === '/api/events') {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream; charset=utf-8',
@@ -182,12 +205,23 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       }
       res.flushHeaders();
       sseWrite(res, currentJson);
+      sseSettings(res);
       clients.add(res);
       const drop = (): void => {
         clients.delete(res);
       };
       req.on('close', drop);
       res.on('close', drop);
+      return;
+    }
+
+    if (pathname === '/api/history' && opts.history) {
+      const report = await opts.history(new URLSearchParams(query).get('day'));
+      if (!report) {
+        send(res, 400, 'Bad Request');
+        return;
+      }
+      send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
       return;
     }
 
@@ -229,6 +263,10 @@ export async function startServer(opts: { port: number; webDir: string; initial:
       currentJson = json;
       version++;
       for (const res of clients) sseWrite(res, currentJson);
+    },
+    setSettings(settings) {
+      settingsJson = JSON.stringify(settings);
+      for (const res of clients) sseSettings(res);
     },
     close() {
       clearInterval(heartbeat);

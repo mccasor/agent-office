@@ -85,6 +85,7 @@ export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): Pixel
       boss,
       target: spot === undefined ? null : (spotById.get(spot) ?? null),
       waiting: boss ? waiting.has(a.sessionId) : a.waiting === true,
+      alert: !boss && a.status !== 'done' && !a.waiting && !!a.alert,
     };
   });
   const idle = active.filter((s) => s.dot === 'idle').map((s) => s.id);

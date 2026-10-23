@@ -46,6 +46,13 @@ type Transcript = Exclude<Parsed, { kind: 'meta' }>;
  */
 export interface TranscriptWatcher extends Omit<Watcher<TranscriptSnapshot>, 'onChange'> {
   onChange(listener: () => void): () => void;
+  /** basename dei file letti o modificati da un subagente (o da Claude stesso con agentId null), per lo storico */
+  filesOf(sessionId: string, agentId: string | null): string[];
+  /**
+   * Nuova finestra di attività (config.json cambiato, #94): vale dal prossimo current(). I transcript più vecchi della
+   * finestra di discovery all'avvio restano non letti fino al riavvio.
+   */
+  setActiveWindowMs(ms: number): void;
 }
 
 interface TrackedFile {
@@ -73,8 +80,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
   const claudeHome = opts.claudeHome ?? join(homedir(), '.claude');
   const projectsRoot = join(claudeHome, 'projects');
   const projectDir = join(projectsRoot, encodeProjectPath(opts.cwd));
-  const activeWindowMs = opts.activeWindowMs ?? 10 * 60_000;
-  const discoveryWindowMs = opts.discoveryWindowMs ?? activeWindowMs + 60 * 60_000;
+  let activeWindowMs = opts.activeWindowMs ?? 10 * 60_000;
+  let discoveryWindowMs = opts.discoveryWindowMs ?? activeWindowMs + 60 * 60_000;
   const idleAfterMs = opts.idleAfterMs ?? 60_000;
   const doneGraceMs = opts.doneGraceMs ?? 3_000;
   const tickMs = opts.tickMs ?? 5_000;
@@ -282,6 +289,20 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
       await Promise.all([...files.values()].map((f) => f.queue));
     },
     current: compute,
+    filesOf(sessionId, agentId) {
+      // chiamato di rado (fine di un agente o di una sessione): basta scorrere i file seguiti
+      for (const f of files.values()) {
+        const p = f.parsed;
+        if (p.sessionId !== sessionId || (p.kind === 'agent' ? p.agentId : null) !== agentId) continue;
+        return [...new Set(f.acc.state.filePaths.map((path) => basename(path)))];
+      }
+      return [];
+    },
+    setActiveWindowMs(ms) {
+      activeWindowMs = ms;
+      // i transcript dentro la finestra nuova non vanno dimenticati dal tick
+      if (opts.discoveryWindowMs === undefined) discoveryWindowMs = Math.max(discoveryWindowMs, ms + 60 * 60_000);
+    },
     onChange(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

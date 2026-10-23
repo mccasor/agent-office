@@ -1,5 +1,7 @@
+import { isShown, type DisplaySettings } from '../../shared/settings';
 import type { WorkArea } from '../../shared/types';
-import { AREA_LABEL } from '../hud/labels';
+import { agentName, AREA_LABEL } from '../hud/labels';
+import type { PixelActor } from './types';
 
 /**
  * Etichette dei nomi nella vista 2D (#88), disegnate nel canvas a risoluzione fisica: restano nitide e della stessa
@@ -82,6 +84,54 @@ export interface LabelSpec {
   area: WorkArea | null;
   selected: boolean;
   waiting: boolean;
+}
+
+/** Voci delle impostazioni (#94) che toccano l'ufficio: nomi, ruolo, fumetto di chi aspetta, "!" degli avvisi. */
+export interface OfficeShow {
+  labels: boolean;
+  role: boolean;
+  bubbles: boolean;
+  alerts: boolean;
+}
+
+/** Voci dell'ufficio dalle preferenze. Pura. */
+export const officeShow = (settings: Pick<DisplaySettings, 'show'>): OfficeShow => ({
+  labels: isShown(settings, 'office.labels'),
+  role: isShown(settings, 'agent.role'),
+  bubbles: isShown(settings, 'office.bubbles'),
+  alerts: isShown(settings, 'agent.alerts'),
+});
+
+/** Fumetto sopra la testa: rosso se bloccato sull'utente, giallo con l'avviso (fermo o in loop). */
+export type HeadMark = 'waiting' | 'alert';
+
+/** Quel che va sopra la testa di un personaggio: targhetta (o null) e fumetto (o null). */
+export interface ActorTag {
+  spec: LabelSpec | null;
+  mark: HeadMark | null;
+}
+
+/**
+ * Targhetta e fumetto di un personaggio, secondo le impostazioni; null se sopra la testa non c'è niente. La targhetta
+ * c'è per tutti (`everyone`, zoom ampio) o per boss, bloccati, avvisati e selezionato; il ruolo solo per i subagenti in
+ * evidenza. Con le voci spente spariscono nomi, ruolo, fumetto rosso o "!" giallo; un avviso spento non mette più in
+ * evidenza il personaggio. Pura.
+ */
+export function actorTag(actor: Pick<PixelActor, 'agent' | 'boss' | 'waiting' | 'alert'>, selected: boolean, everyone: boolean, show: OfficeShow): ActorTag | null {
+  const alert = actor.alert && show.alerts;
+  const mark = actor.waiting ? (show.bubbles ? 'waiting' : null) : alert ? 'alert' : null;
+  const labelled = show.labels && (everyone || selected || actor.boss || actor.waiting || alert);
+  if (!labelled && !mark) return null;
+  const spec: LabelSpec | null = labelled
+    ? {
+      text: labelText(agentName(actor.agent)),
+      // il ruolo per i subagenti in evidenza; Claudio Code è il capo, il suo nome basta
+      area: !show.role || actor.boss || (everyone && !selected && !actor.waiting) ? null : actor.agent.area,
+      selected,
+      waiting: actor.waiting,
+    }
+    : null;
+  return { spec, mark };
 }
 
 export interface LabelBox {

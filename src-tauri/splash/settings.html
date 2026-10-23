@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Impostazioni</title>
+  <style>
+    /* Finestra Impostazioni (#94): barra delle schede con icone in alto, come le Impostazioni di macOS; riquadri di
+       righe con l'etichetta a sinistra e il controllo a destra. Tema chiaro/scuro di sistema. */
+    :root {
+      color-scheme: light dark;
+      --bg: #ececec;
+      --fg: rgb(0 0 0 / 0.86);
+      --muted: rgb(0 0 0 / 0.5);
+      --group: rgb(255 255 255 / 0.75);
+      --group-border: rgb(0 0 0 / 0.08);
+      --divider: rgb(0 0 0 / 0.08);
+      --tab-on: rgb(0 0 0 / 0.08);
+      --accent: #007aff;
+      --ok: #28a745;
+      --warn: #c77c00;
+      --danger: #e5383b;
+      --switch-off: rgb(0 0 0 / 0.14);
+      --button: #fff;
+      --button-border: rgb(0 0 0 / 0.14);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1f1f1f;
+        --fg: rgb(255 255 255 / 0.9);
+        --muted: rgb(255 255 255 / 0.5);
+        --group: rgb(255 255 255 / 0.05);
+        --group-border: rgb(255 255 255 / 0.08);
+        --divider: rgb(255 255 255 / 0.08);
+        --tab-on: rgb(255 255 255 / 0.1);
+        --accent: #0a84ff;
+        --ok: #32d74b;
+        --warn: #ffb340;
+        --danger: #ff453a;
+        --switch-off: rgb(255 255 255 / 0.2);
+        --button: rgb(255 255 255 / 0.14);
+        --button-border: rgb(255 255 255 / 0.06);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; background: var(--bg); }
+    body {
+      font: 13px/1.35 -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      color: var(--fg);
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: default;
+      /* finestra a misura del contenuto, al più l'85% dello schermo: oltre (scheda Agenti su uno schermo basso) si scorre */
+      overflow-x: hidden;
+      overflow-y: auto;
+    }
+    button, select { font: inherit; color: inherit; }
+    svg { flex: none; }
+
+    /* barra delle schede: icona sopra, nome sotto; la scheda scelta su fondo grigio */
+    .tabs { display: flex; justify-content: center; gap: 2px; padding: 8px 12px 6px; border-bottom: 1px solid var(--divider); }
+    .tab {
+      display: grid; justify-items: center; gap: 2px; min-width: 68px; padding: 5px 8px 4px;
+      border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: default;
+    }
+    .tab svg { width: 24px; height: 24px; }
+    .tab span { font-size: 11px; }
+    .tab:hover { color: var(--fg); }
+    .tab[aria-selected='true'] { background: var(--tab-on); color: var(--accent); }
+    .tab[aria-selected='true'] span { color: var(--fg); }
+    .tab:focus-visible, .switch:focus-visible, .button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .content { padding: 14px 20px 18px; display: grid; gap: 14px; }
+    .group__title { margin: 0 0 5px 10px; font-size: 11px; font-weight: 600; color: var(--muted); }
+    .group__box { background: var(--group); border: 1px solid var(--group-border); border-radius: 10px; }
+    .group__note { margin: 6px 10px 0; font-size: 11px; color: var(--muted); }
+
+    .row { display: flex; align-items: center; gap: 12px; min-height: 38px; padding: 7px 12px; }
+    .row + .row { border-top: 1px solid var(--divider); }
+    .row__text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+    .row__sub { font-size: 11px; color: var(--muted); }
+    .row__sub--ok { color: var(--ok); }
+    .row__sub--warn { color: var(--warn); }
+    .row__actions { display: flex; gap: 6px; }
+
+    /* interruttore stile macOS, come nel pannello */
+    .switch { position: relative; width: 32px; height: 19px; border: 0; padding: 0; border-radius: 10px; background: var(--switch-off); transition: background 120ms; flex: none; }
+    .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 120ms; }
+    .switch[aria-checked='true'] { background: var(--accent); }
+    .switch[aria-checked='true']::after { transform: translateX(13px); }
+
+    .button {
+      padding: 2px 10px; min-height: 22px; border-radius: 6px; border: 1px solid var(--button-border);
+      background: var(--button); box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.12);
+    }
+    .button:active { filter: brightness(0.92); }
+    .button:disabled { opacity: 0.5; }
+    .button--primary { background: var(--accent); border-color: transparent; color: #fff; }
+    select { padding: 2px 6px; border-radius: 6px; border: 1px solid var(--button-border); background: var(--button); }
+
+    .notice { margin: 0 2px; font-size: 12px; color: var(--muted); }
+    .notice--error { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <!-- catalogo delle voci e delle schede e testi nelle tre lingue, generati da src/shared -->
+  <script src="settings-catalog.js"></script>
+  <script src="i18n.js"></script>
+  <script>
+    'use strict';
+    const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+    const CATALOG = window.AGENT_OFFICE_SETTINGS;
+
+    // testi nella lingua dell'app (#93), già risolta dall'app (settings_state.locale): italiano finché non risponde
+    let T = agentOfficeTexts('it');
+    const TEXT = {
+      minutes: (m) => (m % 60 === 0 && m >= 60 ? T.n('settings.hours', m / 60) : T('settings.minutes', { n: m })),
+      hooksStatus: { installed: 'settings.hooksInstalled', outdated: 'settings.hooksOutdated', missing: 'settings.hooksMissing', unknown: 'settings.hooksUnknown' },
+      version: (v) => `Agent Office ${v}`,
+      calls: (n) => T('settings.calls', { n }),
+    };
+    /** lingue (#93): ognuna col suo nome nella sua lingua; "Sistema" nella lingua corrente */
+    const LANGUAGE_NAMES = { it: 'Italiano', en: 'English', es: 'Español' };
+    /** minuti proposti per activeWindowMinutes (1-1440 nel file); un valore diverso scritto a mano compare in più */
+    const ACTIVE_WINDOW_CHOICES = [5, 10, 15, 30, 60, 120, 240];
+    /** soglie degli avvisi sui subagenti (#97): minuti per "fermo" (1-1440) e chiamate uguali per "in loop" (2-100) */
+    const STALE_AGENT_CHOICES = [15, 30, 60, 120, 240];
+    const LOOP_REPEATS_CHOICES = [3, 5, 10];
+    /** chiavi numeriche di config.json: interi ammessi, come in src/server/config.ts e config.rs */
+    const RANGES = { activeWindowMinutes: [1, 1440], staleAgentMinutes: [1, 1440], loopRepeats: [2, 100] };
+    /** default delle chiavi di config.json, come in src/server/config.ts e notify.rs */
+    const DEFAULTS = { notifyWaiting: true, notifyDone: false, activeWindowMinutes: 10, staleAgentMinutes: 60, loopRepeats: 5, language: 'system' };
+    /** lingua: "system" o una di CATALOG.languages; un valore diverso scritto a mano vale "system", come nel server */
+    const language = () => (CATALOG.languages.includes(state.config.language) ? state.config.language : DEFAULTS.language);
+
+    // icone a tratto nello spirito di SF Symbols, una per scheda
+    const ICONS = {
+      general: '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4z"/>',
+      claude: '<path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/>',
+      agents: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.4"/><path d="M16 13.6a4.6 4.6 0 0 1 5.5 4.4"/>',
+      git: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7.5v9M18 10c0 4-6 3.5-11 7"/>',
+      instances: '<rect x="3.5" y="4.5" width="17" height="6" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6" rx="1.5"/><path d="M7 7.5h6M7 16.5h6"/>',
+    };
+    const icon = (name) =>
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+    const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
+    const TAB_KEY = 'agent-office.settings-tab';
+    const loadTab = () => {
+      try {
+        const saved = localStorage.getItem(TAB_KEY);
+        return CATALOG.tabs.some((t) => t.id === saved) ? saved : 'general';
+      } catch {
+        return 'general';
+      }
+    };
+    let tab = loadTab();
+    let state = null;
+    /** errore dell'ultimo salvataggio, mostrato finché non se ne fa un altro */
+    let saveError = null;
+    let shown = '';
+
+    /** valore di una chiave di config.json; mancante o non valido: il default (stesse regole del server) */
+    const config = (key) => {
+      const v = state.config[key];
+      if (typeof v !== typeof DEFAULTS[key]) return DEFAULTS[key];
+      const range = RANGES[key];
+      return range && !(Number.isInteger(v) && v >= range[0] && v <= range[1]) ? DEFAULTS[key] : v;
+    };
+    /** menu di una chiave numerica: le scelte proposte, più il valore attuale se scritto a mano con un altro numero */
+    const menu = (key, label, choices, text) => {
+      const value = config(key);
+      const all = choices.includes(value) ? choices : [...choices, value].sort((a, b) => a - b);
+      return `<select data-key="${key}" aria-label="${esc(label)}">${all
+        .map((v) => `<option value="${v}" ${v === value ? 'selected' : ''}>${esc(text(v))}</option>`)
+        .join('')}</select>`;
+    };
+    const shownItem = (item) => {
+      const show = state.config.show;
+      const v = show && typeof show === 'object' ? show[item.key] : undefined;
+      return typeof v === 'boolean' ? v : item.default;
+    };
+
+    const sw = (on, attrs) => `<button class="switch" role="switch" aria-checked="${on}" ${attrs}></button>`;
+    const row = (label, sub, control, subClass = '') =>
+      `<div class="row"><span class="row__text"><span>${label}</span>${sub ? `<span class="row__sub${subClass}">${sub}</span>` : ''}</span>${control}</div>`;
+    const group = (title, rows, note = '') =>
+      `<section class="group">${title ? `<h2 class="group__title">${title}</h2>` : ''}<div class="group__box">${rows.join('')}</div>${note ? `<p class="group__note">${note}</p>` : ''}</section>`;
+
+    /** menu della lingua (#93): "system" e le lingue dell'interfaccia, ognuna col suo nome */
+    const languageMenu = () => {
+      const value = language();
+      return `<select data-key="language" aria-label="${esc(T('settings.language'))}">${CATALOG.languages
+        .map((l) => `<option value="${l}" ${l === value ? 'selected' : ''}>${esc(l === 'system' ? T('settings.languageSystem') : LANGUAGE_NAMES[l])}</option>`)
+        .join('')}</select>`;
+    };
+
+    function general() {
+      const hooks = state.hooks in TEXT.hooksStatus ? state.hooks : 'unknown';
+      const hooksClass = hooks === 'installed' ? ' row__sub--ok' : hooks === 'outdated' ? ' row__sub--warn' : '';
+      const u = state.update;
+      const busy = u.kind === 'checking' || u.kind === 'upgrading';
+      const updateButton = u.kind === 'available'
+        ? `<button class="button button--primary" data-action="update">${esc(T('settings.upgrade', { v: u.latest }))}</button>`
+        : `<button class="button" data-action="update" ${busy ? 'disabled' : ''}>${T('settings.checkUpdates')}</button>`;
+      return [
+        group(T('settings.startup'), [
+          row(T('settings.autostart'), '', sw(state.autostart, 'data-action="autostart"')),
+          row(T('settings.notifyWaiting'), esc(T('settings.notifyWaitingSub')), sw(config('notifyWaiting'), 'data-key="notifyWaiting"')),
+          row(T('settings.notifyDone'), T('settings.notifyDoneSub'), sw(config('notifyDone'), 'data-key="notifyDone"')),
+        ]),
+        group(T('settings.sessions'), [
+          row(T('settings.activeWindow'), T('settings.activeWindowSub'), menu('activeWindowMinutes', T('settings.activeWindow'), ACTIVE_WINDOW_CHOICES, TEXT.minutes)),
+        ]),
+        // lingua dell'interfaccia (#93): vale subito ovunque (app, pannello, ufficio, schede)
+        group('', [row(T('settings.language'), '', languageMenu())]),
+        group(T('settings.claudeCode'), [
+          row(T('settings.hooks'), T(TEXT.hooksStatus[hooks]),
+            `<span class="row__actions"><button class="button" data-action="hooks-install">${T('settings.install')}</button><button class="button" data-action="hooks-remove">${T('settings.remove')}</button></span>`,
+            hooksClass),
+        ]),
+        group(T('settings.updates'), [row(esc(TEXT.version(state.version)), u.kind === 'unknown' ? '' : esc(u.label), updateButton)]),
+      ].join('');
+    }
+
+    /** soglie degli avvisi sui subagenti (#97), in cima alla scheda Agenti */
+    const alerts = () =>
+      group(T('settings.alerts'), [
+        row(T('settings.staleAgent'), esc(T('settings.staleAgentSub')), menu('staleAgentMinutes', T('settings.staleAgent'), STALE_AGENT_CHOICES, TEXT.minutes)),
+        row(T('settings.loopRepeats'), T('settings.loopRepeatsSub'), menu('loopRepeats', T('settings.loopRepeats'), LOOP_REPEATS_CHOICES, TEXT.calls)),
+      ]);
+
+    /** schede delle voci: un interruttore per voce del catalogo, con i posti in cui compare */
+    function items(tabId) {
+      const rows = CATALOG.items
+        .filter((i) => i.tab === tabId)
+        .map((i) => {
+          const label = T(`setting.${i.key}`);
+          return row(esc(label), i.places.map((p) => esc(T(`place.${p}`))).join(' · '), sw(shownItem(i), `data-key="show.${esc(i.key)}" aria-label="${esc(label)}"`));
+        });
+      return (tabId === 'agents' ? alerts() : '') + group(T(`settings.group.${tabId}`), rows, T('settings.showNote'));
+    }
+
+    function render() {
+      if (!state) return;
+      const current = CATALOG.tabs.find((t) => t.id === tab);
+      const title = T(`tab.${current.id}`);
+      const notice = saveError || state.notice;
+      const html = `<nav class="tabs" role="tablist">${CATALOG.tabs
+        .map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.id)}<span>${esc(T(`tab.${t.id}`))}</span></button>`)
+        .join('')}</nav>
+        <main class="content" role="tabpanel" aria-label="${esc(title)}">
+          ${tab === 'general' ? general() : items(tab)}
+          ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
+        </main>`;
+      // un menu aperto non si ridisegna sotto il puntatore
+      if (html === shown || document.activeElement?.tagName === 'SELECT') return;
+      shown = html;
+      document.getElementById('app').innerHTML = html;
+      invoke('settings_layout', { height: document.getElementById('app').offsetHeight, title }).catch(() => {});
+    }
+
+    async function refresh() {
+      try {
+        state = await invoke('settings_state');
+        if (state.locale !== T.locale) {
+          T = agentOfficeTexts(state.locale);
+          document.documentElement.lang = T.locale;
+        }
+        render();
+      } catch {
+        // app in chiusura
+      }
+    }
+    window.agentSettingsRefresh = refresh;
+
+    /** Salva una chiave: subito a schermo, poi nel file; se non riesce si rilegge lo stato vero. */
+    async function save(key, value) {
+      if (key.startsWith('show.')) state.config.show = { ...(typeof state.config.show === 'object' ? state.config.show : {}), [key.slice(5)]: value };
+      else state.config[key] = value;
+      saveError = null;
+      render();
+      try {
+        await invoke('settings_set', { key, value });
+      } catch (e) {
+        saveError = T('settings.saveError', { e });
+      }
+      refresh();
+    }
+
+    function selectTab(id) {
+      tab = id;
+      try {
+        localStorage.setItem(TAB_KEY, id);
+      } catch {
+        // storage non disponibile: si riparte da Generali
+      }
+      render();
+    }
+
+    document.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-tab], [data-key], [data-action]');
+      if (!el || el.disabled || el.tagName === 'SELECT') return;
+      if (el.dataset.tab) selectTab(el.dataset.tab);
+      else if (el.dataset.key) save(el.dataset.key, el.getAttribute('aria-checked') !== 'true');
+      else invoke('settings_action', { action: el.dataset.action }).then(refresh, refresh);
+    });
+    document.addEventListener('change', (e) => {
+      const key = e.target.dataset.key;
+      if (key in RANGES) {
+        e.target.blur();
+        save(key, Number(e.target.value));
+      } else if (key === 'language') {
+        e.target.blur();
+        save(key, e.target.value);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      // ⌘W chiude (l'app non ha la barra dei menu che lo farebbe); ⌘1…⌘5 cambiano scheda
+      if (e.metaKey && e.key === 'w') {
+        e.preventDefault();
+        invoke('settings_action', { action: 'close' });
+      } else if (e.metaKey && /^[1-9]$/.test(e.key) && CATALOG.tabs[Number(e.key) - 1]) {
+        e.preventDefault();
+        selectTab(CATALOG.tabs[Number(e.key) - 1].id);
+      }
+    });
+    refresh();
+  </script>
+</body>
+</html>

@@ -302,6 +302,46 @@ describe('buildSnapshot: terminati di oggi', () => {
   });
 });
 
+describe('buildSnapshot: esito e avvisi (#97)', () => {
+  const alerts = { staleMs: 60 * 60_000, loopRepeats: 5 };
+  const build = (agents: AgentState[], hookEvents: HookEvent[] = []) => {
+    const snap = buildSnapshot({ transcript: { sessions: [session()], agents }, hookEvents, alerts, now: NOW + 2 * 3_600_000 });
+    // in ufficio o già usciti
+    return new Map([...snap.agents, ...(snap.finished ?? [])].map((a) => [a.id, a]));
+  };
+
+  it('fermo da più della soglia: avviso stale; in attesa dell\'utente o terminato no', () => {
+    const later = NOW + 2 * 3_600_000;
+    const by = build([
+      agent({ id: 'fermo', updatedAt: later - 72 * 60_000 }),
+      agent({ id: 'attivo', updatedAt: later - 59 * 60_000 }),
+      agent({ id: 'chiede', updatedAt: later - 72 * 60_000, waiting: true, waitingKind: 'question' }),
+      agent({ id: 'finito', status: 'done', updatedAt: later - 72 * 60_000 }),
+    ]);
+    expect(by.get('fermo')?.alert).toEqual({ kind: 'stale', since: later - 72 * 60_000 });
+    expect(by.get('attivo')?.alert).toBeUndefined();
+    expect(by.get('chiede')?.alert).toBeUndefined();
+    expect(by.get('finito')).toMatchObject({ outcome: 'ok' });
+    expect(by.get('finito')?.alert).toBeUndefined();
+  });
+
+  it('in loop dalla soglia di ripetizioni; terminato dall\'hook: esito ok e niente ripetizioni', () => {
+    const later = NOW + 2 * 3_600_000;
+    const by = build(
+      [
+        agent({ id: 'loop', updatedAt: later - 1000, repeat: { tool: 'Bash', count: 5 } }),
+        agent({ id: 'quasi', updatedAt: later - 1000, repeat: { tool: 'Bash', count: 4 } }),
+        agent({ id: 'stop', updatedAt: later - 5000, repeat: { tool: 'Read', count: 9 } }),
+      ],
+      [{ event: 'SubagentStop', sessionId: 's1', agentId: 'stop', agentType: null, toolName: null, cwd: '/w', timestamp: later - 1000 }],
+    );
+    expect(by.get('loop')?.alert).toEqual({ kind: 'loop', tool: 'Bash', count: 5 });
+    expect(by.get('quasi')?.alert).toBeUndefined();
+    expect(by.get('stop')).toMatchObject({ status: 'done', outcome: 'ok' });
+    expect(by.get('stop')).not.toHaveProperty('repeat');
+  });
+});
+
 describe('buildSnapshot: sessione principale (Claudio Code)', () => {
   const build = (over: Partial<TranscriptSession>, hookEvents: HookEvent[] = [], branch: string | null = null) =>
     buildSnapshot({

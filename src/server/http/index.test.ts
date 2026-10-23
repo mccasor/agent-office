@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEFAULT_DISPLAY } from '../../shared/settings.js';
 import type { Snapshot } from '../../shared/types.js';
 import { startServer, type OfficeServer } from './index.js';
 
@@ -139,6 +140,29 @@ describe('startServer', () => {
     ctrl.abort();
   });
 
+  it('GET /api/config e evento SSE `config`: preferenze di visualizzazione, alla connessione e a ogni cambio', async () => {
+    let res = await fetch(`${server.url}/api/config`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(DEFAULT_DISPLAY);
+
+    const ctrl = new AbortController();
+    const events = await fetch(`${server.url}/api/events`, { signal: ctrl.signal });
+    const reader = events.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    const configs = () => text.split('\n\n').filter((b) => b.startsWith('event: config\n')).map((b) => JSON.parse(b.slice(b.indexOf('data: ') + 6)));
+    while (configs().length < 1) text += decoder.decode((await reader.read()).value, { stream: true });
+    expect(configs()[0]).toEqual(DEFAULT_DISPLAY);
+
+    const hidden = { ...DEFAULT_DISPLAY, show: { ...DEFAULT_DISPLAY.show, 'session.diff': false } };
+    server.setSettings(hidden);
+    while (configs().length < 2) text += decoder.decode((await reader.read()).value, { stream: true });
+    expect(configs()[1]).toEqual(hidden);
+    res = await fetch(`${server.url}/api/config`);
+    expect(await res.json()).toEqual(hidden);
+    ctrl.abort();
+  });
+
   it('close() termina i client SSE aperti', async () => {
     const res = await fetch(`${server.url}/api/events`);
     const reader = res.body!.getReader();
@@ -221,6 +245,42 @@ describe('startServer', () => {
       const res = await raw(server.url, '/api/snapshot', { host });
       expect(res.status).toBe(403);
       expect(res.body).not.toContain('generatedAt');
+    }
+  });
+});
+
+describe('GET /api/history', () => {
+  let webDir: string;
+  afterEach(async () => {
+    await rm(webDir, { recursive: true, force: true });
+  });
+
+  it('passa il giorno richiesto (null = oggi) e risponde 400 se non è valido; 404 senza storico', async () => {
+    webDir = await mkdtemp(join(tmpdir(), 'agent-office-http-history-'));
+    const asked: (string | null)[] = [];
+    const server = await startServer({
+      port: 0,
+      webDir,
+      initial: snap(1),
+      history: async (day) => {
+        asked.push(day);
+        if (day !== null && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+        return { day: day ?? '2026-10-23', days: ['2026-10-23'], events: [], waits: { count: 0, totalMs: 0, sessions: [] }, byType: [], files: [] };
+      },
+    });
+    const without = await startServer({ port: 0, webDir, initial: snap(1) });
+    try {
+      let res = await fetch(`${server.url}/api/history`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect((await res.json()).day).toBe('2026-10-23');
+      res = await fetch(`${server.url}/api/history?day=2026-10-20`);
+      expect((await res.json()).day).toBe('2026-10-20');
+      expect((await fetch(`${server.url}/api/history?day=../x`)).status).toBe(400);
+      expect(asked).toEqual([null, '2026-10-20', '../x']);
+      expect((await fetch(`${without.url}/api/history`)).status).toBe(404);
+    } finally {
+      await Promise.all([server.close(), without.close()]);
     }
   });
 });

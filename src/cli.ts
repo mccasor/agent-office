@@ -1,4 +1,6 @@
 import { execFile } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createTranscriptWatcher } from './server/transcript/index.js';
 import {
@@ -10,11 +12,13 @@ import {
   uninstallHooks,
   uninstallHooksIn,
 } from './server/hooks/index.js';
-import { loadConfig } from './server/config.js';
+import { displaySettings, loadConfig, watchConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
+import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { createThrottle } from './server/throttle.js';
+import { createHistory } from './server/history/index.js';
 import type { Snapshot } from './shared/types.js';
 
 export interface CliOptions {
@@ -98,17 +102,35 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     await repos.poll(Date.now());
   }
 
-  await Promise.all([transcript.start(), hooks.start()]);
-  const snapshot = () =>
-    buildSnapshot({
+  // storico della giornata (#98): attese, cronologia, terminati delle sessioni chiuse, file toccati
+  const history = createHistory({
+    dir: join(dataDir ?? join(homedir(), '.agent-office'), 'history'),
+    filesOf: (sessionId, agentId) => transcript.filesOf(sessionId, agentId),
+  });
+  await Promise.all([transcript.start(), hooks.start(), history.start()]);
+  // cruscotto della giornata (#97): conteggi in memoria da quando il server è partito
+  const today = createDayTracker(Date.now());
+  const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
+  const snapshot = (): Snapshot => {
+    const now = Date.now();
+    const next = buildSnapshot({
       transcript: transcript.current(),
       hookEvents: hooks.current(),
       repoAt: (cwd) => repos.get(cwd),
-      now: Date.now(),
+      alerts,
+      now,
     });
+    // un confronto con lo stato già registrato a ogni pubblicazione; la lista dei terminati chiusi è in cache
+    history.observe(next);
+    const closedFinished = history.closedFinished();
+    const withToday = { ...next, today: today.observe(next, now) };
+    return closedFinished ? { ...withToday, closedFinished } : withToday;
+  };
 
   const first = snapshot();
-  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first });
+  const server = await startServer({
+    port: opts.port, webDir: WEB_DIR, initial: first, settings: displaySettings(config), history: (day) => history.report(day),
+  });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
   let last = '';
@@ -141,6 +163,16 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     void repos.poll(Date.now()).then((changed) => changed && publish());
   }, GIT_POLL_MS);
   publishNow(first);
+  // config.json cambiato (finestra Impostazioni dell'app, #94): vale subito, senza riavvio
+  const unwatchConfig = await watchConfig(
+    (next) => {
+      transcript.setActiveWindowMs(next.activeWindowMinutes * 60_000);
+      Object.assign(alerts, { staleMs: next.staleAgentMinutes * 60_000, loopRepeats: next.loopRepeats });
+      server.setSettings(displaySettings(next));
+      publish();
+    },
+    { dataDir, initial: config },
+  );
 
   return {
     url: server.url,
@@ -148,9 +180,10 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
       clearInterval(tick);
       clearInterval(gitPoll);
       throttle.cancel();
+      unwatchConfig();
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
-      await server.close();
+      await Promise.all([server.close(), history.flush()]);
     },
   };
 }

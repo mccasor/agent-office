@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_DISPLAY, isShown } from '../../shared/settings';
 import type { Snapshot } from '../../shared/types';
 import { connectSnapshotStream, share, toView, useOfficeStore, visibleSnapshot } from './index';
 
@@ -47,7 +48,7 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource);
   fetchMock = vi.fn(() => new Promise<Response>(() => {})); // pending di default
   vi.stubGlobal('fetch', fetchMock);
-  useOfficeStore.setState({ snapshot: null, connected: false });
+  useOfficeStore.setState({ snapshot: null, connected: false, settings: DEFAULT_DISPLAY });
 });
 
 afterEach(() => {
@@ -114,6 +115,22 @@ describe('connectSnapshotStream', () => {
     expect(useOfficeStore.getState().connected).toBe(true);
     last().emit('snapshot', JSON.stringify(snap(42)));
     expect(useOfficeStore.getState().snapshot?.generatedAt).toBe(42);
+    stop();
+  });
+
+  it('evento `config`: preferenze di visualizzazione nello store; JSON malformato ignorato (#94)', () => {
+    const stop = connectSnapshotStream();
+    expect(useOfficeStore.getState().settings).toEqual(DEFAULT_DISPLAY);
+    last().emit('config', JSON.stringify({ language: 'en', show: { 'session.diff': false } }));
+    const { settings } = useOfficeStore.getState();
+    expect(settings.language).toBe('en');
+    expect(isShown(settings, 'session.diff')).toBe(false);
+    expect(isShown(settings, 'session.context')).toBe(true);
+    last().emit('config', '{nope');
+    expect(useOfficeStore.getState().settings).toBe(settings);
+    // stesse preferenze: stesso oggetto, nessun nuovo rendering
+    last().emit('config', JSON.stringify({ language: 'en', show: { 'session.diff': false } }));
+    expect(useOfficeStore.getState().settings).toBe(settings);
     stop();
   });
 
@@ -257,6 +274,29 @@ describe('sessioni visibili nell\'ufficio', () => {
     useOfficeStore.getState().toggleSession('a');
     expect(useOfficeStore.getState().hiddenSessions).toEqual(['sparita']);
     useOfficeStore.setState({ snapshot: null, hiddenSessions: [] });
+  });
+});
+
+describe('subagenti fatti uscire (#97)', () => {
+  const a = (id: string, updatedAt: number) => ({ id, sessionId: 'x', updatedAt }) as Snapshot['agents'][number];
+
+  it('visibleSnapshot li toglie finché non hanno attività più recente', () => {
+    const snap = { status: 'idle', sessions: [], agents: [a('fermo', 100), a('tornato', 300), a('altro', 50)], finished: [a('fermo', 100)], generatedAt: 0 } as Snapshot;
+    const v = visibleSnapshot(snap, [], { fermo: 200, tornato: 200 })!;
+    expect(v.agents.map((x) => x.id)).toEqual(['tornato', 'altro']);
+    expect(v.finished).toEqual([]);
+  });
+
+  it('dismiss salva l\'ora, chiude la scheda e dimentica gli agenti spariti', () => {
+    vi.setSystemTime(5_000);
+    useOfficeStore.setState({
+      snapshot: { status: 'idle', sessions: [], agents: [a('a1', 1), a('a2', 1)], generatedAt: 0 },
+      dismissed: { sparito: 1, a2: 2 },
+      selectedAgent: 'a1',
+    });
+    useOfficeStore.getState().dismiss('a1');
+    expect(useOfficeStore.getState()).toMatchObject({ dismissed: { a2: 2, a1: 5_000 }, selectedAgent: null });
+    useOfficeStore.setState({ snapshot: null, dismissed: {} });
   });
 });
 

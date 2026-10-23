@@ -1,8 +1,8 @@
 import { estimateCost } from '../../shared/pricing.js';
-import type { AgentState, AgentStatus, TokenUsage, TranscriptSession, TranscriptSnapshot } from '../../shared/types.js';
+import type { AgentOutcome, AgentState, AgentStatus, TokenUsage, TranscriptSession, TranscriptSnapshot } from '../../shared/types.js';
 import { classifyArea } from './classify.js';
 import { contextWindowFor } from './models.js';
-import { extractIssues, type FileSummary } from './parser.js';
+import { extractIssues, type FileSummary, type TaskEnd } from './parser.js';
 import { agentKey, type Parsed } from './paths.js';
 
 export interface AgentMeta {
@@ -41,10 +41,18 @@ function addTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
   return { input, output, cacheRead, cacheCreation, cacheCreation1h, total: input + output + cacheRead + cacheCreation };
 }
 
+/** Esito di un subagente terminato: dal suo transcript (interruzione, errore dell'API) e dalla notifica alla sessione. */
+export function outcomeOf(s: Pick<FileSummary, 'stop'>, end: TaskEnd | undefined): AgentOutcome {
+  if (s.stop === 'failed' || end === 'failed') return 'failed';
+  return s.stop === 'interrupted' || end === 'killed' ? 'interrupted' : 'ok';
+}
+
 const mergeIssues = (a: number[], b: number[]): number[] => [...new Set([...a, ...b])].slice(0, 3);
 
-function agentStatus(s: FileSummary, updatedAt: number, t: number, opts: AggregateOptions): AgentStatus {
+function agentStatus(s: FileSummary, updatedAt: number, t: number, opts: AggregateOptions, end?: TaskEnd): AgentStatus {
   const { finished, hasAssistant, backgroundTasks } = s;
+  // fallito o fermato secondo la notifica alla sessione: non arriverà altro, anche se il suo transcript non lo dice
+  if (end === 'failed' || end === 'killed') return 'done';
   // fine del turno ma con comandi in background aperti: riprenderà alla loro notifica, non ha finito
   const done = finished === 'confirmed' || (finished === 'tentative' && t - updatedAt >= opts.doneGraceMs);
   if (done && backgroundTasks === 0) return 'done';
@@ -70,7 +78,12 @@ export function aggregate(
     return g;
   };
 
-  for (const f of files) {
+  const all = [...files];
+  // fine dei subagenti notificata nei transcript della sessione (Claude o un subagente che ne lancia altri)
+  const ends = new Map<string, TaskEnd>();
+  for (const f of all) for (const [id, end] of f.state.taskEnds) ends.set(agentKey(f.parsed.sessionId, id), end);
+
+  for (const f of all) {
     const p = f.parsed;
     const s = f.state;
     const g = group(p.sessionId);
@@ -85,7 +98,8 @@ export function aggregate(
     const agentType = meta?.agentType || UNKNOWN_AGENT_TYPE;
     const description = meta?.description ?? '';
     const updatedAt = Math.max(s.lastAt ?? 0, f.mtime);
-    const status = agentStatus(s, updatedAt, t, opts);
+    const end = ends.get(agentKey(p.sessionId, p.agentId));
+    const status = agentStatus(s, updatedAt, t, opts, end);
     agents.push({
       id: p.agentId,
       sessionId: p.sessionId,
@@ -103,6 +117,10 @@ export function aggregate(
       tool: status === 'done' ? null : s.tool,
       cost: estimateCost(s.model ?? s.declaredModel, s.tokens),
       effort: s.effort,
+      // esito, errori e ripetizioni solo se ci sono: lo snapshot resta snello
+      ...(status === 'done' ? { outcome: outcomeOf(s, end) } : {}),
+      ...(s.toolErrors ? { toolErrors: { ...s.toolErrors } } : {}),
+      ...(status !== 'done' && s.repeat ? { repeat: { ...s.repeat } } : {}),
       // domanda all'utente (AskUserQuestion, ExitPlanMode) del subagente ancora senza risposta
       ...(s.awaitingUser && !s.finished ? { waiting: true, waitingKind: s.awaitingKind, waitingSince: s.awaitingSince } : {}),
     });
@@ -143,6 +161,7 @@ export function aggregate(
       lastTurnMs: s.lastTurnMs,
       compactions: s.compactions,
       lastCompaction: s.lastCompaction && { ...s.lastCompaction },
+      ...(s.toolErrors ? { toolErrors: { ...s.toolErrors } } : {}),
     });
   }
 

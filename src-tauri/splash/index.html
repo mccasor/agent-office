@@ -17,9 +17,15 @@
     <strong>Agent Office</strong>
     <p id="msg">Avvio del server…</p>
   </main>
+  <!-- testi nelle tre lingue, generati da src/shared/i18n -->
+  <script src="i18n.js"></script>
   <script>
     // Il server locale parte insieme all'app: appena risponde si apre l'ufficio.
     const params = new URLSearchParams(location.search);
+    // lingua dell'app (#93), già risolta: `lang` nell'URL
+    const T = agentOfficeTexts(params.get('lang'));
+    document.documentElement.lang = T.locale;
+    document.getElementById('msg').textContent = T('splash.starting');
     const url = 'http://127.0.0.1:' + (params.get('port') || '4318');
     const view = params.get('view') === 'list' ? 'list' : 'pixel';
     let tries = 0;
@@ -28,7 +34,7 @@
         await fetch(url + '/api/status', { mode: 'no-cors', cache: 'no-store' });
         location.replace(url + '/?view=' + view);
       } catch {
-        if (++tries === 20) document.getElementById('msg').textContent = 'Il server non risponde: serve Node ≥ 22 installato.';
+        if (++tries === 20) document.getElementById('msg').textContent = T('splash.noServer');
         setTimeout(check, 500);
       }
     }

@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
+import { useShow, useShown } from '../store';
+import type { SettingKey } from '../../shared/settings';
+import { t } from '../../shared/i18n';
 import { byUrgency, formatCost, formatTokens } from './format';
 import {
-  agentName, agentTask, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
+  agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
 } from './labels';
-import { ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
+import { AlertMark, ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -17,6 +20,7 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
   selected: boolean;
   onSelect: (agentId: string) => void;
 }) {
+  const show = useShown();
   return (
     <li>
       <button
@@ -26,26 +30,40 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
         onClick={() => onSelect(agent.id)}
       >
         <span className="hud-instance__agent-head">
+          {agent.alert && agent.status !== 'done' && show('agent.alerts') && <AlertMark />}
           <span className="hud-instance__agent-name" title={agentName(agent)}>{agentName(agent)}</span>
-          {agent.agentType !== 'main' && <RoleChip area={agent.area} />}
+          {agent.agentType !== 'main' && show('agent.role') && <RoleChip area={agent.area} />}
         </span>
-        {agentTask(agent) && <span className="hud-muted hud-instance__agent-task" title={agent.name}>{agent.name}</span>}
+        {agentTask(agent) && show('agent.task') && <span className="hud-muted hud-instance__agent-task" title={agent.name}>{agent.name}</span>}
         <span className="hud-muted hud-instance__agent-status" title={status}>{status}</span>
       </button>
     </li>
   );
 }
 
-/** Riga meta della sessione: modello, effort, token generati e costo (sessione con i subagenti). */
-export const sessionMeta = (s: SessionState): string =>
-  [s.model, s.effort, `${formatTokens(s.tokensUsed.output)} token generati`, s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null]
+/**
+ * Stato preceduto dall'avviso di un subagente in loop (#97): "Bash ripetuto 6 volte · al lavoro"; chi è fermo lo dice
+ * già lo stato. `alerts` falso: avvisi spenti nelle impostazioni.
+ */
+const withAlert = (a: AgentState, status: string, now: number, alerts: boolean): string =>
+  alerts && a.alert?.kind === 'loop' && a.status !== 'done' ? `${alertShort(a.alert, now)} · ${status}` : status;
+
+/** Riga meta della sessione: modello, effort, token generati e costo (sessione con i subagenti), solo le voci da mostrare. Pura. */
+export const sessionMeta = (s: SessionState, show: (key: SettingKey) => boolean = () => true): string =>
+  [
+    show('session.model') && s.model,
+    show('session.effort') && s.effort,
+    show('session.tokens') && t('tokens.generated', { n: formatTokens(s.tokensUsed.output) }),
+    show('session.cost') && s.cost !== null && s.cost !== undefined ? formatCost(s.cost) : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 
 /** Contatore per stato dei subagenti nella testata dell'istanza ("3 al lavoro · 12 terminati"), al posto del totale. */
 export function StateCounts({ agents }: { agents: AgentState[] }) {
+  const shown = useShow('instances.counts');
   const text = stateCounts(agents);
-  return text ? <span className="hud-instance__count hud-muted" title="Subagenti">{text}</span> : null;
+  return text && shown ? <span className="hud-instance__count hud-muted" title={t('instance.subagents')}>{text}</span> : null;
 }
 
 /**
@@ -63,33 +81,35 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
   onPopOut?: (sessionId: string) => void;
 }) {
   const now = useNow();
+  const show = useShown();
   // bloccata da un subagente: il motivo va sulla sua riga, Claude resta col suo stato
   const blocker = s.waitingAgentId ? agents.find((a) => a.id === s.waitingAgentId) : undefined;
-  const bossStatus = [statusText({ ...s, waiting: s.waiting && !s.waitingAgentId }, now, SESSION_STATUS_LABEL), turnText(s, now)]
+  const bossStatus = [statusText({ ...s, waiting: s.waiting && !s.waitingAgentId }, now, SESSION_STATUS_LABEL), show('session.turn') && turnText(s, now)]
     .filter(Boolean)
     .join(' · ');
   // la scheda di Claude aperta mostra già modello, costo e contesto
   const inCard = boss !== undefined && selected === boss.id;
+  const meta = inCard ? '' : sessionMeta(s, show);
   const sorted = byUrgency(agents);
   const live = sorted.filter((a) => a.status !== 'done');
   const done = sorted.filter((a) => a.status === 'done');
   const row = (a: AgentState) => (
-    <AgentRow key={a.id} agent={a} status={statusText(a, now)} waiting={a.waiting === true} selected={selected === a.id} onSelect={onSelect} />
+    <AgentRow key={a.id} agent={a} status={withAlert(a, statusText(a, now), now, show('agent.alerts'))} waiting={a.waiting === true} selected={selected === a.id} onSelect={onSelect} />
   );
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>
-      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : 'Un subagente') : null} />}
+      {s.waiting && <SessionAlert session={s} who={s.waitingAgentId ? (blocker ? agentName(blocker) : t('card.someSubagent')) : null} />}
       <div className="hud-instance__tools">
-        {!inCard && <p className="hud-instance__meta hud-muted">{sessionMeta(s)}</p>}
+        {meta && <p className="hud-instance__meta hud-muted">{meta}</p>}
         {!inCard && <ContextGauge session={s} slot="inline" />}
-        {onPopOut && <PopOutButton label={`Apri ${projectName(s)} in una finestra`} onClick={() => onPopOut(s.id)} />}
+        {onPopOut && <PopOutButton label={t('popout.session', { project: projectName(s) })} onClick={() => onPopOut(s.id)} />}
       </div>
       {!inCard && <ContextGauge session={s} slot="block" />}
       {s.diff && <DiffStat diff={s.diff} />}
-      <ul className="hud-instance__agents" aria-label={`Agenti di ${projectName(s)}`}>
+      <ul className="hud-instance__agents" aria-label={t('instance.agentsOf', { project: projectName(s) })}>
         {boss && <AgentRow agent={boss} status={bossStatus} waiting={s.waiting && !s.waitingAgentId} selected={selected === boss.id} onSelect={onSelect} />}
         {live.map(row)}
-        {done.length > 0 && (
+        {done.length > 0 && show('instances.done') && (
           <li>
             <details className="hud-done-group">
               <summary>{doneGroupLabel(done.length)}</summary>
@@ -120,6 +140,7 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
   /** apre le informazioni dell'istanza in una finestra a sé */
   onPopOut?: (sessionId: string) => void;
 }) {
+  const show = useShown();
   const active = sessions.filter((s) => s.active);
   // aperta/chiusa scelta dall'utente; senza scelta è aperta solo `first`
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -136,13 +157,13 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
 
   if (active.length === 0) {
     return (
-      <section className="hud-panel hud-panel--empty" aria-label="Istanze">
-        {NO_INSTANCES}
+      <section className="hud-panel hud-panel--empty" aria-label={t('instances.aria')}>
+        {t('instances.none')}
       </section>
     );
   }
   return (
-    <section className="hud-panel hud-instances" aria-label="Istanze">
+    <section className="hud-panel hud-instances" aria-label={t('instances.aria')}>
       {active.map((s) => {
         const own = agents.filter((a) => a.sessionId === s.id);
         const isOpen = open[s.id] ?? s.id === first;
@@ -158,11 +179,11 @@ export function InstancesPanel({ sessions, agents, bosses, focus = null, selecte
               <StatusDot status={s.dot} />
               <span className="hud-instance__name">
                 <span className="hud-title">{projectName(s)}</span>
-                {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}
+                {s.branch && show('session.branch') && <span className="hud-session__branch hud-muted">{s.branch}</span>}
                 {/* sotto il nome, per non stringere progetto e branch */}
                 <StateCounts agents={own} />
               </span>
-              {s.issues.length > 0 && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
+              {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
             </button>
             {isOpen && (
               <InstanceBody

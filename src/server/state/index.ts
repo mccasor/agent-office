@@ -1,4 +1,5 @@
 import type {
+  AgentAlert,
   AgentState,
   AgentStatus,
   HookEvent,
@@ -241,6 +242,34 @@ function keepFinished(agents: AgentState[], now: number): AgentState[] {
   return agents.filter((a) => a.status !== 'done' || keep.has(a.id));
 }
 
+/** soglie degli avvisi sugli agenti (config.json): fermo da troppo tempo, stesso tool ripetuto */
+export interface AlertOptions {
+  staleMs: number;
+  loopRepeats: number;
+}
+
+export const DEFAULT_ALERTS: AlertOptions = { staleMs: 60 * 60_000, loopRepeats: 5 };
+
+/**
+ * Esito e avviso di un subagente risolto: l'esito solo se ha finito (ok se il transcript non dice altro, es. fine
+ * vista dall'hook SubagentStop); l'avviso solo se non ha finito e non aspetta l'utente (ha già il suo fumetto).
+ * "Fermo" prevale su "in loop": un agente che ripeteva un tool e poi si è fermato è soprattutto fermo.
+ */
+export function withAlert(agent: AgentState, now: number, opts: AlertOptions): AgentState {
+  if (agent.status === 'done') {
+    // la ripetizione conta solo per chi lavora
+    const { repeat: _repeat, alert: _alert, ...rest } = agent;
+    return { ...rest, outcome: agent.outcome ?? 'ok' };
+  }
+  const { outcome: _outcome, alert: _alert, ...rest } = agent;
+  let alert: AgentAlert | null = null;
+  if (!agent.waiting) {
+    if (now - agent.updatedAt >= opts.staleMs) alert = { kind: 'stale', since: agent.updatedAt };
+    else if (agent.repeat && agent.repeat.count >= opts.loopRepeats) alert = { kind: 'loop', tool: agent.repeat.tool, count: agent.repeat.count };
+  }
+  return alert ? { ...rest, alert } : rest;
+}
+
 /** quanti agenti terminati oggi restano nello snapshot al massimo */
 export const MAX_FINISHED = 50;
 
@@ -279,13 +308,15 @@ export function buildSnapshot(input: {
   hookEvents: HookEvent[];
   /** stato del repository di un cwd (diff per sessione, branch di riserva); assente = nessun dato git */
   repoAt?: (cwd: string) => RepoState | null;
+  /** soglie degli avvisi; assenti = default */
+  alerts?: AlertOptions;
   now: number;
 }): Snapshot {
   const { transcript, hookEvents, now } = input;
   const hooks = latestAgentHooks(hookEvents);
   const asks = collectAsks(hookEvents);
   const resolved = transcript.agents.map((a) => ({
-    ...resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks),
+    ...withAlert(resolveAgentWaiting(resolveAgent(a, hooks.get(a.id), now), asks), now, input.alerts ?? DEFAULT_ALERTS),
     nickname: nicknameOf(a.id),
   }));
   const agents = keepFinished(resolved, now);

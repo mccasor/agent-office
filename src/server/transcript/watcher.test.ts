@@ -99,6 +99,7 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         tool: null,
         cost: expect.closeTo(0.00062, 7),
         effort: null,
+        outcome: 'ok',
       },
       {
         id: 'a0000000000000002',
@@ -135,6 +136,9 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
     clock = T0 + 11 * 60_000;
     snap = w.current();
     expect(snap.sessions[0]?.active).toBe(false);
+    // finestra allungata da config.json (#94): vale subito, senza riavvio
+    w.setActiveWindowMs(30 * 60_000);
+    expect(w.current().sessions[0]?.active).toBe(true);
   });
 
   it('notifica solo i cambiamenti dei file: gli stati dovuti al tempo si leggono con current()', async () => {

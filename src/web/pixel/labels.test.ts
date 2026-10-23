@@ -1,5 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { LABEL, labelBox, labelText, themeFrom } from './labels';
+import { DEFAULT_DISPLAY } from '../../shared/settings';
+import type { AgentState } from '../../shared/types';
+import { actorTag, LABEL, labelBox, labelText, officeShow, themeFrom } from './labels';
+
+describe('sopra la testa, secondo le impostazioni (#94)', () => {
+  const agent = { id: 'a1', name: 'Build', nickname: 'Marta Commit', area: 'frontend' } as AgentState;
+  const actor = (over: { boss?: boolean; waiting?: boolean; alert?: boolean } = {}) => ({ agent, boss: false, waiting: false, alert: false, ...over });
+  const all = officeShow(DEFAULT_DISPLAY);
+  const off = (...keys: (keyof typeof all)[]) => ({ ...all, ...Object.fromEntries(keys.map((k) => [k, false])) });
+
+  it('preferenze → voci dell\'ufficio', () => {
+    expect(all).toEqual({ labels: true, role: true, bubbles: true, alerts: true });
+    const show = { ...DEFAULT_DISPLAY.show, 'office.labels': false, 'agent.alerts': false };
+    expect(officeShow({ show })).toEqual({ labels: false, role: true, bubbles: true, alerts: false });
+  });
+
+  it('di default: targhetta col ruolo e fumetto per chi aspetta o ha un avviso; niente per chi lavora tranquillo', () => {
+    expect(actorTag(actor({ waiting: true }), false, false, all)).toEqual({
+      spec: { text: 'Marta Commit', area: 'frontend', selected: false, waiting: true }, mark: 'waiting',
+    });
+    expect(actorTag(actor({ alert: true }), false, false, all)?.mark).toBe('alert');
+    expect(actorTag(actor(), false, false, all)).toBeNull();
+    // ingrandito: tutti, compatti senza ruolo
+    expect(actorTag(actor(), false, true, all)?.spec?.area).toBeNull();
+  });
+
+  it('nomi spenti: restano solo i fumetti', () => {
+    expect(actorTag(actor({ waiting: true }), true, true, off('labels'))).toEqual({ spec: null, mark: 'waiting' });
+    expect(actorTag(actor({ boss: true }), true, true, off('labels'))).toBeNull();
+  });
+
+  it('ruolo, fumetto e avviso spenti', () => {
+    expect(actorTag(actor({ waiting: true }), false, false, off('role'))?.spec?.area).toBeNull();
+    expect(actorTag(actor({ waiting: true }), false, false, off('bubbles'))).toMatchObject({ spec: { waiting: true }, mark: null });
+    // l'avviso spento sparisce del tutto: né "!" né targhetta di chi è in evidenza solo per quello
+    expect(actorTag(actor({ alert: true }), false, false, off('alerts'))).toBeNull();
+    expect(actorTag(actor({ alert: true }), true, false, off('alerts'))?.mark).toBeNull();
+  });
+});
 
 // misura finta: 6 px per carattere del nome, 5 per la chip (pixel fisici)
 const measure = (text: string, chip: boolean) => text.length * (chip ? 5 : 6);

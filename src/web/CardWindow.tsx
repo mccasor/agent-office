@@ -7,7 +7,8 @@ import { projectName } from './hud/labels';
 import { StatusDot } from './hud/panels';
 import { openCardWindow, type CardKind } from './hud/popout';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
-import { connectSnapshotStream, useOfficeStore } from './store';
+import { t } from '../shared/i18n';
+import { connectSnapshotStream, useLocale, useOfficeStore, useShown } from './store';
 
 interface AgentView {
   agent: AgentState;
@@ -64,7 +65,7 @@ function AgentWindow({ snapshot, id, onName }: WindowProps) {
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
-  if (!shown) return <Note>Agente non trovato: forse è già uscito dall'ufficio.</Note>;
+  if (!shown) return <Note>{t('cardWindow.agentMissing')}</Note>;
   if (current) return <AgentCard agent={current.agent} session={current.session} />;
   // sparito dallo snapshot: ultimo stato noto, senza tool in uso né attese
   const isBoss = shown.session !== null;
@@ -72,7 +73,7 @@ function AgentWindow({ snapshot, id, onName }: WindowProps) {
   const session = shown.session && { ...shown.session, waiting: false, tool: undefined };
   return (
     <>
-      <Note>{isBoss ? 'Istanza chiusa: ultimo stato noto.' : 'Uscito dall\'ufficio: ultimo stato noto.'}</Note>
+      <Note>{t(isBoss ? 'cardWindow.sessionClosed' : 'cardWindow.agentLeft')}</Note>
       <AgentCard agent={agent} session={session} />
     </>
   );
@@ -81,23 +82,24 @@ function AgentWindow({ snapshot, id, onName }: WindowProps) {
 function SessionWindow({ snapshot, id, onName }: WindowProps) {
   const current = useMemo(() => findSession(snapshot, id), [snapshot, id]);
   const shown = useLastKnown(current);
+  const show = useShown();
   const name = shown ? projectName(shown.session) : null;
   useEffect(() => {
     if (name) onName(name);
   }, [name, onName]);
-  if (!shown) return <Note>Istanza non trovata: forse è già stata chiusa.</Note>;
+  if (!shown) return <Note>{t('cardWindow.sessionMissing')}</Note>;
   const { session: s, boss, agents } = shown;
   return (
     <>
-      {!current && <Note>Istanza chiusa: ultimo stato noto.</Note>}
-      <section className="hud-panel hud-instance hud-instance--open card-window__instance" aria-label={`Istanza ${projectName(s)}`}>
+      {!current && <Note>{t('cardWindow.sessionClosed')}</Note>}
+      <section className="hud-panel hud-instance hud-instance--open card-window__instance" aria-label={t('instance.aria', { project: projectName(s) })}>
         <header className="hud-instance__head card-window__head">
           <StatusDot status={current ? s.dot : 'idle'} />
           <span className="hud-instance__name">
             <span className="hud-title">{projectName(s)}</span>
-            {s.branch && <span className="hud-session__branch hud-muted">{s.branch}</span>}
+            {s.branch && show('session.branch') && <span className="hud-session__branch hud-muted">{s.branch}</span>}
           </span>
-          {s.issues.length > 0 && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
+          {s.issues.length > 0 && show('session.issues') && <span className="hud-label__issue">{s.issues.map((n) => `#${n}`).join(' ')}</span>}
           <StateCounts agents={agents} />
         </header>
         <InstanceBody
@@ -155,18 +157,20 @@ export function CardWindow({ kind, id }: { kind: CardKind; id: string }) {
   const connected = useOfficeStore((s) => s.connected);
   const ref = useRef<HTMLElement>(null);
   const [name, setName] = useState('Agent Office');
+  // lingua (#93): cambiandola si ridisegna la scheda
+  useLocale();
   useFitWindow(ref, name);
   useEffect(() => connectSnapshotStream(), []);
   return (
     <main className="card-window" ref={ref}>
       {!snapshot ? (
-        <Note>Connessione all'ufficio…</Note>
+        <Note>{t('cardWindow.connecting')}</Note>
       ) : kind === 'agent' ? (
         <AgentWindow snapshot={snapshot} id={id} onName={setName} />
       ) : (
         <SessionWindow snapshot={snapshot} id={id} onName={setName} />
       )}
-      {snapshot && !connected && <p className="card-window__offline">Disconnesso: riconnessione…</p>}
+      {snapshot && !connected && <p className="card-window__offline">{t('app.offline')}</p>}
     </main>
   );
 }

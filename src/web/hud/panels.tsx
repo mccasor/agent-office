@@ -1,8 +1,10 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import type { OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import type { AgentAlert, AgentOutcome, OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import { t, tn } from '../../shared/i18n';
+import { useShow } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
-import { AREA_LABEL, COMPACT_HINT, compactionText, DOT_LABEL, projectName, waitingText } from './labels';
+import { alertText, AREA_LABEL, compactionText, DOT_LABEL, OUTCOME_LABEL, projectName, waitingText } from './labels';
 import { ProgressBar } from './ProgressBar';
 import { useNow } from './useNow';
 import './hud.css';
@@ -26,7 +28,7 @@ export function HudOverlay({ children, side = 'left' }: { children?: ReactNode; 
 /** Etichetta colorata del ruolo (#88): stesso colore dell'area nel 2D, nella scheda, nell'accordion e nella lista. */
 export function RoleChip({ area }: { area: WorkArea }) {
   return (
-    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={`Ruolo: ${AREA_LABEL[area]}`}>
+    <span className={`hud-chip hud-chip--${area}`} data-area={area} title={t('role.title', { role: AREA_LABEL[area] })}>
       {AREA_LABEL[area]}
     </span>
   );
@@ -41,13 +43,14 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** Righe aggiunte e tolte, file modificati (modifiche non committate). */
+/** Righe aggiunte e tolte, file modificati (modifiche non committate); nascosta dalle impostazioni (`session.diff`). */
 export function DiffStat({ diff }: { diff: RepoDiff }) {
+  if (!useShow('session.diff')) return null;
   return (
     <div className="hud-diff">
       <span className="hud-added">{`+${diff.linesAdded}`}</span>
       <span className="hud-removed">{`-${diff.linesRemoved}`}</span>
-      <span className="hud-muted">{`${diff.filesChanged} file`}</span>
+      <span className="hud-muted">{tn('diff.files', diff.filesChanged)}</span>
     </div>
   );
 }
@@ -63,6 +66,35 @@ export function SessionAlert({ session, who = null }: {
   const now = useNow();
   const text = waitingText(session.waitingKind, session.waitingSince, now);
   return <p className="hud-session__alert">{who ? `${who} ${text}` : text.charAt(0).toUpperCase() + text.slice(1)}</p>;
+}
+
+/**
+ * Avviso su un subagente fermo o in loop (#97): "!" giallo e la frase; per chi è fermo, con `onDismiss`, il
+ * pulsante "Fallo uscire" (lo nasconde finché non torna attivo).
+ */
+export function AgentAlertNote({ alert, onDismiss }: { alert: AgentAlert; onDismiss?: () => void }) {
+  const now = useNow();
+  return (
+    <div className="hud-alert" role="status">
+      <AlertMark />
+      <p>{alertText(alert, now)}</p>
+      {alert.kind === 'stale' && onDismiss && (
+        <button type="button" className="hud-alert__dismiss" title={t('alert.dismissHint')} onClick={onDismiss}>
+          {t('alert.dismiss')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "!" giallo dell'avviso, lo stesso sopra la testa nell'ufficio. */
+export function AlertMark({ title }: { title?: string }) {
+  return <span className="hud-alert__mark" aria-hidden={title ? undefined : true} title={title}>!</span>;
+}
+
+/** Esito di un terminato (#97): ok, interrotto, fallito, colorato. */
+export function OutcomeTag({ outcome }: { outcome: AgentOutcome }) {
+  return <span className={`hud-outcome hud-outcome--${outcome}`}>{OUTCOME_LABEL[outcome]}</span>;
 }
 
 /** Pallino di stato con la stessa regola dell'icona nella menu bar. */
@@ -90,20 +122,21 @@ export const CONTEXT_BAR_FROM = 50;
  * barra (`slot="block"`, a tutta riga) con "conviene /compact" oltre il 90%. Token e compattazioni nel tooltip.
  */
 export function ContextGauge({ session: s, slot }: { session: SessionState; slot: 'inline' | 'block' }) {
+  const shown = useShow('session.context');
   const pct = percent(s.context.used, s.context.window);
-  if (pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
+  if (!shown || pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
   const title = [`${formatTokens(s.context.used)} / ${formatTokens(s.context.window ?? 0)}`, compactionText(s.compactions, s.lastCompaction)]
     .filter(Boolean)
     .join(' · ');
   const level = contextLevel(pct);
   if (slot === 'inline') {
-    return <span className="hud-pill" data-level={level} title={title}>{`Contesto ${pct}%`}</span>;
+    return <span className="hud-pill" data-level={level} title={title}>{t('context.pill', { pct })}</span>;
   }
   return (
     <div className="list-session__context" title={title}>
-      <span className="hud-muted">{`Contesto ${pct}%`}</span>
-      <ProgressBar value={pct} label={`Contesto usato ${projectName(s)}`} level={level} className="hud-bar--small" />
-      {level === 'danger' && <span className="hud-context__hint">{COMPACT_HINT}</span>}
+      <span className="hud-muted">{t('context.pill', { pct })}</span>
+      <ProgressBar value={pct} label={t('context.usedOf', { project: projectName(s) })} level={level} className="hud-bar--small" />
+      {level === 'danger' && <span className="hud-context__hint">{t('compact.hint')}</span>}
     </div>
   );
 }

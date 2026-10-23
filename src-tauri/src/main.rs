@@ -1,6 +1,7 @@
 //! Agent Office nella menu bar di macOS: icona (scrivania) con il pallino di stato in basso a destra
 //! (verde: Claude lavora, rosso: aspetta un tuo input, grigio: niente di attivo). Al clic un pannello con gli
-//! aggiornamenti, lo stato, le impostazioni, le istanze di Claude Code con i loro agenti e l'uscita (panel.rs).
+//! aggiornamenti, lo stato, le istanze di Claude Code con i loro agenti, le impostazioni e l'uscita (panel.rs); le
+//! impostazioni stanno in una finestra a sé (settings.rs) e si salvano in ~/.agent-office/config.json (config.rs).
 //! Il server Node di agent-office (`--all`) gira in background come processo figlio e chiude con l'app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -16,7 +17,7 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 use tauri::image::Image;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_notification::NotificationExt;
 
 /// Porta dedicata all'app, diversa dal default della CLI (4317) per non scontrarsi con un'istanza da terminale.
@@ -27,10 +28,13 @@ const POLL: Duration = Duration::from_secs(2);
 const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
 mod cards;
+mod config;
+mod i18n;
 mod instance;
 mod notify;
 mod panel;
 mod server;
+mod settings;
 mod updates;
 use notify::{Prefs, SessionFacts};
 use server::{find_node, probe, Probe, Supervisor};
@@ -86,13 +90,14 @@ impl Status {
         }
     }
 
-    fn label(self) -> &'static str {
-        match self {
-            Status::Working => "Claude sta lavorando",
-            Status::Waiting => "Claude aspetta un tuo input",
-            Status::Idle => "Claude è inattivo",
-            Status::Offline => "Server non raggiungibile",
-        }
+    /// Stato a parole, nella lingua dell'app (i18n.rs).
+    fn label(self) -> String {
+        i18n::t(match self {
+            Status::Working => "tray.working",
+            Status::Waiting => "tray.waiting",
+            Status::Idle => "tray.idle",
+            Status::Offline => "tray.offline",
+        })
     }
 }
 
@@ -255,7 +260,7 @@ fn app_dir(app: &AppHandle) -> PathBuf {
 }
 
 /// Installa o rimuove gli hook globali di Claude Code (servono per il pallino rosso e per stati immediati).
-/// In un thread: la ricerca di Node e il comando non bloccano il pannello; l'esito compare nel pannello.
+/// In un thread: la ricerca di Node e il comando non bloccano le impostazioni; l'esito compare lì e nel pannello.
 fn run_hooks(app: &AppHandle, command: &'static str) {
     let app = app.clone();
     thread::spawn(move || {
@@ -273,13 +278,13 @@ fn run_hooks(app: &AppHandle, command: &'static str) {
                 return Ok(());
             }
             let err = String::from_utf8_lossy(&out.stderr);
-            Err(err.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or("errore sconosciuto").to_string())
+            Err(err.lines().rev().map(str::trim).find(|l| !l.is_empty()).map_or_else(|| i18n::t("hooks.unknownError"), str::to_string))
         });
         set_notice(&app, match (result, install) {
-            (Ok(()), true) => "Hook di Claude Code installati".into(),
-            (Ok(()), false) => "Hook di Claude Code rimossi".into(),
-            (Err(e), true) => format!("Installazione degli hook non riuscita: {}", truncate(&e, 80)),
-            (Err(e), false) => format!("Rimozione degli hook non riuscita: {}", truncate(&e, 80)),
+            (Ok(()), true) => i18n::t("hooks.installed"),
+            (Ok(()), false) => i18n::t("hooks.removed"),
+            (Err(e), true) => i18n::tf("hooks.installFailed", &[("e", &truncate(&e, 80))]),
+            (Err(e), false) => i18n::tf("hooks.removeFailed", &[("e", &truncate(&e, 80))]),
         });
     });
 }
@@ -345,7 +350,9 @@ fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
         let _ = window.set_focus();
         return;
     }
-    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}&session={focus}").into());
+    // `lang`: lingua dello splash (#93), finché il server non risponde
+    let lang = i18n::current().code();
+    let url = WebviewUrl::App(format!("index.html?port={PORT}&view={view}&session={focus}&lang={lang}").into());
     let window = WebviewWindowBuilder::new(app, WINDOW_ID, url)
         .title("Agent Office")
         .inner_size(1200.0, 800.0)
@@ -371,14 +378,6 @@ fn set_update_state(app: &AppHandle, state: UpdateState) {
 fn set_notice(app: &AppHandle, text: String) {
     let ui = app.state::<Ui>();
     *ui.notice.lock().unwrap() = Some((text, Instant::now()));
-    let _ = ui.wake.lock().unwrap().send(());
-}
-
-fn toggle_pref(app: &AppHandle, change: impl FnOnce(&mut Prefs)) {
-    let ui = app.state::<Ui>();
-    let mut prefs = ui.prefs.lock().unwrap();
-    change(&mut prefs);
-    notify::save(*prefs);
     let _ = ui.wake.lock().unwrap().send(());
 }
 
@@ -442,20 +441,26 @@ fn update_json(update: &UpdateState, current: &str) -> Value {
     json!({ "kind": kind, "label": update.label(current), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
 }
 
-/// Tutto quello che mostra il pannello: snapshot del server, aggiornamenti, avvisi, impostazioni.
+/// Avviso recente (es. esito degli hook), se non è scaduto.
+fn current_notice(ui: &Ui) -> Option<String> {
+    ui.notice.lock().unwrap().clone().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text)
+}
+
+/// Tutto quello che mostra il pannello: snapshot del server, aggiornamenti, avvisi e le voci da mostrare (`show`).
 #[tauri::command]
 fn panel_state(app: AppHandle) -> Value {
     let ui = app.state::<Ui>();
-    let prefs = *ui.prefs.lock().unwrap();
-    let notice = ui.notice.lock().unwrap().clone().filter(|(_, at)| at.elapsed() < NOTICE_FOR).map(|(text, _)| text);
+    let notice = current_notice(&ui);
     json!({
         "version": version(&app),
         "snapshot": ui.snapshot.lock().unwrap().clone(),
         "serverError": app.state::<Server>().0.lock().unwrap().error(),
         "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": notice,
-        "prefs": { "notifyWaiting": prefs.notify_waiting, "notifyDone": prefs.notify_done },
-        "autostart": autostart_enabled(),
+        // lingua già risolta (#93): i testi li prende la pagina (i18n.js)
+        "locale": i18n::current().code(),
+        // interruttori così come sono nel file: i default li applica la pagina (settings-catalog.js)
+        "show": config::read().remove("show").unwrap_or(Value::Null),
     })
 }
 
@@ -476,11 +481,10 @@ fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
             hide();
             show_office(&app, "list", arg.as_deref());
         }
-        "autostart" => set_autostart(!autostart_enabled()),
-        "notify-waiting" => toggle_pref(&app, |p| p.notify_waiting = !p.notify_waiting),
-        "notify-done" => toggle_pref(&app, |p| p.notify_done = !p.notify_done),
-        "hooks-install" => run_hooks(&app, "install-hooks"),
-        "hooks-remove" => run_hooks(&app, "uninstall-hooks"),
+        "settings" => {
+            hide();
+            settings::open(&app);
+        }
         "update" => on_updates_click(&app),
         "close" => hide(),
         "quit" => app.exit(0),
@@ -497,6 +501,64 @@ fn panel_resize(app: AppHandle, height: f64) {
     }
 }
 
+/// Stato della finestra Impostazioni: config.json com'è (i default li applica la pagina) e quanto non sta nel file.
+#[tauri::command]
+fn settings_state(app: AppHandle) -> Value {
+    let ui = app.state::<Ui>();
+    json!({
+        "version": version(&app),
+        "config": Value::Object(config::read()),
+        "autostart": autostart_enabled(),
+        "hooks": settings::hooks_status(),
+        "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
+        "notice": current_notice(&ui),
+        "locale": i18n::current().code(),
+    })
+}
+
+/// Cambia un'impostazione in config.json (chiave e valore validati in config::set). Il server se ne accorge da solo;
+/// le notifiche, la lingua (#93) e il pannello qui.
+#[tauri::command]
+fn settings_set(window: WebviewWindow, app: AppHandle, key: String, value: Value) -> Result<(), String> {
+    settings::only_settings(&window)?;
+    config::update(|c| config::set(c, &key, value))?;
+    if key.starts_with("notify") {
+        *app.state::<Ui>().prefs.lock().unwrap() = notify::load();
+    }
+    if key == "language" {
+        i18n::load();
+        // tooltip dell'icona subito, senza aspettare il prossimo giro
+        let _ = app.state::<Ui>().wake.lock().unwrap().send(());
+    }
+    refresh_panel(&app);
+    Ok(())
+}
+
+/// Azioni della finestra Impostazioni che non sono chiavi di config.json.
+#[tauri::command]
+fn settings_action(window: WebviewWindow, app: AppHandle, action: String) -> Result<(), String> {
+    settings::only_settings(&window)?;
+    match action.as_str() {
+        "autostart" => set_autostart(!autostart_enabled()),
+        "hooks-install" => run_hooks(&app, "install-hooks"),
+        "hooks-remove" => run_hooks(&app, "uninstall-hooks"),
+        "update" => on_updates_click(&app),
+        "close" => {
+            let _ = window.close();
+        }
+        _ => return Err(format!("azione sconosciuta: {action}")),
+    }
+    Ok(())
+}
+
+/// La pagina delle impostazioni chiede l'altezza della scheda mostrata e ne dà il nome come titolo.
+#[tauri::command]
+fn settings_layout(window: WebviewWindow, height: f64, title: String) -> Result<(), String> {
+    settings::only_settings(&window)?;
+    settings::layout(&window, height, &title);
+    Ok(())
+}
+
 /// Il pannello rilegge lo stato (se è aperto).
 fn refresh_panel(app: &AppHandle) {
     if let Some(panel) = app.get_webview_window(panel::PANEL_ID) {
@@ -511,7 +573,15 @@ fn main() {
     instance::take_over();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .invoke_handler(tauri::generate_handler![panel_state, panel_action, panel_resize])
+        .invoke_handler(tauri::generate_handler![
+            panel_state,
+            panel_action,
+            panel_resize,
+            settings_state,
+            settings_set,
+            settings_action,
+            settings_layout
+        ])
         .manage(Server(Mutex::new(Supervisor::default())))
         .setup(|app| {
             // solo menu bar: niente icona nel Dock
@@ -525,6 +595,8 @@ fn main() {
             thread::spawn(register_bundle);
 
             let handle = app.handle().clone();
+            // lingua prima di tutto il resto: pannello, notifiche e tooltip la usano da subito
+            i18n::load();
             let (wake, woken) = mpsc::channel::<()>();
             app.manage(Ui {
                 update: Mutex::new(UpdateState::Unknown),
@@ -572,6 +644,8 @@ fn main() {
             let dir = app_dir(&handle);
             thread::spawn(move || {
                 let mut last: Option<(Overview, bool)> = None;
+                // tooltip mostrato: cambia con lo stato e con la lingua
+                let mut tooltip = String::new();
                 let mut etag: Option<String> = None;
                 // stato delle sessioni al giro precedente: al primo snapshot nessuna notifica (non è un cambiamento)
                 let mut seen: Option<Vec<SessionFacts>> = None;
@@ -582,6 +656,8 @@ fn main() {
                         Fetched::Failed => Probe::Down,
                     };
                     handle.state::<Server>().0.lock().unwrap().tick(&dir, PORT, status);
+                    // config.json cambiato a mano, o lingua di macOS cambiata: vale dal giro successivo
+                    i18n::load();
                     let dark = dark_menu_bar(&handle);
                     let Some(overview) = fetch_overview(&mut etag).or_else(|| last.as_ref().map(|(o, ..)| o.clone())) else {
                         let _ = woken.recv_timeout(POLL);
@@ -594,13 +670,17 @@ fn main() {
                         seen = Some(overview.facts.clone());
                     }
                     // l'icona dipende solo da stato e aspetto della barra: non va ridisegnata a ogni snapshot nuovo
-                    if icon_changed(last.as_ref(), overview.status, dark) {
-                        if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+                    if let Some(tray) = handle.tray_by_id(TRAY_ID) {
+                        if icon_changed(last.as_ref(), overview.status, dark) {
                             if let Ok(icon) = Image::from_bytes(overview.status.tray_icon(dark)) {
                                 let _ = tray.set_icon(Some(icon));
                                 let _ = tray.set_icon_as_template(false);
                             }
-                            let _ = tray.set_tooltip(Some(format!("Agent Office: {}", overview.status.label())));
+                        }
+                        let text = format!("Agent Office: {}", overview.status.label());
+                        if text != tooltip {
+                            let _ = tray.set_tooltip(Some(text.as_str()));
+                            tooltip = text;
                         }
                     }
                     let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
@@ -608,16 +688,19 @@ fn main() {
                         *handle.state::<Ui>().snapshot.lock().unwrap() = overview.snapshot.clone();
                         last = Some((overview, dark));
                     }
-                    // il pannello aperto rilegge lo stato: cambia anche senza un nuovo snapshot (avvisi, aggiornamenti)
+                    // pannello e impostazioni aperti rileggono lo stato: cambia anche senza un nuovo snapshot (avvisi,
+                    // aggiornamenti, hook)
                     refresh_panel(&handle);
+                    settings::refresh(&handle);
                     let _ = woken.recv_timeout(POLL);
                 }
             });
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede si chiudono davvero
-            WindowEvent::CloseRequested { api, .. } if !cards::is_card(window.label()) => {
+            // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede e le impostazioni si
+            // chiudono davvero
+            WindowEvent::CloseRequested { api, .. } if !cards::is_card(window.label()) && window.label() != settings::SETTINGS_ID => {
                 api.prevent_close();
                 let _ = window.hide();
             }
