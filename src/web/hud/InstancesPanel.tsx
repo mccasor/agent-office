@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
+import { useShow } from '../store';
 import { byUrgency, formatCost, formatTokens } from './format';
 import {
   agentName, agentTask, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
@@ -44,8 +45,9 @@ export const sessionMeta = (s: SessionState): string =>
 
 /** Contatore per stato dei subagenti nella testata dell'istanza ("3 al lavoro · 12 terminati"), al posto del totale. */
 export function StateCounts({ agents }: { agents: AgentState[] }) {
+  const shown = useShow('instances.counts');
   const text = stateCounts(agents);
-  return text ? <span className="hud-instance__count hud-muted" title="Subagenti">{text}</span> : null;
+  return text && shown ? <span className="hud-instance__count hud-muted" title="Subagenti">{text}</span> : null;
 }
 
 /**

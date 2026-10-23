@@ -12,7 +12,7 @@ import {
   uninstallHooks,
   uninstallHooksIn,
 } from './server/hooks/index.js';
-import { loadConfig } from './server/config.js';
+import { displaySettings, loadConfig, watchConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
 import { buildSnapshot } from './server/state/index.js';
 import { startServer } from './server/http/index.js';
@@ -121,7 +121,9 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
   };
 
   const first = snapshot();
-  const server = await startServer({ port: opts.port, webDir: WEB_DIR, initial: first, history: (day) => history.report(day) });
+  const server = await startServer({
+    port: opts.port, webDir: WEB_DIR, initial: first, settings: displaySettings(config), history: (day) => history.report(day),
+  });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
   let last = '';
@@ -154,6 +156,15 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
     void repos.poll(Date.now()).then((changed) => changed && publish());
   }, GIT_POLL_MS);
   publishNow(first);
+  // config.json cambiato (finestra Impostazioni dell'app, #94): vale subito, senza riavvio
+  const unwatchConfig = await watchConfig(
+    (next) => {
+      transcript.setActiveWindowMs(next.activeWindowMinutes * 60_000);
+      server.setSettings(displaySettings(next));
+      publish();
+    },
+    { dataDir, initial: config },
+  );
 
   return {
     url: server.url,
@@ -161,6 +172,7 @@ async function serve(opts: CliOptions): Promise<RunningOffice> {
       clearInterval(tick);
       clearInterval(gitPoll);
       throttle.cancel();
+      unwatchConfig();
       unsubscribe.forEach((off) => off());
       await Promise.all([transcript.stop(), hooks.stop()]);
       await Promise.all([server.close(), history.flush()]);

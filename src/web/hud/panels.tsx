@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { OfficeStatus, RepoDiff, SessionState, WorkArea } from '../../shared/types';
+import { useShow } from '../store';
 import { contextLevel, formatTokens, percent } from './format';
 import { AREA_LABEL, COMPACT_HINT, compactionText, DOT_LABEL, projectName, waitingText } from './labels';
 import { ProgressBar } from './ProgressBar';
@@ -41,8 +42,9 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** Righe aggiunte e tolte, file modificati (modifiche non committate). */
+/** Righe aggiunte e tolte, file modificati (modifiche non committate); nascosta dalle impostazioni (`session.diff`). */
 export function DiffStat({ diff }: { diff: RepoDiff }) {
+  if (!useShow('session.diff')) return null;
   return (
     <div className="hud-diff">
       <span className="hud-added">{`+${diff.linesAdded}`}</span>
@@ -90,8 +92,9 @@ export const CONTEXT_BAR_FROM = 50;
  * barra (`slot="block"`, a tutta riga) con "conviene /compact" oltre il 90%. Token e compattazioni nel tooltip.
  */
 export function ContextGauge({ session: s, slot }: { session: SessionState; slot: 'inline' | 'block' }) {
+  const shown = useShow('session.context');
   const pct = percent(s.context.used, s.context.window);
-  if (pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
+  if (!shown || pct === null || (pct < CONTEXT_BAR_FROM) !== (slot === 'inline')) return null;
   const title = [`${formatTokens(s.context.used)} / ${formatTokens(s.context.window ?? 0)}`, compactionText(s.compactions, s.lastCompaction)]
     .filter(Boolean)
     .join(' · ');

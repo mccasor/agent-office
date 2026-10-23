@@ -1,4 +1,4 @@
-import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +45,16 @@ describe('e2e: CLI -> API', () => {
     expect(snap.agents.map((a) => a.id)).toEqual(['a0000000000000002']);
     expect(snap.agents.find((a) => a.id === 'a0000000000000002')!.progress).toEqual({ completed: 1, total: 3 });
     expect(JSON.stringify(snap)).not.toMatch(/"content"|"text"|"prompt"/);
+  });
+
+  it('config.json cambiato: preferenze nuove su /api/config senza riavvio (#94)', async () => {
+    let res = await fetch(`${office.url}/api/config`);
+    expect(((await res.json()) as { show: Record<string, boolean> }).show['session.diff']).toBe(true);
+    writeFileSync(join(dataDir, 'events', 'config.json'), JSON.stringify({ show: { 'session.diff': false }, notifyDone: true }));
+    await vi.waitFor(async () => {
+      res = await fetch(`${office.url}/api/config`);
+      expect(((await res.json()) as { show: Record<string, boolean> }).show['session.diff']).toBe(false);
+    });
   });
 
   it('serve la pagina web', async () => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_DISPLAY, isShown, toDisplaySettings, type DisplaySettings, type SettingKey } from '../../shared/settings';
 import type { Snapshot } from '../../shared/types';
 
 /** pixel = ufficio (2D in pixel art), list = lista delle sessioni, history = analisi della giornata (#98) */
@@ -24,7 +25,10 @@ export interface OfficeStoreState {
   focusSession: string | null;
   /** agente (o `boss:<sessionId>`) di cui è aperta la scheda; null = nessuna. Non salvato tra le visite */
   selectedAgent: string | null;
+  /** preferenze di visualizzazione da config.json (#94), dal server; i default finché non arrivano */
+  settings: DisplaySettings;
   setSnapshot(snapshot: Snapshot): void;
+  setSettings(settings: DisplaySettings): void;
   /** mostra la vista e, se indicata, evidenzia la sessione */
   focus(view: OfficeView, sessionId: string | null): void;
   setConnected(connected: boolean): void;
@@ -99,7 +103,10 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   // ?session=<id> (dal pannello della menu bar alla prima apertura)
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   selectedAgent: null,
+  settings: DEFAULT_DISPLAY,
   setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
+  // stessi oggetti se nulla cambia: i componenti che leggono una voce non si ridisegnano
+  setSettings: (settings) => set({ settings: share(get().settings, settings) }),
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
     set({ view, focusSession: sessionId || null });
@@ -122,6 +129,12 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   select: (agentId) => set({ selectedAgent: agentId }),
 }));
 
+/** Preferenze di visualizzazione correnti. */
+export const useSettings = (): DisplaySettings => useOfficeStore((s) => s.settings);
+
+/** La voce `key` del catalogo (shared/settings.ts) è da mostrare: `{useShow('session.diff') && <DiffStat …/>}`. */
+export const useShow = (key: SettingKey): boolean => useOfficeStore((s) => isShown(s.settings, key));
+
 /** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti). Pura. */
 export function visibleSnapshot(snapshot: Snapshot | null, hidden: readonly string[]): Snapshot | null {
   if (!snapshot || hidden.length === 0) return snapshot;
@@ -142,13 +155,14 @@ const BACKOFF_MAX_MS = 15_000;
  * Apre l'EventSource su /api/events (con riconnessione) e aggiorna lo store. Ritorna la funzione di chiusura.
  *
  * - evento SSE `snapshot` (JSON) → setSnapshot; JSON malformato ignorato
+ * - evento SSE `config` (preferenze di visualizzazione, alla connessione e quando cambiano) → setSettings
  * - onopen → connected=true e backoff azzerato; onerror → connected=false, chiusura e
  *   riconnessione dopo 1s, 2s, 4s, … fino a 15s
  * - fetch iniziale di /api/snapshot come fallback: applicato solo se lo stream non ha ancora
  *   consegnato uno snapshot (evita di sovrascrivere dati più recenti)
  */
 export function connectSnapshotStream(url = '/api/events'): () => void {
-  const { setSnapshot, setConnected } = useOfficeStore.getState();
+  const { setSnapshot, setConnected, setSettings } = useOfficeStore.getState();
   const abort = new AbortController();
   let source: EventSource | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -175,6 +189,14 @@ export function connectSnapshotStream(url = '/api/events'): () => void {
     const es = new EventSource(url);
     source = es;
     es.addEventListener('snapshot', (ev) => apply((ev as MessageEvent<string>).data, true));
+    es.addEventListener('config', (ev) => {
+      if (disposed) return;
+      try {
+        setSettings(toDisplaySettings(JSON.parse((ev as MessageEvent<string>).data)));
+      } catch {
+        // JSON malformato: restano le preferenze di prima
+      }
+    });
     es.onopen = () => {
       if (disposed || source !== es) return;
       delay = BACKOFF_MIN_MS;

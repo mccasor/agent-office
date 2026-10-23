@@ -24,6 +24,7 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "check": "npm run lint && npm run typecheck && npm run build && npm test",
+    "settings:catalog": "tsx scripts/settings-catalog.ts",
     "app:dev": "tauri dev",
     "app:build": "tauri build",
     "app:release": "node scripts/release.mjs"

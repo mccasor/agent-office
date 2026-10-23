@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_DISPLAY, isShown } from '../../shared/settings';
 import type { Snapshot } from '../../shared/types';
 import { connectSnapshotStream, share, toView, useOfficeStore, visibleSnapshot } from './index';
 
@@ -47,7 +48,7 @@ beforeEach(() => {
   vi.stubGlobal('EventSource', FakeEventSource);
   fetchMock = vi.fn(() => new Promise<Response>(() => {})); // pending di default
   vi.stubGlobal('fetch', fetchMock);
-  useOfficeStore.setState({ snapshot: null, connected: false });
+  useOfficeStore.setState({ snapshot: null, connected: false, settings: DEFAULT_DISPLAY });
 });
 
 afterEach(() => {
@@ -114,6 +115,22 @@ describe('connectSnapshotStream', () => {
     expect(useOfficeStore.getState().connected).toBe(true);
     last().emit('snapshot', JSON.stringify(snap(42)));
     expect(useOfficeStore.getState().snapshot?.generatedAt).toBe(42);
+    stop();
+  });
+
+  it('evento `config`: preferenze di visualizzazione nello store; JSON malformato ignorato (#94)', () => {
+    const stop = connectSnapshotStream();
+    expect(useOfficeStore.getState().settings).toEqual(DEFAULT_DISPLAY);
+    last().emit('config', JSON.stringify({ language: 'en', show: { 'session.diff': false } }));
+    const { settings } = useOfficeStore.getState();
+    expect(settings.language).toBe('en');
+    expect(isShown(settings, 'session.diff')).toBe(false);
+    expect(isShown(settings, 'session.context')).toBe(true);
+    last().emit('config', '{nope');
+    expect(useOfficeStore.getState().settings).toBe(settings);
+    // stesse preferenze: stesso oggetto, nessun nuovo rendering
+    last().emit('config', JSON.stringify({ language: 'en', show: { 'session.diff': false } }));
+    expect(useOfficeStore.getState().settings).toBe(settings);
     stop();
   });
 
