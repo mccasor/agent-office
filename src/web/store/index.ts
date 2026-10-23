@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Snapshot } from '../../shared/types';
+import type { AgentState, Snapshot } from '../../shared/types';
 
 /** pixel = ufficio (2D in pixel art), list = lista delle sessioni */
 export type OfficeView = 'pixel' | 'list';
@@ -24,6 +24,8 @@ export interface OfficeStoreState {
   focusSession: string | null;
   /** agente (o `boss:<sessionId>`) di cui è aperta la scheda; null = nessuna. Non salvato tra le visite */
   selectedAgent: string | null;
+  /** subagenti fatti uscire a mano ("Fallo uscire", #97) e quando: nascosti finché non hanno attività più recente */
+  dismissed: Record<string, number>;
   setSnapshot(snapshot: Snapshot): void;
   /** mostra la vista e, se indicata, evidenzia la sessione */
   focus(view: OfficeView, sessionId: string | null): void;
@@ -31,6 +33,8 @@ export interface OfficeStoreState {
   setView(view: OfficeView): void;
   toggleSession(sessionId: string): void;
   select(agentId: string | null): void;
+  /** fa uscire un subagente fermo: sparisce da ufficio e lista finché non torna attivo */
+  dismiss(agentId: string): void;
 }
 
 const PREFS_KEY = 'agent-office.prefs';
@@ -56,6 +60,34 @@ function savePrefs(prefs: Pick<OfficeStoreState, 'view' | 'hiddenSessions'>): vo
     // storage non disponibile (finestra privata, dati bloccati): si resta sui valori in memoria
   }
 }
+
+const DISMISSED_KEY = 'agent-office.dismissed';
+
+/**
+ * Subagenti fatti uscire, salvati nel browser come le sessioni nascoste: è una scelta di chi guarda, non uno stato
+ * dell'agente, e il server resta in sola lettura. Senza storage valgono solo per questa pagina.
+ */
+function loadDismissed(): Record<string, number> {
+  try {
+    const raw: unknown = JSON.parse(globalThis.localStorage?.getItem(DISMISSED_KEY) ?? '{}');
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+    return Object.fromEntries(Object.entries(raw).filter((e): e is [string, number] => typeof e[1] === 'number'));
+  } catch {
+    return {};
+  }
+}
+
+function saveDismissed(dismissed: Record<string, number>): void {
+  try {
+    globalThis.localStorage?.setItem(DISMISSED_KEY, JSON.stringify(dismissed));
+  } catch {
+    // storage non disponibile: si resta sui valori in memoria
+  }
+}
+
+/** Fatto uscire e da allora senza attività: resta fuori. Torna attivo (updatedAt più recente): rientra. */
+export const isDismissed = (a: Pick<AgentState, 'id' | 'updatedAt'>, dismissed: Readonly<Record<string, number>>): boolean =>
+  Object.hasOwn(dismissed, a.id) && a.updatedAt <= dismissed[a.id]!;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const idOf = (v: unknown): unknown => (isObject(v) ? v.id : undefined);
@@ -99,6 +131,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   // ?session=<id> (dal pannello della menu bar alla prima apertura)
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   selectedAgent: null,
+  dismissed: loadDismissed(),
   setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
@@ -120,17 +153,30 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
     savePrefs({ view: get().view, hiddenSessions: next });
   },
   select: (agentId) => set({ selectedAgent: agentId }),
+  dismiss: (agentId) => {
+    // si tengono solo gli agenti ancora nello snapshot, così l'elenco non cresce all'infinito
+    const live = new Set([...(get().snapshot?.agents ?? []), ...(get().snapshot?.finished ?? [])].map((a) => a.id));
+    const kept = Object.entries(get().dismissed).filter(([id]) => live.has(id));
+    const next = { ...Object.fromEntries(kept), [agentId]: Date.now() };
+    set({ dismissed: next, selectedAgent: get().selectedAgent === agentId ? null : get().selectedAgent });
+    saveDismissed(next);
+  },
 }));
 
-/** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti). Pura. */
-export function visibleSnapshot(snapshot: Snapshot | null, hidden: readonly string[]): Snapshot | null {
-  if (!snapshot || hidden.length === 0) return snapshot;
+/** Snapshot ristretto alle sessioni visibili nell'ufficio (e ai loro agenti), senza i subagenti fatti uscire. Pura. */
+export function visibleSnapshot(
+  snapshot: Snapshot | null,
+  hidden: readonly string[],
+  dismissed: Readonly<Record<string, number>> = {},
+): Snapshot | null {
+  if (!snapshot || (hidden.length === 0 && Object.keys(dismissed).length === 0)) return snapshot;
   const h = new Set(hidden);
+  const shown = (a: AgentState) => !h.has(a.sessionId) && !isDismissed(a, dismissed);
   return {
     ...snapshot,
     sessions: snapshot.sessions.filter((s) => !h.has(s.id)),
-    agents: snapshot.agents.filter((a) => !h.has(a.sessionId)),
-    finished: snapshot.finished?.filter((a) => !h.has(a.sessionId)),
+    agents: snapshot.agents.filter(shown),
+    finished: snapshot.finished?.filter(shown),
   };
 }
 

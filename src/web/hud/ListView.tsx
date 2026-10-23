@@ -1,13 +1,15 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import type { AgentState, SessionState } from '../../shared/types';
+import type { AgentState, DayStats, SessionState } from '../../shared/types';
 import type { OfficeView } from '../store';
 import { byUrgency, elapsed, formatCost, formatDuration, formatTokens, percent } from './format';
 import { StateCounts } from './InstancesPanel';
 import {
-  agentName, agentTask, doneGroupLabel, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName, SESSION_STATUS_LABEL, statusText, turnText,
+  agentName, agentTask, alertShort, DISMISS_HINT, DISMISS_LABEL, doneGroupLabel, INSTANCES_TITLE, NO_INSTANCES, NO_MATCH, projectName,
+  SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
-import { ContextGauge, DiffStat, RoleChip, StatusDot } from './panels';
+import { AlertMark, ContextGauge, DiffStat, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
+import { TodayBar } from './TodayBar';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -86,7 +88,13 @@ function bySession(agents: readonly AgentState[]): Map<string, AgentState[]> {
 
 const NONE: AgentState[] = [];
 
-/** Agenti della sessione terminati oggi: nome, durata, costo. Chiusa di default. */
+/** Errori dei tool in breve ("2 errori"), con il dettaglio nel tooltip; mai il testo dell'errore. */
+function ToolErrorsNote({ agent }: { agent: AgentState }) {
+  if (!agent.toolErrors) return null;
+  return <span className="list-agent__errors" title={toolErrorsText(agent.toolErrors)}>{` · ${toolErrorsShort(agent.toolErrors)}`}</span>;
+}
+
+/** Agenti della sessione terminati oggi: nome, esito, durata, costo ed errori. Chiusa di default. */
 const FinishedToday = memo(function FinishedToday({ agents }: { agents: AgentState[] }) {
   if (agents.length === 0) return null;
   return (
@@ -101,8 +109,9 @@ const FinishedToday = memo(function FinishedToday({ agents }: { agents: AgentSta
               {[`in ${formatDuration(a.updatedAt - a.startedAt)}`, `${formatTokens(a.tokens.output)} token`, a.cost !== null && a.cost !== undefined ? formatCost(a.cost) : null]
                 .filter(Boolean)
                 .join(' · ')}
+              <ToolErrorsNote agent={a} />
             </span>
-            <span />
+            {a.outcome ? <OutcomeTag outcome={a.outcome} /> : <span />}
           </li>
         ))}
       </ul>
@@ -110,20 +119,35 @@ const FinishedToday = memo(function FinishedToday({ agents }: { agents: AgentSta
   );
 }, sameProps);
 
-/** Riga di un subagente: nome, issue, ruolo, stato (o attesa, tool, da quanto è fermo), durata e avanzamento. */
-const AgentLine = memo(function AgentLine({ agent: a, now }: { agent: AgentState; now: number }) {
+/**
+ * Riga di un subagente: nome, issue, ruolo, stato (o attesa, tool, da quanto è fermo), durata e avanzamento; per un
+ * terminato esito e costo; l'avviso se è fermo o in loop ("!" giallo, con "Fallo uscire" se è fermo); gli errori.
+ */
+const AgentLine = memo(function AgentLine({ agent: a, now, onDismiss }: { agent: AgentState; now: number; onDismiss?: (id: string) => void }) {
   const pct = a.progress ? percent(a.progress.completed, a.progress.total) : null;
+  const done = a.status === 'done';
+  const alert = !done && a.alert ? alertShort(a.alert, now) : null;
+  const cost = done && a.cost !== null && a.cost !== undefined ? ` · ${formatCost(a.cost)}` : '';
+  let last = pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />;
+  if (done && a.outcome) last = <OutcomeTag outcome={a.outcome} />;
+  else if (a.alert?.kind === 'stale' && onDismiss) {
+    last = <button type="button" className="hud-alert__dismiss" title={DISMISS_HINT} onClick={() => onDismiss(a.id)}>{DISMISS_LABEL}</button>;
+  }
   return (
-    <li className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}`}>
+    <li className={`list-agent list-agent--${a.status}${a.waiting ? ' list-agent--waiting' : ''}${alert ? ' list-agent--alert' : ''}`}>
       <span className="list-agent__name" title={a.name}>
+        {alert && <AlertMark title={alert} />}
         <AgentName agent={a} />
         {a.issues.length > 0 && <span className="hud-label__issue">{issueText(a.issues)}</span>}
       </span>
       <RoleChip area={a.area} />
       <span className="list-agent__status hud-muted">
-        {`${statusText(a, now)} · ${a.status === 'done' ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}`}
+        {/* chi è fermo lo dice già lo stato ("fermo da 1 h 12") */}
+        {a.alert?.kind === 'loop' && !done ? `${alert} · ` : ''}
+        {`${statusText(a, now)} · ${done ? 'in' : 'da'} ${formatDuration(elapsed(a, now))}${cost}`}
+        <ToolErrorsNote agent={a} />
       </span>
-      {pct === null ? <span /> : <ProgressBar value={pct} label={`Avanzamento ${agentName(a)}`} className="hud-bar--small" />}
+      {last}
     </li>
   );
 });
@@ -132,7 +156,7 @@ const AgentLine = memo(function AgentLine({ agent: a, now }: { agent: AgentState
  * Scheda di un'istanza nella lista: si ridisegna solo se cambiano la sessione, i suoi agenti, il filtro dei
  * terminati, la casella, l'evidenza o l'ora corrente (useNow, ogni 15 s, per gli orari relativi).
  */
-const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, hideDone, shown, focused, now, onToggle }: {
+const SessionCard = memo(function SessionCard({ session: s, agents: all, finished, hideDone, shown, focused, now, onToggle, onDismiss }: {
   session: SessionState;
   agents: AgentState[];
   finished: AgentState[];
@@ -141,6 +165,7 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
   focused: boolean;
   now: number;
   onToggle: (sessionId: string) => void;
+  onDismiss?: (agentId: string) => void;
 }) {
   const own = hideDone ? all.filter((a) => a.status !== 'done') : all;
   // dal più urgente; i terminati ancora in ufficio in un gruppo richiudibile
@@ -186,7 +211,7 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
         <ContextGauge session={s} slot="inline" />
       </div>
       <ContextGauge session={s} slot="block" />
-      {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} />)}</ul>}
+      {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} onDismiss={onDismiss} />)}</ul>}
       {done.length > 0 && (
         <details className="list-finished">
           <summary>{doneGroupLabel(done.length)}</summary>
@@ -221,7 +246,7 @@ export function ViewToggle({ view, onChange }: { view: OfficeView; onChange: (vi
  * Vista lista: una scheda per istanza (pallino di stato, progetto, branch, issue, modello, token) con i suoi agenti;
  * la casella "Nell'ufficio" sceglie quali sessioni mostrare nell'ufficio.
  */
-export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null }: {
+export function ListView({ sessions, agents, finished = [], hidden, onToggle, focus = null, today, onDismiss }: {
   sessions: SessionState[];
   agents: AgentState[];
   /** terminati oggi e già usciti dall'ufficio */
@@ -230,6 +255,10 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
   onToggle: (sessionId: string) => void;
   /** sessione da evidenziare e portare in vista */
   focus?: string | null;
+  /** cruscotto della giornata (#97); assente con un server vecchio */
+  today?: DayStats;
+  /** fa uscire un subagente fermo */
+  onDismiss?: (agentId: string) => void;
 }) {
   const now = useNow();
   const [filter, setFilter] = useState(loadFilter);
@@ -255,6 +284,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
   );
   return (
     <main className="list-view" aria-label="Istanze">
+      {today && <TodayBar today={today} />}
       <h1 className="list-view__title">{INSTANCES_TITLE}</h1>
       {active.length > 0 && (
         <div className="list-filter" role="search">
@@ -288,6 +318,7 @@ export function ListView({ sessions, agents, finished = [], hidden, onToggle, fo
           focused={s.id === focus}
           now={now}
           onToggle={onToggle}
+          onDismiss={onDismiss}
         />
       ))}
     </main>

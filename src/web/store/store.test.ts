@@ -260,6 +260,29 @@ describe('sessioni visibili nell\'ufficio', () => {
   });
 });
 
+describe('subagenti fatti uscire (#97)', () => {
+  const a = (id: string, updatedAt: number) => ({ id, sessionId: 'x', updatedAt }) as Snapshot['agents'][number];
+
+  it('visibleSnapshot li toglie finché non hanno attività più recente', () => {
+    const snap = { status: 'idle', sessions: [], agents: [a('fermo', 100), a('tornato', 300), a('altro', 50)], finished: [a('fermo', 100)], generatedAt: 0 } as Snapshot;
+    const v = visibleSnapshot(snap, [], { fermo: 200, tornato: 200 })!;
+    expect(v.agents.map((x) => x.id)).toEqual(['tornato', 'altro']);
+    expect(v.finished).toEqual([]);
+  });
+
+  it('dismiss salva l\'ora, chiude la scheda e dimentica gli agenti spariti', () => {
+    vi.setSystemTime(5_000);
+    useOfficeStore.setState({
+      snapshot: { status: 'idle', sessions: [], agents: [a('a1', 1), a('a2', 1)], generatedAt: 0 },
+      dismissed: { sparito: 1, a2: 2 },
+      selectedAgent: 'a1',
+    });
+    useOfficeStore.getState().dismiss('a1');
+    expect(useOfficeStore.getState()).toMatchObject({ dismissed: { a2: 2, a1: 5_000 }, selectedAgent: null });
+    useOfficeStore.setState({ snapshot: null, dismissed: {} });
+  });
+});
+
 describe('vista e scheda agente', () => {
   it('select apre e chiude la scheda', () => {
     useOfficeStore.getState().select('a1');

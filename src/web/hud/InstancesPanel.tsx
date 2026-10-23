@@ -2,9 +2,9 @@ import { useState } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { byUrgency, formatCost, formatTokens } from './format';
 import {
-  agentName, agentTask, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
+  agentName, agentTask, alertShort, doneGroupLabel, NO_INSTANCES, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
 } from './labels';
-import { ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
+import { AlertMark, ContextGauge, DiffStat, PopOutButton, RoleChip, SessionAlert, StatusDot } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
 
@@ -26,6 +26,7 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
         onClick={() => onSelect(agent.id)}
       >
         <span className="hud-instance__agent-head">
+          {agent.alert && agent.status !== 'done' && <AlertMark />}
           <span className="hud-instance__agent-name" title={agentName(agent)}>{agentName(agent)}</span>
           {agent.agentType !== 'main' && <RoleChip area={agent.area} />}
         </span>
@@ -35,6 +36,10 @@ function AgentRow({ agent, status, waiting = false, selected, onSelect }: {
     </li>
   );
 }
+
+/** Stato preceduto dall'avviso di un subagente in loop (#97): "Bash ripetuto 6 volte · al lavoro"; chi è fermo lo dice già lo stato. */
+const withAlert = (a: AgentState, status: string, now: number): string =>
+  a.alert?.kind === 'loop' && a.status !== 'done' ? `${alertShort(a.alert, now)} · ${status}` : status;
 
 /** Riga meta della sessione: modello, effort, token generati e costo (sessione con i subagenti). */
 export const sessionMeta = (s: SessionState): string =>
@@ -74,7 +79,7 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
   const live = sorted.filter((a) => a.status !== 'done');
   const done = sorted.filter((a) => a.status === 'done');
   const row = (a: AgentState) => (
-    <AgentRow key={a.id} agent={a} status={statusText(a, now)} waiting={a.waiting === true} selected={selected === a.id} onSelect={onSelect} />
+    <AgentRow key={a.id} agent={a} status={withAlert(a, statusText(a, now), now)} waiting={a.waiting === true} selected={selected === a.id} onSelect={onSelect} />
   );
   return (
     <div className="hud-instance__body" id={`instance-${s.id}`}>

@@ -1,4 +1,6 @@
-import type { AgentState, AgentStatus, Compaction, OfficeStatus, SessionState, ToolInUse, WaitingKind, WorkArea } from '../../shared/types';
+import type {
+  AgentAlert, AgentOutcome, AgentState, AgentStatus, Compaction, OfficeStatus, SessionState, ToolErrors, ToolInUse, WaitingKind, WorkArea,
+} from '../../shared/types';
 import { formatDuration, formatTokens, urgency } from './format';
 
 /*
@@ -140,3 +142,65 @@ export function stateCounts(agents: readonly { status: AgentStatus; waiting?: bo
 
 /** Gruppo richiudibile dei terminati: "1 terminato", "12 terminati". */
 export const doneGroupLabel = (n: number): string => `${n} ${COUNT_LABEL[3]![n === 1 ? 0 : 1]}`;
+
+// --- cruscotto della giornata (#97) ---
+
+/** Barra della giornata: titolo, voci (singolare e plurale) e suggerimento sui limiti dei numeri. */
+export const TODAY_TITLE = 'Oggi';
+export const TODAY_LABEL = {
+  cost: 'costo',
+  lastHour: 'ultima ora',
+  perHour: '/h',
+  launched: ['lanciato', 'lanciati'],
+  finished: ['terminato', 'terminati'],
+  failed: ['fallito', 'falliti'],
+  waiting: 'in attesa',
+  noWait: '0 min',
+} as const;
+export const TODAY_HINT = 'Da quando l\'app è aperta: costo stimato a prezzi di listino, agenti e attese di oggi';
+
+/** singolare o plurale secondo `n`: "lanciato", "lanciati" */
+export const plural = (n: number, [one, many]: readonly [string, string]): string => (n === 1 ? one : many);
+
+/** Esito di un subagente terminato. */
+export const OUTCOME_LABEL: Record<AgentOutcome, string> = {
+  ok: 'ok',
+  interrupted: 'interrotto',
+  failed: 'fallito',
+};
+
+/** Righe nuove della scheda dell'agente. */
+export const CARD_LABEL = { outcome: 'Esito', errors: 'Errori' } as const;
+
+/** Ora del giorno: "14:32". */
+export const clockText = (at: number): string =>
+  new Date(at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+
+/** Errori dei tool: "2 errori dei tool · ultimo Edit alle 14:32"; mai il testo dell'errore. */
+export function toolErrorsText(e: ToolErrors): string {
+  const count = e.count === 1 ? '1 errore dei tool' : `${e.count} errori dei tool`;
+  return `${count} · ultimo ${e.tool} alle ${clockText(e.at)}`;
+}
+
+/** Errori in breve, per le righe della lista: "2 errori", "1 errore". */
+export const toolErrorsShort = (e: ToolErrors): string => (e.count === 1 ? '1 errore' : `${e.count} errori`);
+
+/** Durata per esteso nelle frasi: "1 h 12 min", "45 min", "2 h". */
+const longDuration = (ms: number): string => formatDuration(ms).replace(/^(\d+ h \d+)$/, '$1 min');
+
+/** Avviso su un agente fermo o in loop, per la scheda. */
+export function alertText(alert: AgentAlert, now: number): string {
+  if (alert.kind === 'stale') {
+    return `Nessuna attività da ${longDuration(now - alert.since)}: potrebbe aver finito senza che l'ufficio se ne accorgesse`;
+  }
+  return `Ha chiamato ${alert.tool} con lo stesso input ${alert.count} volte di fila: potrebbe essere in un loop`;
+}
+
+/** Avviso in breve, per la lista e il tooltip del "!": "fermo da 1 h 12 min", "Bash ripetuto 6 volte". */
+export function alertShort(alert: AgentAlert, now: number): string {
+  return alert.kind === 'stale' ? `fermo da ${longDuration(now - alert.since)}` : `${alert.tool} ripetuto ${alert.count} volte`;
+}
+
+/** Pulsante dell'avviso "fermo": nasconde l'agente finché non torna attivo. */
+export const DISMISS_LABEL = 'Fallo uscire';
+export const DISMISS_HINT = 'Nasconde l\'agente; rientra da solo se torna attivo';
