@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
+import { t } from '../../shared/i18n';
 import { useShow, useShown } from '../store';
 import { contextLevel, elapsed, formatDuration, formatTokens, percent } from './format';
 import {
-  agentName, agentTask, CARD_LABEL, COMPACT_HINT, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
+  agentName, agentTask, compactionText, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
 } from './labels';
 import { AgentAlertNote, CONTEXT_BAR_FROM, DiffStat, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
 import { ProgressBar } from './ProgressBar';
@@ -26,12 +27,12 @@ function SessionContext({ session }: { session: SessionState }) {
   return (
     <div className="hud-context">
       <div className="hud-context__head">
-        <span className="hud-muted">Contesto</span>
+        <span className="hud-muted">{t('card.context')}</span>
         <span>{`${formatTokens(used)} / ${window === null ? '?' : formatTokens(window)}`}</span>
         {pct !== null && <span className="hud-context__pct">{`${pct}%`}</span>}
       </div>
-      {pct !== null && pct >= CONTEXT_BAR_FROM && <ProgressBar value={pct} label="Contesto usato" level={contextLevel(pct)} />}
-      {pct !== null && contextLevel(pct) === 'danger' && <p className="hud-context__note hud-context__hint">{COMPACT_HINT}</p>}
+      {pct !== null && pct >= CONTEXT_BAR_FROM && <ProgressBar value={pct} label={t('card.contextUsed')} level={contextLevel(pct)} />}
+      {pct !== null && contextLevel(pct) === 'danger' && <p className="hud-context__note hud-context__hint">{t('compact.hint')}</p>}
       {compacted && <p className="hud-context__note hud-muted">{compacted.charAt(0).toUpperCase() + compacted.slice(1)}</p>}
     </div>
   );
@@ -83,15 +84,15 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss 
   const tokens = show(session ? 'session.tokens' : 'agent.tokens');
   const cost = show(session ? 'session.cost' : 'agent.cost');
   return (
-    <section className="hud-panel hud-card" aria-label={`Scheda di ${name}`}>
+    <section className="hud-panel hud-card" aria-label={t('card.aria', { name })}>
       <header className="hud-card__head">
         <span className="hud-card__names">
           <span className="hud-title" title={name}>{name}</span>
           {task && show('agent.task') && <span className="hud-card__task hud-muted">{task}</span>}
         </span>
-        {onPopOut && <PopOutButton label="Apri la scheda in una finestra" onClick={onPopOut} />}
+        {onPopOut && <PopOutButton label={t('popout.card')} onClick={onPopOut} />}
         {onClose && (
-          <button type="button" className="hud-card__close" aria-label="Chiudi la scheda" title="Chiudi (Esc)" onClick={onClose}>
+          <button type="button" className="hud-card__close" aria-label={t('card.close')} title={t('card.closeHint')} onClick={onClose}>
             ×
           </button>
         )}
@@ -105,40 +106,40 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss 
       )}
       {description && <p className="hud-card__desc">{agent.description}</p>}
       {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
-      {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? 'Un subagente' : null} />}
+      {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? t('card.someSubagent') : null} />}
       {!session && agent.waiting && !done && <SessionAlert session={agent} />}
       {!session && agent.alert && !done && show('agent.alerts') && <AgentAlertNote alert={agent.alert} onDismiss={onDismiss} />}
       {session && (
         <dl>
-          <Row label="Progetto">{projectName(session)}</Row>
-          {show('session.branch') && <Row label="Branch">{session.branch ?? DASH}</Row>}
+          <Row label={t('card.project')}>{projectName(session)}</Row>
+          {show('session.branch') && <Row label={t('card.branch')}>{session.branch ?? DASH}</Row>}
         </dl>
       )}
       {session?.diff && <DiffStat diff={session.diff} />}
       {session && <SessionContext session={session} />}
       <dl>
-        {!session && show('agent.type') && <Row label="Tipo">{agent.agentType}</Row>}
-        <Row label="Stato">{status}</Row>
-        {!session && done && agent.outcome && show('agent.outcome') && <Row label={CARD_LABEL.outcome}><OutcomeTag outcome={agent.outcome} /></Row>}
-        {toolErrors && <Row label={CARD_LABEL.errors}>{toolErrorsText(toolErrors)}</Row>}
+        {!session && show('agent.type') && <Row label={t('card.type')}>{agent.agentType}</Row>}
+        <Row label={t('card.status')}>{status}</Row>
+        {!session && done && agent.outcome && show('agent.outcome') && <Row label={t('card.outcome')}><OutcomeTag outcome={agent.outcome} /></Row>}
+        {toolErrors && <Row label={t('card.errors')}>{toolErrorsText(toolErrors)}</Row>}
         {session ? (
           <>
-            {turn && turnStartedAt && <Row label="Turno">{`in corso da ${formatDuration(now - turnStartedAt)}`}</Row>}
-            {turn && typeof session.lastTurnMs === 'number' && <Row label="Ultimo turno">{formatDuration(session.lastTurnMs)}</Row>}
+            {turn && turnStartedAt && <Row label={t('card.turn')}>{t('card.turnRunning', { d: formatDuration(now - turnStartedAt) })}</Row>}
+            {turn && typeof session.lastTurnMs === 'number' && <Row label={t('card.lastTurn')}>{formatDuration(session.lastTurnMs)}</Row>}
           </>
         ) : (
-          show('agent.duration') && <Row label="Durata">{`${done ? 'in' : 'da'} ${formatDuration(elapsed(agent, now))}`}</Row>
+          show('agent.duration') && <Row label={t('card.duration')}>{t(done ? 'dur.in' : 'dur.for', { d: formatDuration(elapsed(agent, now)) })}</Row>
         )}
-        {show(session ? 'session.model' : 'agent.model') && <Row label="Modello">{agent.model ?? DASH}</Row>}
-        {show(session ? 'session.effort' : 'agent.effort') && <Row label="Effort">{(session ? session.effort : agent.effort) ?? DASH}</Row>}
+        {show(session ? 'session.model' : 'agent.model') && <Row label={t('card.model')}>{agent.model ?? DASH}</Row>}
+        {show(session ? 'session.effort' : 'agent.effort') && <Row label={t('card.effort')}>{(session ? session.effort : agent.effort) ?? DASH}</Row>}
       </dl>
       {progress && pct !== null && show('agent.progress') && (
         <div className="hud-context">
           <div className="hud-context__head">
-            <span className="hud-muted">Avanzamento</span>
+            <span className="hud-muted">{t('card.progress')}</span>
             <span className="hud-context__pct">{`${progress.completed}/${progress.total} · ${pct}%`}</span>
           </div>
-          <ProgressBar value={pct} label={`Avanzamento ${name}`} />
+          <ProgressBar value={pct} label={t('card.progressOf', { name })} />
         </div>
       )}
       {session ? (
@@ -148,7 +149,7 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onDismiss 
             title="Claude" tokens={session.ownTokens ?? agent.tokens} cost={cost ? (session.ownCost ?? null) : undefined} costTestId="agent-cost" showTokens={tokens}
           />
           <TokenSummary
-            title="Con i subagenti" tokens={session.tokensUsed} cost={cost ? (session.cost ?? null) : undefined} costTestId="session-cost" details={false}
+            title={t('card.withSubagents')} tokens={session.tokensUsed} cost={cost ? (session.cost ?? null) : undefined} costTestId="session-cost" details={false}
             showTokens={tokens}
           />
         </>

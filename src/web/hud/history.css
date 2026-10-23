@@ -45,12 +45,13 @@
 .history-timeline { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; }
 .history-event {
   display: grid;
-  grid-template-columns: 3.2em minmax(0, 1fr);
+  /* ora "09:42", o "06:25 PM" in inglese (#93): almeno 3.2em, su una riga */
+  grid-template-columns: minmax(3.2em, max-content) minmax(0, 1fr);
   gap: 10px;
   padding: 5px 0;
   border-top: 1px solid var(--hud-border);
 }
-.history-event time { font-variant-numeric: tabular-nums; }
+.history-event time { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .history-event strong { font-weight: 600; }
 .history-event__part { color: var(--hud-muted); }
 .history-event--wait strong { color: var(--hud-danger); }

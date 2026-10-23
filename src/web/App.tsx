@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AgentCard, HudOverlay, InstancesPanel, ListView, ViewToggle } from './hud';
-import { connectSnapshotStream, useOfficeStore, visibleSnapshot } from './store';
+import { t } from '../shared/i18n';
+import { connectSnapshotStream, useLocale, useOfficeStore, visibleSnapshot } from './store';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { PixelOffice } from './pixel/PixelOffice';
 import { openCardWindow } from './hud/popout';
@@ -21,6 +22,8 @@ export function App() {
   const dismissed = useOfficeStore((s) => s.dismissed);
   const dismiss = useOfficeStore((s) => s.dismiss);
   const closeCard = useCallback(() => select(null), [select]);
+  // lingua (#93): cambiandola si ridisegna tutto, senza ricaricare (posizioni, schede aperte e filtri restano)
+  useLocale();
   // scheda staccata in una finestra a sé: qui si chiude, l'ufficio resta libero
   const popOutCard = useCallback(() => {
     if (!selectedId) return;
@@ -92,7 +95,7 @@ export function App() {
       </HudOverlay>
       <HudOverlay side="right">
         <ViewToggle view={viewMode} onChange={setViewMode} />
-        {!connected && <div className="hud-panel app-offline">Disconnesso: riconnessione…</div>}
+        {!connected && <div className="hud-panel app-offline">{t('app.offline')}</div>}
         {/* cruscotto della giornata (#97), in breve: nella lista è in alto, per esteso */}
         {office && fullSnapshot?.today && <TodayBar today={fullSnapshot.today} compact />}
         {office && selected && (

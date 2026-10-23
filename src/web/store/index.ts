@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { create } from 'zustand';
+import { setLocale, type Locale } from '../../shared/i18n';
 import { DEFAULT_DISPLAY, isShown, toDisplaySettings, type DisplaySettings, type SettingKey } from '../../shared/settings';
 import type { AgentState, Snapshot } from '../../shared/types';
 
@@ -139,8 +140,13 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   settings: DEFAULT_DISPLAY,
   dismissed: loadDismissed(),
   setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
-  // stessi oggetti se nulla cambia: i componenti che leggono una voce non si ridisegnano
-  setSettings: (settings) => set({ settings: share(get().settings, settings) }),
+  // stessi oggetti se nulla cambia: i componenti che leggono una voce non si ridisegnano. La lingua (#93) va impostata
+  // prima di avvisare i componenti: i testi (src/shared/i18n) la leggono mentre si ridisegnano
+  setSettings: (settings) => {
+    setLocale(settings.locale);
+    if (typeof document !== 'undefined') document.documentElement.lang = settings.locale;
+    set({ settings: share(get().settings, settings) });
+  },
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
     set({ view, focusSession: sessionId || null });
@@ -173,6 +179,12 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
 
 /** Preferenze di visualizzazione correnti. */
 export const useSettings = (): DisplaySettings => useOfficeStore((s) => s.settings);
+
+/**
+ * Lingua corrente (#93): chi la legge si ridisegna quando cambia, e con lui i figli. La usano le radici (App,
+ * CardWindow); i componenti memo che leggono le voci (useShown) cambiano già con le preferenze.
+ */
+export const useLocale = (): Locale => useOfficeStore((s) => s.settings.locale);
 
 /** La voce `key` del catalogo (shared/settings.ts) è da mostrare: `{useShow('session.diff') && <DiffStat …/>}`. */
 export const useShow = (key: SettingKey): boolean => useOfficeStore((s) => isShown(s.settings, key));
