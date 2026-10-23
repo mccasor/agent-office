@@ -38,7 +38,7 @@ export type TileKind =
 
 /** Un posto dove un personaggio si ferma: postazione, scrivania del boss, posto in sala relax, posto in piedi. */
 export interface Spot {
-  /** stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'lounge-<n>', 'stand-<n>' */
+  /** stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'lounge-<n>', 'stand-<n>', 'hall-<n>' (corridoio) */
   id: string;
   cell: Cell;
   /** verso cui guarda chi occupa il posto (la scrivania, il tavolino) */
