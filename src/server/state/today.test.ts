@@ -58,10 +58,17 @@ describe('createDayTracker', () => {
       dir = await mkdtemp(join(tmpdir(), 'agent-office-today-'));
       file = join(dir, 'today.json');
     });
-    afterEach(() => rm(dir, { recursive: true, force: true }));
+    /** tracker aperti nel test: i salvataggi in corso finiscono prima che la cartella sparisca */
+    let opened: ReturnType<typeof createDayTracker>[] = [];
+    afterEach(async () => {
+      await Promise.all(opened.map((t) => t.flush()));
+      opened = [];
+      await rm(dir, { recursive: true, force: true });
+    });
 
     const open = async (at: number) => {
       const t = createDayTracker(at, { file });
+      opened.push(t);
       await t.start();
       return t;
     };
