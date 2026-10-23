@@ -10,10 +10,12 @@ export const INITIAL_TAIL_BYTES = 512 * 1024;
 /** nell'unione di più file contano solo gli eventi recenti: servono per le sessioni attive */
 export const MERGE_WINDOW_MS = 2 * 60 * 60_000;
 
-interface EventsTail {
+export interface EventsTail {
   /** legge le righe aggiunte dall'ultima lettura; true se sono arrivati eventi nuovi */
   read(): Promise<boolean>;
   events(): HookEvent[];
+  /** dimentica gli eventi precedenti a `since` */
+  prune(since: number): void;
 }
 
 /**
@@ -21,7 +23,7 @@ interface EventsTail {
  * Parte dagli ultimi INITIAL_TAIL_BYTES; se il file si accorcia (ruotato dall'hook) riparte da capo sul nuovo.
  * Letture serializzate: chiamate concorrenti si accodano.
  */
-async function createEventsTail(file: string): Promise<EventsTail> {
+export async function createEventsTail(file: string): Promise<EventsTail> {
   let events: HookEvent[] = [];
   let offset = 0;
   let partial = '';
@@ -85,6 +87,10 @@ async function createEventsTail(file: string): Promise<EventsTail> {
       return queue;
     },
     events: () => events,
+    prune(since) {
+      const kept = events.filter((e) => e.timestamp >= since);
+      if (kept.length < events.length) events = kept;
+    },
   };
 }
 
@@ -150,7 +156,9 @@ export function createAllHookEventsWatcher(opts: HookPathsOptions & { now?: () =
   const merge = async () => {
     const since = now() - MERGE_WINDOW_MS;
     const all = await Promise.all(tails.values());
-    events = all.flatMap((t) => t.events().filter((e) => e.timestamp >= since)).sort((a, b) => a.timestamp - b.timestamp);
+    // ogni file tiene solo gli eventi della finestra: quelli vecchi non servono più a nessuno (fino a MAX_EVENTS per file)
+    for (const t of all) t.prune(since);
+    events = all.flatMap((t) => t.events()).sort((a, b) => a.timestamp - b.timestamp);
     if (running) for (const l of listeners) l(events);
   };
 
