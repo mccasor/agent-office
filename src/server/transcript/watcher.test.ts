@@ -341,7 +341,22 @@ describe('createTranscriptWatcher – modalità all (menu bar)', () => {
     const row = '{"type":"user","timestamp":"2026-01-01T12:00:00.000Z","message":{"role":"user","content":"[redacted]"}}\n';
     await appendFile(join(projectDir(), `${SESSION}.jsonl`), row);
     await appendFile(join(subDir(), 'agent-a0000000000000001.jsonl'), row);
-    await vi.waitFor(() => expect(w.current().agents.map((a) => a.name)).toEqual(['Survey transcript format']), { timeout: 5000, interval: 20 });
+    // la sessione ripresa rilegge tutti i suoi subagenti, anche quello rimasto fermo
+    await vi.waitFor(() => expect(w.current().agents.map((a) => a.id).sort()).toEqual(['a0000000000000001', 'a0000000000000002']), { timeout: 5000, interval: 20 });
+    expect(w.current().agents.map((a) => a.name)).toContain('Survey transcript format');
+  });
+
+  it('i subagenti vecchi di una sessione seguita contano in token e costo', async () => {
+    const old = (T0 - 3 * 60 * 60_000) / 1000;
+    await utimes(join(subDir(), 'workflows', 'wf_fixture', 'agent-a0000000000000002.jsonl'), old, old);
+    const w = await startWatcher({ cwd: '/qualunque', all: true, activeWindowMs: 60 * 60_000, discoveryWindowMs: 60 * 60_000 });
+    await vi.waitFor(() => expect(w.current().agents).toHaveLength(2), { timeout: 3000, interval: 20 });
+    const s = w.current().sessions[0];
+    expect(s?.tokensUsed.total).toBeGreaterThan(s?.ownTokens?.total ?? Infinity);
+    // il tick non dimentica il subagente vecchio finché la sessione è seguita
+    clock = T0 + 30 * 60_000;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(w.current().agents).toHaveLength(2);
   });
 
   it('con all restano solo le sessioni attive e i loro subagenti', async () => {

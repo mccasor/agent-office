@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import type { Stats } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
@@ -185,6 +185,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
     if (!f) {
       f = { parsed: p, reader: createLineReader(abs), acc: createAccumulator(), mtime: 0, size: 0, loaded: false, queue: Promise.resolve() };
       files.set(abs, f);
+      if (all && p.kind === 'session') void trackSubagents(abs);
     }
     const tracked = f;
     tracked.queue = tracked.queue.then(async () => {
@@ -218,6 +219,27 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
   };
 
   /**
+   * Modalità all: i subagenti di una sessione seguita si leggono tutti, anche quelli fermi da più della finestra di
+   * scoperta, perché token e costo della sessione li sommano (una sessione lunga ne ha di vecchi di giorni).
+   */
+  const trackSubagents = async (sessionAbs: string): Promise<void> => {
+    const dir = join(dirname(sessionAbs), basename(sessionAbs, '.jsonl'), 'subagents');
+    let names: string[];
+    try {
+      names = await readdir(dir, { recursive: true });
+    } catch {
+      return; // nessun subagente
+    }
+    await Promise.all(
+      names.map((name) => {
+        const abs = join(dir, name);
+        const p = parseAbs(abs);
+        return p?.kind === 'agent' && !files.has(abs) ? track(abs, p) : undefined;
+      }),
+    );
+  };
+
+  /**
    * Rete di sicurezza: gli eventi del filesystem possono andare persi (FSEvents/chokidar sotto carico,
    * file aggiunti al watcher durante la scansione iniziale). Rilegge i file cresciuti dall'ultima lettura:
    * a ogni tick quelli recenti, al più ogni FULL_RESYNC_MS anche quelli fermi da tempo (un progetto può averne migliaia).
@@ -233,9 +255,14 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
     }
     if (all) {
       // transcript fermi da più della finestra di scoperta: si dimenticano (se ripartono, si rileggono da capo)
+      // i subagenti restano finché è seguita la loro sessione, che li somma in token e costo
       let forgot = false;
       for (const [abs, f] of files) {
-        if (f.loaded && t - f.mtime > discoveryWindowMs) forgot = files.delete(abs);
+        if (f.parsed.kind === 'session' && f.loaded && t - f.mtime > discoveryWindowMs) forgot = files.delete(abs);
+      }
+      const followed = new Set([...files.values()].filter((f) => f.parsed.kind === 'session').map((f) => f.parsed.sessionId));
+      for (const [abs, f] of files) {
+        if (f.parsed.kind === 'agent' && f.loaded && t - f.mtime > discoveryWindowMs && !followed.has(f.parsed.sessionId)) forgot = files.delete(abs);
       }
       if (forgot) changed();
     } else {
