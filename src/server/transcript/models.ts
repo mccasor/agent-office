@@ -1,8 +1,22 @@
-/** Finestra di contesto per prefisso del model id. Suffisso "[1m]" = variante 1M. */
+/**
+ * Finestra di contesto per prefisso del model id, vince il primo che corrisponde. Suffisso "[1m]" = variante 1M.
+ * Dal catalogo di Claude Code 2.1.311: fino a Opus 4.6, Sonnet 4.6 e Haiku 4.5 la finestra standard è 200k,
+ * da Opus 4.7, Sonnet 5, Haiku 5.5, Fable e Mythos è nativa da 1M (anche senza suffisso).
+ */
 const WINDOWS: ReadonlyArray<[prefix: string, window: number]> = [
-  ['claude-opus', 200_000],
-  ['claude-sonnet', 200_000],
-  ['claude-haiku', 200_000],
+  ['claude-3', 200_000],
+  ['claude-opus-4-0', 200_000],
+  ['claude-opus-4-1', 200_000],
+  ['claude-opus-4-5', 200_000],
+  ['claude-opus-4-6', 200_000],
+  ['claude-opus-4-2025', 200_000],
+  ['claude-sonnet-4', 200_000],
+  ['claude-haiku-4', 200_000],
+  ['claude-opus', 1_000_000],
+  ['claude-sonnet', 1_000_000],
+  ['claude-haiku', 1_000_000],
+  ['claude-fable', 1_000_000],
+  ['claude-mythos', 1_000_000],
 ];
 
 const ONE_M_SUFFIX = '[1m]';
