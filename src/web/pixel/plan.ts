@@ -152,9 +152,9 @@ function instanceRoom(n: number): { room: Room; furniture: Furniture[] } {
   b.place('chair', 5, 0, 1, 1, 'down');
   const boss = b.spot(`r${n}-boss`, 5, 0, 'down', true);
 
-  // isole: sedie in alto che guardano giù, poi le sedie in basso che guardano su
+  // isole: prima le sedie davanti (in basso, guardano su), poi quelle dietro verso il boss (in alto, guardano giù)
   const desks: Spot[] = [];
-  for (const [chairZ, deskZ, facing] of [[3, 4, 'down'], [6, 5, 'up']] as const) {
+  for (const [chairZ, deskZ, facing] of [[6, 5, 'up'], [3, 4, 'down']] as const) {
     for (const lx of [2, 3, 7, 8]) {
       const toward: Facing = facing === 'down' ? 'up' : 'down';
       b.place('desk', lx, deskZ, 1, 1, toward);
