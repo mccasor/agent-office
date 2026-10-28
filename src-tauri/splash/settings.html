@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Impostazioni</title>
   <style>
-    /* Finestra Impostazioni (#94): barra delle schede con icone in alto, come le Impostazioni di macOS; riquadri di
-       righe con l'etichetta a sinistra e il controllo a destra. Tema chiaro/scuro di sistema. */
+    /* Finestra Impostazioni (#94): come le Impostazioni di Sistema di macOS, sezioni nella barra laterale a sinistra
+       (icona colorata e nome) e a destra le impostazioni della sezione, in riquadri di righe con l'etichetta a sinistra
+       e il controllo a destra. Tema chiaro/scuro di sistema. */
     :root {
       color-scheme: light dark;
       --bg: #ececec;
@@ -15,7 +16,7 @@
       --group: rgb(255 255 255 / 0.75);
       --group-border: rgb(0 0 0 / 0.08);
       --divider: rgb(0 0 0 / 0.08);
-      --tab-on: rgb(0 0 0 / 0.08);
+      --sidebar: rgb(0 0 0 / 0.035);
       --accent: #007aff;
       --ok: #28a745;
       --warn: #c77c00;
@@ -32,7 +33,7 @@
         --group: rgb(255 255 255 / 0.05);
         --group-border: rgb(255 255 255 / 0.08);
         --divider: rgb(255 255 255 / 0.08);
-        --tab-on: rgb(255 255 255 / 0.1);
+        --sidebar: rgb(255 255 255 / 0.03);
         --accent: #0a84ff;
         --ok: #32d74b;
         --warn: #ffb340;
@@ -50,27 +51,36 @@
       user-select: none;
       -webkit-user-select: none;
       cursor: default;
-      /* finestra a misura del contenuto, al più l'85% dello schermo: oltre (scheda Agenti su uno schermo basso) si scorre */
-      overflow-x: hidden;
-      overflow-y: auto;
+      /* finestra di dimensione fissa (alta quanto la sezione Generali): scorre solo il lato destro, se serve */
+      overflow: hidden;
     }
     button, select { font: inherit; color: inherit; }
     svg { flex: none; }
 
-    /* barra delle schede: icona sopra, nome sotto; la scheda scelta su fondo grigio */
-    .tabs { display: flex; justify-content: center; gap: 2px; padding: 8px 12px 6px; border-bottom: 1px solid var(--divider); }
-    .tab {
-      display: grid; justify-items: center; gap: 2px; min-width: 68px; padding: 5px 8px 4px;
-      border: 0; border-radius: 7px; background: none; color: var(--muted); cursor: default;
+    #app { display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); height: 100vh; }
+    :root { --sidebar-width: 190px; }
+
+    /* barra laterale: icona bianca su quadrato colorato e nome; la sezione scelta su fondo accento */
+    .sidebar {
+      display: flex; flex-direction: column; gap: 2px; padding: 10px 8px;
+      background: var(--sidebar); border-right: 1px solid var(--divider); overflow-y: auto;
     }
-    .tab svg { width: 24px; height: 24px; }
-    .tab span { font-size: 11px; }
-    .tab:hover { color: var(--fg); }
-    .tab[aria-selected='true'] { background: var(--tab-on); color: var(--accent); }
-    .tab[aria-selected='true'] span { color: var(--fg); }
+    .tab {
+      display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 8px; text-align: left;
+      border: 0; border-radius: 6px; background: none; cursor: default;
+    }
+    .tab__icon { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; color: #fff; }
+    .tab__icon svg { width: 15px; height: 15px; }
+    .tab__label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tab[aria-selected='true'] { background: var(--accent); color: #fff; }
     .tab:focus-visible, .switch:focus-visible, .button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
-    .content { padding: 14px 20px 18px; display: grid; gap: 14px; }
+    /* lato destro: titolo della sezione e le sue impostazioni */
+    .pane { overflow-y: auto; }
+    .pane__title { margin: 0; padding: 16px 20px 0; font-size: 15px; font-weight: 700; }
+    .content { padding: 12px 20px 18px; display: grid; gap: 14px; }
+    /* copia nascosta della sezione Generali: la sua altezza è l'altezza fissa della finestra */
+    .measure { position: absolute; top: 0; left: var(--sidebar-width); right: 0; visibility: hidden; pointer-events: none; }
     .group__title { margin: 0 0 5px 10px; font-size: 11px; font-weight: 600; color: var(--muted); }
     .group__box { background: var(--group); border: 1px solid var(--group-border); border-radius: 10px; }
     .group__note { margin: 6px 10px 0; font-size: 11px; color: var(--muted); }
@@ -142,8 +152,10 @@
       git: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7.5v9M18 10c0 4-6 3.5-11 7"/>',
       instances: '<rect x="3.5" y="4.5" width="17" height="6" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6" rx="1.5"/><path d="M7 7.5h6M7 16.5h6"/>',
     };
+    /** colore del quadrato dell'icona di ogni sezione, come nelle Impostazioni di Sistema */
+    const ICON_COLORS = { general: '#8e8e93', claude: '#d97757', agents: '#007aff', git: '#f05133', instances: '#34c759' };
     const icon = (name) =>
-      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+      `<span class="tab__icon" style="background:${ICON_COLORS[name] ?? '#8e8e93'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg></span>`;
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
     const TAB_KEY = 'agent-office.settings-tab';
@@ -160,6 +172,8 @@
     /** errore dell'ultimo salvataggio, mostrato finché non se ne fa un altro */
     let saveError = null;
     let shown = '';
+    /** altezza fissa già chiesta alla finestra */
+    let fixedHeight = 0;
 
     /** valore di una chiave di config.json; mancante o non valido: il default (stesse regole del server) */
     const config = (key) => {
@@ -248,18 +262,39 @@
       const current = CATALOG.tabs.find((t) => t.id === tab);
       const title = T(`tab.${current.id}`);
       const notice = saveError || state.notice;
-      const html = `<nav class="tabs" role="tablist">${CATALOG.tabs
-        .map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.id)}<span>${esc(T(`tab.${t.id}`))}</span></button>`)
+      const html = `<nav class="sidebar" role="tablist" aria-orientation="vertical">${CATALOG.tabs
+        .map((t) => `<button class="tab" role="tab" data-tab="${t.id}" aria-selected="${t.id === tab}">${icon(t.id)}<span class="tab__label">${esc(T(`tab.${t.id}`))}</span></button>`)
         .join('')}</nav>
-        <main class="content" role="tabpanel" aria-label="${esc(title)}">
-          ${tab === 'general' ? general() : items(tab)}
-          ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
+        <main class="pane" role="tabpanel" aria-label="${esc(title)}">
+          <h1 class="pane__title">${esc(title)}</h1>
+          <div class="content">
+            ${tab === 'general' ? general() : items(tab)}
+            ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
+          </div>
         </main>`;
       // un menu aperto non si ridisegna sotto il puntatore
       if (html === shown || document.activeElement?.tagName === 'SELECT') return;
       shown = html;
-      document.getElementById('app').innerHTML = html;
-      invoke('settings_layout', { height: document.getElementById('app').offsetHeight, title }).catch(() => {});
+      const app = document.getElementById('app');
+      // stessa sezione: si resta allo stesso punto dello scorrimento
+      const scroll = app.querySelector('.pane')?.scrollTop ?? 0;
+      const sameTab = app.dataset.tab === tab;
+      app.innerHTML = html;
+      app.dataset.tab = tab;
+      if (sameTab) app.querySelector('.pane').scrollTop = scroll;
+      // dimensione fissa: quanto serve a Generali (o alla barra laterale) senza scorrere, uguale per ogni sezione;
+      // Generali si misura in una copia nascosta, tolta subito
+      const measure = document.createElement('div');
+      measure.className = 'measure';
+      measure.innerHTML = `<h1 class="pane__title">${esc(T('tab.general'))}</h1><div class="content">${general()}</div>`;
+      app.append(measure);
+      // la barra laterale è alta quanto la finestra: conta il fondo dell'ultima sezione più il margine
+      const last = app.querySelector('.sidebar .tab:last-child');
+      const height = Math.ceil(Math.max(measure.offsetHeight, last ? last.offsetTop + last.offsetHeight + 10 : 0));
+      measure.remove();
+      const changed = height !== fixedHeight;
+      fixedHeight = height;
+      invoke('settings_layout', { height: changed ? height : 0, title }).catch(() => {});
     }
 
     async function refresh() {

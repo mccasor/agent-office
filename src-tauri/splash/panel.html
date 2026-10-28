@@ -44,17 +44,30 @@
     button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; text-align: left; }
     svg { flex: none; }
 
-    /* aggiornamento: banner blu, testo bianco, angoli arrotondati */
+    /* aggiornamento: sezione blu in cima, testo bianco, "Aggiorna" a destra; durante l'aggiornamento un loader al
+       posto del pulsante. Compare solo con una versione nuova davvero disponibile. */
     .banner {
       display: flex; align-items: center; gap: 10px; width: 100%;
       margin: 0 0 6px; padding: 9px 11px; border-radius: 10px;
       background: var(--accent); color: #fff;
     }
-    .banner:hover { filter: brightness(1.08); }
     .banner__icon { width: 24px; height: 24px; }
-    .banner__text { display: grid; gap: 1px; min-width: 0; }
+    .banner__text { flex: 1; display: grid; gap: 1px; min-width: 0; }
     .banner__title { font-weight: 600; }
-    .banner__sub { font-size: 11px; opacity: 0.85; }
+    .banner__sub { font-size: 11px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+    .banner__error { font-size: 11px; }
+    .banner__button {
+      flex: none; padding: 4px 11px; border-radius: 6px;
+      background: #fff; color: var(--accent); font-weight: 600; font-size: 12px;
+    }
+    .banner__button:hover { filter: brightness(0.94); }
+    .banner__loader {
+      flex: none; width: 18px; height: 18px; margin: 0 6px; border-radius: 50%;
+      border: 2px solid rgb(255 255 255 / 0.35); border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .banner__loader { animation-duration: 2.4s; } }
 
     .status { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; }
     .status__text { display: grid; gap: 2px; min-width: 0; }
@@ -183,13 +196,15 @@
       const u = state.update;
       let html = '';
 
-      if (['available', 'upgrading', 'upgradefailed'].includes(u.kind)) {
-        const sub = u.kind === 'upgrading' ? T('update.upgrading')
-          : u.kind === 'upgradefailed' ? T('panel.upgradeFailed')
-          : u.behind > 1 ? T('panel.behind', { n: u.behind }) : T('panel.current', { v: esc(state.version) });
-        const title = u.latest ? T('update.available', { v: esc(u.latest) }) : T('panel.update');
-        html += `<button class="banner" data-action="update" ${u.kind === 'upgrading' ? 'disabled' : ''}>${bannerIcon(u.outdated)}
-          <span class="banner__text"><span class="banner__title">${title}</span><span class="banner__sub">${sub}</span></span></button>`;
+      // sezione dell'aggiornamento: solo con una versione nuova (anche durante l'aggiornamento, o se non è riuscito)
+      if (['available', 'upgrading', 'upgradefailed'].includes(u.kind) && u.latest) {
+        const action = u.kind === 'upgrading'
+          ? `<span class="banner__loader" role="progressbar" aria-label="${esc(T('panel.upgradingAria'))}"></span>`
+          : `<button class="banner__button" data-action="update">${T('panel.upgrade')}</button>`;
+        const error = u.kind === 'upgradefailed' ? `<span class="banner__error">${T('panel.upgradeFailed')}</span>` : '';
+        html += `<section class="banner">${bannerIcon(u.outdated)}
+          <span class="banner__text"><span class="banner__title">${T('panel.updateAvailable')}</span>
+            <span class="banner__sub">${T('panel.updateVersion', { v: esc(u.latest) })}</span>${error}</span>${action}</section>`;
       }
 
       // stato dell'IA

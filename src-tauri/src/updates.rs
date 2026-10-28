@@ -49,10 +49,11 @@ pub enum UpdateState {
     UpToDate,
     /// versione più recente e quante versioni mancano
     Available { latest: String, behind: usize },
-    Upgrading,
+    /// aggiornamento alla versione `latest` in corso
+    Upgrading { latest: String },
     Failed,
-    /// brew non è riuscito ad aggiornare (dettagli nel log)
-    UpgradeFailed,
+    /// brew non è riuscito ad aggiornare alla versione `latest` (dettagli nel log): si può riprovare
+    UpgradeFailed { latest: String },
 }
 
 /// Segnale accanto alla voce (nel pannello): blu con freccia, rosso con "!" da OUTDATED_AFTER versioni indietro.
@@ -80,9 +81,9 @@ impl UpdateState {
                 tf("update.availableBehind", &[("v", latest), ("n", &behind.to_string())])
             }
             UpdateState::Available { latest, .. } => tf("update.available", &[("v", latest)]),
-            UpdateState::Upgrading => t("update.upgrading"),
+            UpdateState::Upgrading { .. } => t("update.upgrading"),
             UpdateState::Failed => t("update.failed"),
-            UpdateState::UpgradeFailed => t("update.upgradeFailed"),
+            UpdateState::UpgradeFailed { .. } => t("update.upgradeFailed"),
         }
     }
 
@@ -96,7 +97,25 @@ impl UpdateState {
 
     /// cliccabile tranne mentre una ricerca o un aggiornamento è in corso
     pub fn enabled(&self) -> bool {
-        !matches!(self, UpdateState::Checking | UpdateState::Upgrading)
+        !matches!(self, UpdateState::Checking | UpdateState::Upgrading { .. })
+    }
+
+    /// Versione da installare col clic su "Aggiorna": quella trovata, o quella di un aggiornamento non riuscito.
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            UpdateState::Available { latest, .. } | UpdateState::UpgradeFailed { latest } => Some(latest),
+            _ => None,
+        }
+    }
+
+    /// Stato dopo una ricerca silenziosa (apertura del pannello, controllo periodico) che ha dato `found`: una ricerca
+    /// non riuscita (rete, limite dell'API) non nasconde un aggiornamento già trovato, e niente sostituisce una ricerca
+    /// o un aggiornamento in corso. None: lo stato resta com'è. Pura.
+    pub fn after_quiet_check(&self, found: UpdateState) -> Option<UpdateState> {
+        if !self.enabled() || (found == UpdateState::Failed && self.target().is_some()) || *self == found {
+            return None;
+        }
+        Some(found)
     }
 }
 
@@ -253,6 +272,26 @@ mod tests {
 
         assert!(!UpdateState::Checking.enabled());
         assert!(UpdateState::Failed.enabled());
+        assert!(!UpdateState::Upgrading { latest: "0.5.0".into() }.enabled());
+        assert_eq!(few.target(), Some("0.5.0"));
+        assert_eq!(UpdateState::UpgradeFailed { latest: "0.5.0".into() }.target(), Some("0.5.0"));
+        assert_eq!(UpdateState::UpToDate.target(), None);
+    }
+
+    #[test]
+    fn ricerca_silenziosa() {
+        let available = UpdateState::Available { latest: "0.5.0".into(), behind: 1 };
+        // la rete non risponde: l'aggiornamento trovato resta
+        assert_eq!(available.after_quiet_check(UpdateState::Failed), None);
+        assert_eq!(UpdateState::UpgradeFailed { latest: "0.5.0".into() }.after_quiet_check(UpdateState::Failed), None);
+        assert_eq!(UpdateState::Unknown.after_quiet_check(UpdateState::Failed), Some(UpdateState::Failed));
+        // versione nuova, o già aggiornati da un'altra parte
+        let newer = UpdateState::Available { latest: "0.6.0".into(), behind: 2 };
+        assert_eq!(available.after_quiet_check(newer.clone()), Some(newer));
+        assert_eq!(available.after_quiet_check(UpdateState::UpToDate), Some(UpdateState::UpToDate));
+        assert_eq!(available.after_quiet_check(available.clone()), None);
+        // un aggiornamento in corso non si tocca
+        assert_eq!(UpdateState::Upgrading { latest: "0.5.0".into() }.after_quiet_check(UpdateState::UpToDate), None);
     }
 
     #[test]

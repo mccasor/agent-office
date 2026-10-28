@@ -53,6 +53,8 @@ struct Ui {
     snapshot: Mutex<Value>,
     /// quando il pannello si è chiuso per perdita del focus (vedi panel::toggle)
     panel_hidden_at: Mutex<Option<Instant>>,
+    /// ultima ricerca silenziosa degli aggiornamenti (vedi check_updates_quietly)
+    last_quiet_check: Mutex<Option<Instant>>,
     wake: Mutex<Sender<()>>,
 }
 
@@ -60,6 +62,8 @@ const NOTICE_FOR: Duration = Duration::from_secs(60);
 
 /// ricerca automatica degli aggiornamenti: poco dopo l'avvio e poi a questo intervallo
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+/// intervallo minimo tra due ricerche silenziose (apertura del pannello)
+const QUIET_CHECK_EVERY: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Status {
@@ -424,14 +428,36 @@ fn check_updates(app: &AppHandle) {
     thread::spawn(move || set_update_state(&app, updates::check(&version(&app))));
 }
 
-/// Clic su "Aggiornamenti": con una versione nuova la installa, altrimenti cerca.
+/// Ricerca senza passare da "Ricerca in corso": la sezione dell'aggiornamento nel pannello non sparisce mentre si
+/// cerca (vedi UpdateState::after_quiet_check). Al più una ogni QUIET_CHECK_EVERY: l'API di GitHub senza token
+/// accetta 60 richieste l'ora.
+fn check_updates_quietly(app: &AppHandle) {
+    {
+        let ui = app.state::<Ui>();
+        let mut last = ui.last_quiet_check.lock().unwrap();
+        if last.is_some_and(|at| at.elapsed() < QUIET_CHECK_EVERY) || !update_state(app).enabled() {
+            return;
+        }
+        *last = Some(Instant::now());
+    }
+    let app = app.clone();
+    thread::spawn(move || {
+        let found = updates::check(&version(&app));
+        let next = update_state(&app).after_quiet_check(found);
+        if let Some(next) = next {
+            set_update_state(&app, next);
+        }
+    });
+}
+
+/// Clic su "Aggiorna" o "Aggiornamenti": con una versione nuova la installa, altrimenti cerca.
 fn on_updates_click(app: &AppHandle) {
     let state = update_state(app);
-    if !matches!(state, UpdateState::Available { .. }) {
+    let Some(latest) = state.target().map(str::to_string) else {
         check_updates(app);
         return;
-    }
-    set_update_state(app, UpdateState::Upgrading);
+    };
+    set_update_state(app, UpdateState::Upgrading { latest: latest.clone() });
     let app = app.clone();
     thread::spawn(move || match updates::upgrade() {
         // riuscito: si avvia la versione nuova, che chiude questa; se non parte, si ricontrolla
@@ -441,10 +467,10 @@ fn on_updates_click(app: &AppHandle) {
                     set_update_state(&app, updates::check(&version(&app)));
                 }
             }
-            _ => set_update_state(&app, UpdateState::UpgradeFailed),
+            _ => set_update_state(&app, UpdateState::UpgradeFailed { latest }),
         },
         Upgrade::Page => set_update_state(&app, state),
-        Upgrade::Failed => set_update_state(&app, UpdateState::UpgradeFailed),
+        Upgrade::Failed => set_update_state(&app, UpdateState::UpgradeFailed { latest }),
     });
 }
 
@@ -454,9 +480,9 @@ fn update_json(update: &UpdateState, current: &str) -> Value {
         UpdateState::Checking => ("checking", None, 0),
         UpdateState::UpToDate => ("uptodate", None, 0),
         UpdateState::Available { latest, behind } => ("available", Some(latest.clone()), *behind),
-        UpdateState::Upgrading => ("upgrading", None, 0),
+        UpdateState::Upgrading { latest } => ("upgrading", Some(latest.clone()), 0),
         UpdateState::Failed => ("failed", None, 0),
-        UpdateState::UpgradeFailed => ("upgradefailed", None, 0),
+        UpdateState::UpgradeFailed { latest } => ("upgradefailed", Some(latest.clone()), 0),
     };
     json!({ "kind": kind, "label": update.label(current), "latest": latest, "behind": behind, "outdated": update.badge() == Some(updates::Badge::Outdated) })
 }
@@ -624,6 +650,7 @@ fn main() {
                 prefs: Mutex::new(notify::load()),
                 snapshot: Mutex::new(Value::Null),
                 panel_hidden_at: Mutex::new(None),
+                last_quiet_check: Mutex::new(None),
                 wake: Mutex::new(wake),
             });
             panel::create(&handle)?;
@@ -644,17 +671,20 @@ fn main() {
                     if let TrayIconEvent::Click { rect, button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                         let app = tray.app_handle();
                         let hidden_at = *app.state::<Ui>().panel_hidden_at.lock().unwrap();
-                        panel::toggle(app, rect, hidden_at);
+                        // a ogni apertura si cerca un aggiornamento: la sezione compare solo se ce n'è uno davvero
+                        if panel::toggle(app, rect, hidden_at) {
+                            check_updates_quietly(app);
+                        }
                     }
                 })
                 .build(app)?;
 
-            // ricerca automatica degli aggiornamenti: il pallino compare anche senza aprire il menu
+            // ricerca automatica degli aggiornamenti: la sezione compare anche senza aprire il pannello
             let checker = handle.clone();
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(10));
                 loop {
-                    check_updates(&checker);
+                    check_updates_quietly(&checker);
                     thread::sleep(UPDATE_EVERY);
                 }
             });

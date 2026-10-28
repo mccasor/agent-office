@@ -39,14 +39,15 @@ pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 }
 
 /// Apre il pannello centrato sotto l'icona (`icon` = posizione e dimensioni dell'icona), o lo chiude se aperto.
-pub fn toggle(app: &AppHandle, icon: Rect, hidden_at: Option<Instant>) {
-    let Some(panel) = app.get_webview_window(PANEL_ID) else { return };
+/// true se l'ha aperto.
+pub fn toggle(app: &AppHandle, icon: Rect, hidden_at: Option<Instant>) -> bool {
+    let Some(panel) = app.get_webview_window(PANEL_ID) else { return false };
     if panel.is_visible().unwrap_or(false) {
         let _ = panel.hide();
-        return;
+        return false;
     }
     if hidden_at.is_some_and(|at| at.elapsed() < REOPEN_GUARD) {
-        return;
+        return false;
     }
     let scale = panel.scale_factor().unwrap_or(1.0);
     let pos = icon.position.to_physical::<f64>(scale);
@@ -63,6 +64,7 @@ pub fn toggle(app: &AppHandle, icon: Rect, hidden_at: Option<Instant>) {
     let _ = panel.eval("window.agentPanelRefresh?.()");
     let _ = panel.show();
     let _ = panel.set_focus();
+    true
 }
 
 /// Altezza richiesta dal contenuto (in punti), entro il massimo.

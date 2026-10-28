@@ -1,5 +1,6 @@
-//! Finestra Impostazioni (#94), aperta dal pannello ("Impostazioni…", ⌘,): una sola istanza, a schede come le
-//! Impostazioni di macOS, larga fissa e alta quanto la scheda mostrata. Il contenuto è `splash/settings.html`, pagina
+//! Finestra Impostazioni (#94), aperta dal pannello ("Impostazioni…", ⌘,): una sola istanza, come le Impostazioni di
+//! Sistema di macOS (sezioni nella barra laterale, impostazioni a destra), di dimensione fissa: larga WIDTH e alta
+//! quanto serve alla sezione Generali per non scorrere. Il contenuto è `splash/settings.html`, pagina
 //! locale che parla con l'app via IPC (`settings_*` in main.rs): funziona anche con il server fermo. Le scelte vanno
 //! in config.json (config.rs), da cui il server le riprende da solo.
 
@@ -9,8 +10,8 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 pub const SETTINGS_ID: &str = "settings";
-/// larghezza fissa in punti; l'altezza la chiede la pagina (settings_layout)
-const WIDTH: f64 = 600.0;
+/// larghezza fissa in punti (barra laterale e impostazioni); l'altezza la chiede la pagina (settings_layout)
+const WIDTH: f64 = 780.0;
 
 /// Eventi degli hook di agent-office, come HOOK_EVENTS in src/server/hooks/install.ts: se ne manca qualcuno gli hook
 /// sono di una versione vecchia e vanno reinstallati.
@@ -57,7 +58,7 @@ pub fn refresh(app: &AppHandle) {
     }
 }
 
-/// Altezza chiesta dalla pagina per la scheda mostrata e titolo della finestra (il nome della scheda, come in macOS).
+/// Altezza fissa chiesta dalla pagina (0: invariata) e titolo della finestra (il nome della sezione, come in macOS).
 pub fn layout(window: &WebviewWindow, height: f64, title: &str) {
     let _ = window.set_title(title);
     if height.is_finite() && height > 0.0 {

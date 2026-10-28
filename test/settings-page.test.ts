@@ -49,7 +49,7 @@ async function open(): Promise<HTMLElement> {
   return document.getElementById('app')!;
 }
 
-const tabs = (root: HTMLElement) => [...root.querySelectorAll('.tab span')].map((e) => e.textContent);
+const tabs = (root: HTMLElement) => [...root.querySelectorAll('.tab__label')].map((e) => e.textContent);
 
 describe('finestra Impostazioni: lingua (#93)', () => {
   it('menu "Lingua" nei Generali, ogni lingua col suo nome; scelta salvata e applicata subito', async () => {
