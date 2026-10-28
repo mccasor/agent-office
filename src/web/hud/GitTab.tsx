@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import type { GitCommit, GitDayReport } from '../../shared/types';
 import { clock, t, tn, type TextKey } from '../../shared/i18n';
 import { useShow } from '../store';
@@ -15,6 +15,22 @@ import './git.css';
  */
 
 export type GitLoader = (sessionId: string, day: string | null) => Promise<GitDayReport>;
+
+/** Di chi mostrare i commit nella scheda di un personaggio: Claude stesso (della sua sessione) o un subagente. */
+export type GitAuthorFilter = { kind: 'claude'; sessionId: string } | { kind: 'agent'; agentId: string };
+
+/**
+ * Solo i commit di `author`, per la scheda aperta cliccando un personaggio dell'ufficio; l'istanza li mostra tutti.
+ * Un commit di Claude senza sessione (server vecchio) vale per qualunque Claude. Pura.
+ */
+export function onlyAuthor(report: GitDayReport, author: GitAuthorFilter): GitDayReport {
+  const mine = (c: GitCommit) => {
+    const a = c.author;
+    if (author.kind === 'agent') return a.kind === 'agent' && a.agentId === author.agentId;
+    return a.kind === 'claude' && (a.sessionId === undefined || a.sessionId === author.sessionId);
+  };
+  return { ...report, commits: report.commits.filter(mine) };
+}
 
 /** Commit del giorno di un'istanza dal server; null = oggi. */
 export const fetchGit: GitLoader = async (sessionId, day) => {
@@ -237,8 +253,8 @@ function FileTypes({ commits }: { commits: GitCommit[] }) {
 }
 
 /** Contenuto di un giorno: stato vuoto, oppure riepilogo, commit e grafici. Pura. */
-export function GitDayView({ report }: { report: GitDayReport }) {
-  const empty = emptyText(report);
+export function GitDayView({ report, own = false }: { report: GitDayReport; own?: boolean }) {
+  const empty = own && report.status === 'ok' && report.commits.length === 0 ? t('gitTab.noCommitsOwn') : emptyText(report);
   if (empty) return <p className="git-empty" role="status">{empty}</p>;
   return (
     <>
@@ -265,18 +281,22 @@ function DayPicker({ report, day, onChange }: { report: GitDayReport; day: strin
   );
 }
 
-/** Scheda Git di un'istanza: selettore del giorno e contenuto, che oltre un'altezza massima scorre. */
-export function GitPanel({ sessionId, load = fetchGit }: { sessionId: string; load?: GitLoader }) {
+/**
+ * Scheda Git di un'istanza (o, con `author`, di un suo personaggio): selettore del giorno e contenuto, che oltre
+ * un'altezza massima scorre.
+ */
+export function GitPanel({ sessionId, author, load = fetchGit }: { sessionId: string; author?: GitAuthorFilter; load?: GitLoader }) {
   /** null = oggi */
   const [day, setDay] = useState<string | null>(null);
-  const { report, failed } = useGitReport(sessionId, day, load);
+  const { report: all, failed } = useGitReport(sessionId, day, load);
+  const report = useMemo(() => (all && author ? onlyAuthor(all, author) : all), [all, author]);
   return (
     <div className="git-tab">
       {report && <DayPicker report={report} day={day} onChange={setDay} />}
       {!report && <p className="git-empty" role="status">{failed ? t('gitTab.error') : t('gitTab.loading')}</p>}
       {report && (
         <div className="git-tab__scroll">
-          <GitDayView report={report} />
+          <GitDayView report={report} own={author !== undefined} />
         </div>
       )}
     </div>
@@ -311,11 +331,13 @@ export function GitTodayLine({ sessionId, load = fetchGit, onOpen }: { sessionId
  * voce spenta nelle impostazioni resta solo il contenuto. `watch`: segue le richieste di scheda delle altre finestre
  * (popout.requestTab), per la finestra staccata.
  */
-export function InstanceTabs({ sessionId, children, initial = 'instance', watch = false, load }: {
+export function InstanceTabs({ sessionId, children, initial = 'instance', watch = false, author, load }: {
   sessionId: string;
   children: ReactNode;
   initial?: InstanceTab;
   watch?: boolean;
+  /** scheda di un personaggio: solo i suoi commit; un subagente ha "Agente" al posto di "Istanza" */
+  author?: GitAuthorFilter;
   load?: GitLoader;
 }) {
   const shown = useShow('session.gitTab');
@@ -355,11 +377,11 @@ export function InstanceTabs({ sessionId, children, initial = 'instance', watch 
   return (
     <>
       <div className="git-tabs" role="tablist" aria-label={t('gitTab.tabs')}>
-        {button('instance', t('gitTab.instance'))}
+        {button('instance', author?.kind === 'agent' ? t('gitTab.agent') : t('gitTab.instance'))}
         {button('git', t('gitTab.git'))}
       </div>
       <div role="tabpanel" id={`${id}-panel`} aria-labelledby={`${id}-${tab}`}>
-        {tab === 'instance' ? children : <GitPanel sessionId={sessionId} load={load} />}
+        {tab === 'instance' ? children : <GitPanel sessionId={sessionId} author={author} load={load} />}
       </div>
     </>
   );

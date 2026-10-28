@@ -5,7 +5,7 @@ import { DEFAULT_DISPLAY } from '../../shared/settings';
 import type { AgentState, GitCommit, GitDayReport, SessionState } from '../../shared/types';
 import { useOfficeStore } from '../store';
 import { AgentCard } from './AgentCard';
-import { emptyText, GitDayView, GitPanel, GitTodayLine, InstanceTabs, isReport } from './GitTab';
+import { emptyText, GitDayView, GitPanel, GitTodayLine, InstanceTabs, isReport, onlyAuthor } from './GitTab';
 import { requestTab, tabKey } from './popout';
 
 afterEach(() => {
@@ -178,17 +178,41 @@ describe('scheda di Claude stesso (AgentCard)', () => {
     updatedAt: 0, active: true, status: 'working', issues: [], cwd: '/x', branch: 'main', waiting: false, dot: 'working', project: 'x',
   };
 
-  it('Claude ha le schede Istanza e Git; un subagente no', async () => {
+  it('Claude ha le schede Istanza e Git, con solo i commit suoi; un subagente Agente e Git, con solo i suoi', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(report()), { status: 200 })));
     render(<AgentCard agent={boss} session={session} />);
     expect(screen.getAllByRole('tab').map((b) => b.textContent)).toEqual(['Istanza', 'Git']);
     expect(screen.getByText('Progetto')).toBeTruthy();
     fireEvent.click(screen.getByRole('tab', { name: 'Git' }));
-    expect(await screen.findByRole('region', { name: 'Commit' })).toBeTruthy();
+    const commits = await screen.findByRole('region', { name: 'Commit' });
     expect(vi.mocked(fetch).mock.calls[0]![0]).toBe('/api/git?session=s1');
+    // niente commit dell'agente né fuori da Claude
+    expect(commits.textContent).not.toContain('fix: agente');
+    expect(commits.textContent).not.toContain('chore: a mano');
     cleanup();
     render(<AgentCard agent={{ ...boss, id: 'a1', agentType: 'Explore' }} />);
-    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.getAllByRole('tab').map((b) => b.textContent)).toEqual(['Agente', 'Git']);
+    fireEvent.click(screen.getByRole('tab', { name: 'Git' }));
+    const own = await screen.findByRole('region', { name: 'Commit' });
+    expect(own.textContent).toContain('fix: agente');
+    expect(own.textContent).not.toContain('chore: a mano');
+    cleanup();
+    // un subagente senza commit: la frase dei commit suoi
+    render(<AgentCard agent={{ ...boss, id: 'a9', agentType: 'Explore' }} />);
+    fireEvent.click(screen.getByRole('tab', { name: 'Git' }));
+    expect(await screen.findByText('Nessun commit suo in questo giorno')).toBeTruthy();
+  });
+
+  it('onlyAuthor: Claude della sua sessione (o senza sessione, server vecchio), il subagente per id', () => {
+    const r = report({ commits: [
+      commit({ hash: 'c1', author: { kind: 'claude', sessionId: 's1' } }),
+      commit({ hash: 'c2', author: { kind: 'claude', sessionId: 's2' } }),
+      commit({ hash: 'c3', author: { kind: 'claude' } }),
+      commit({ hash: 'c4', author: { kind: 'agent', agentId: 'a1', nickname: 'X', agentType: 'Explore' } }),
+      commit({ hash: 'c5', author: { kind: 'outside' } }),
+    ] });
+    expect(onlyAuthor(r, { kind: 'claude', sessionId: 's1' }).commits.map((c) => c.hash)).toEqual(['c1', 'c3']);
+    expect(onlyAuthor(r, { kind: 'agent', agentId: 'a1' }).commits.map((c) => c.hash)).toEqual(['c4']);
   });
 });
 

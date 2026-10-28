@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from 'react';
+import { type ReactNode, useEffect, useMemo } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { t } from '../../shared/i18n';
 import { useShown } from '../store';
@@ -7,7 +7,7 @@ import {
   agentName, agentTask, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
 } from './labels';
 import { AgentAlertNote, ContextMeter, GitSection, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
-import { InstanceTabs } from './GitTab';
+import { InstanceTabs, type GitAuthorFilter } from './GitTab';
 import { ProgressBar } from './ProgressBar';
 import { StatusCheck } from './StatusCheck';
 import { TokenSummary } from './TokenBreakdown';
@@ -65,7 +65,13 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone
   const tokens = show(session ? 'session.tokens' : 'agent.tokens');
   const cost = show(session ? 'session.cost' : 'agent.cost');
   // Claude stesso (#109): il contenuto di sempre nella scheda "Istanza", accanto alla scheda "Git"
-  const tabs = (content: ReactNode) => (session ? <InstanceTabs sessionId={session.id}>{content}</InstanceTabs> : content);
+  // scheda di un personaggio: nella scheda Git solo i suoi commit (Claude stesso della sua sessione, o il subagente)
+  const sessionId = session?.id ?? null;
+  const author = useMemo<GitAuthorFilter>(
+    () => (sessionId ? { kind: 'claude', sessionId } : { kind: 'agent', agentId: agent.id }),
+    [sessionId, agent.id],
+  );
+  const tabs = (content: ReactNode) => <InstanceTabs sessionId={agent.sessionId} author={author}>{content}</InstanceTabs>;
   return (
     <section className="hud-panel hud-card" aria-label={t('card.aria', { name })}>
       <header className="hud-card__head">

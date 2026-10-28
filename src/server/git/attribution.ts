@@ -38,6 +38,8 @@ export interface TranscriptSource {
   path: string;
   /** null = sessione principale */
   agentId: string | null;
+  /** sessione del transcript: con Claude stesso dice di quale sessione è il commit */
+  sessionId?: string;
 }
 
 /** tool_use di commit in attesa del risultato, al più per file */
@@ -135,12 +137,12 @@ const touchedSince = async (path: string, since: number): Promise<boolean> =>
  */
 export async function sessionSources(sessionPath: string, sessionId: string, since = 0): Promise<TranscriptSource[]> {
   const sources: TranscriptSource[] = [];
-  if (await touchedSince(sessionPath, since)) sources.push({ path: sessionPath, agentId: null });
+  if (await touchedSince(sessionPath, since)) sources.push({ path: sessionPath, agentId: null, sessionId });
   const dir = join(dirname(sessionPath), sessionId, 'subagents');
   const names = await readdir(dir, { recursive: true }).catch(() => [] as string[]);
   for (const name of names) {
     const m = /^(?:workflows[\\/][^\\/]+[\\/])?agent-([^\\/]+)\.jsonl$/.exec(name);
-    if (m?.[1] && (await touchedSince(join(dir, name), since))) sources.push({ path: join(dir, name), agentId: m[1] });
+    if (m?.[1] && (await touchedSince(join(dir, name), since))) sources.push({ path: join(dir, name), agentId: m[1], sessionId });
   }
   return sources;
 }
@@ -206,7 +208,7 @@ export function createCommitScanner(): CommitScanner {
         const scan = await read(s.path);
         if (scan.commits.length === 0) continue;
         const author: TranscriptCommit['author'] = s.agentId === null
-          ? { kind: 'claude' }
+          ? { kind: 'claude', ...(s.sessionId ? { sessionId: s.sessionId } : {}) }
           : { kind: 'agent', agentId: s.agentId, nickname: nicknameOf(s.agentId), agentType: await agentType(s.path) };
         for (const c of scan.commits) out.push({ ...c, author });
       }

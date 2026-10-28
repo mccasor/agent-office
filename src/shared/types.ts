@@ -377,7 +377,7 @@ export interface HistoryReport {
 
 /** Chi ha fatto un commit (#109): Claude stesso, un suo subagente o nessuno dei due ("fuori da Claude"). */
 export type GitCommitAuthor =
-  | { kind: 'claude' }
+  | { kind: 'claude'; /** sessione di Claude che l'ha fatto (la stessa cartella può averne più d'una) */ sessionId?: string }
   | { kind: 'agent'; agentId: string; nickname: string; agentType: string }
   | { kind: 'outside' };
 

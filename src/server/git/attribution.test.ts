@@ -61,7 +61,8 @@ describe('sessionSources', () => {
     writeFileSync(join(sub, 'workflows', 'w1', 'agent-w2.jsonl'), '');
     writeFileSync(join(sub, 'altro.jsonl'), '');
     const sources = await sessionSources(session, 's1');
-    expect(sources[0]).toEqual({ path: session, agentId: null });
+    expect(sources[0]).toEqual({ path: session, agentId: null, sessionId: 's1' });
+    expect(sources.every((s) => s.sessionId === 's1')).toBe(true);
     expect(sources.slice(1).map((s) => s.agentId).sort()).toEqual(['a1', 'w2']);
   });
 
@@ -75,7 +76,8 @@ describe('sessionSources', () => {
     writeFileSync(old, '');
     utimesSync(old, new Date(T0 - 86_400_000), new Date(T0 - 86_400_000));
     const all = await folderSources(session);
-    expect(all[0]).toEqual({ path: session, agentId: null });
+    expect(all[0]).toEqual({ path: session, agentId: null, sessionId: 's1' });
+    expect(all.find((s) => s.path === other)?.sessionId).toBe('s0');
     expect(all.map((s) => s.path).sort()).toEqual([join(sub, 'agent-a1.jsonl'), old, other, session].sort());
     const recent = await folderSources(session, T0);
     expect(recent.map((s) => s.path)).not.toContain(old);
@@ -84,7 +86,7 @@ describe('sessionSources', () => {
 
   it('senza cartella dei subagenti: solo la sessione', async () => {
     const { dir } = project();
-    expect(await sessionSources(join(dir, 'nuova.jsonl'), 'nuova')).toEqual([{ path: join(dir, 'nuova.jsonl'), agentId: null }]);
+    expect(await sessionSources(join(dir, 'nuova.jsonl'), 'nuova')).toEqual([{ path: join(dir, 'nuova.jsonl'), agentId: null, sessionId: 'nuova' }]);
   });
 });
 
@@ -117,7 +119,7 @@ describe('attribuzione dai transcript', () => {
       seen,
     );
     expect(commits.map((c) => [c.hash, c.author, c.matchedBy])).toEqual([
-      ['bbbbbbb', { kind: 'claude' }, 'hash'],
+      ['bbbbbbb', { kind: 'claude', sessionId: 's1' }, 'hash'],
       ['ccccccc', { kind: 'agent', agentId: 'a1', nickname: nicknameOf('a1'), agentType: 'Explore' }, 'hash'],
       ['ddddddd', { kind: 'outside' }, undefined],
       ['9999999', { kind: 'outside' }, undefined],
