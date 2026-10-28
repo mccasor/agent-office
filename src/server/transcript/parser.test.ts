@@ -226,6 +226,21 @@ describe('task in background', () => {
     expect(acc.state.backgroundTasks).toBe(0);
   });
 
+  it('#110: la notifica provvisoria di un agente che aspetta i suoi comandi in background non lo chiude', () => {
+    const acc = createAccumulator();
+    acc.ingest(toolUse('a1', 'Agent', { prompt: 'x' }));
+    acc.ingest(toolResult('Async agent launched successfully.\nagentId: a3cbdcac56a779774 (internal ID)', 'a1'));
+    const note = (summary: string, extra: string) =>
+      JSON.stringify({ type: 'user', message: { role: 'user', content: `<task-notification>\n<task-id>a3cbdcac56a779774</task-id>\n<status>completed</status>\n<summary>Agent "x" ${summary}</summary>\n<note>${extra}</note>\n</task-notification>` } });
+    acc.ingest(note('is waiting on its own background work', 'This agent stopped with background work of its own still running.'));
+    expect(acc.state.backgroundTasks).toBe(1);
+    expect(acc.state.taskEnds.has('a3cbdcac56a779774')).toBe(false);
+    // la fine vera: l'agente ha consegnato il rapporto
+    acc.ingest(note('finished', 'A task-notification fires each time this agent stops with no live background children of its own.'));
+    expect(acc.state.backgroundTasks).toBe(0);
+    expect(acc.state.taskEnds.get('a3cbdcac56a779774')).toBe('completed');
+  });
+
   it('chiude un task anche con la notifica messa in coda (queue-operation)', () => {
     const acc = createAccumulator();
     acc.ingest(toolUse('a1', 'Agent', { prompt: 'x', run_in_background: true }));

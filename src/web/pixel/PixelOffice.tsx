@@ -8,7 +8,7 @@ import {
   actorOps, actorRect, cellKey, furnitureOp, FLAT, feetOf, hitTest, inFront, sameFrame, sceneFurniture, sortByDepth,
   wallFaceVisible, type DrawOp, type HitRect, type SpriteRef, type Viewport,
 } from './draw';
-import { useSettings } from '../store';
+import { useSettings, useSettingsLoaded } from '../store';
 import { actorTag, ALL_LABELS_ZOOM, drawLabel, labelTheme, officeShow, type ActorTag, type OfficeShow } from './labels';
 import { litZones, RoomLights } from './lights';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
@@ -132,17 +132,21 @@ export function PixelOffice({ snapshot, selectedId, onSelect, active }: {
   active: boolean;
 }) {
   // composizione dell'ufficio (#108): una nuova vale solo quando nessuno sta lavorando (chi modifica config.json a
-  // mano scavalca il blocco delle Impostazioni); intanto resta la vecchia
+  // mano scavalca il blocco delle Impostazioni); intanto resta la vecchia. La prima che arriva dal server vale
+  // subito: prima c'era solo quella di default, mai scelta da nessuno
   const settings = useSettings();
+  const loaded = useSettingsLoaded();
   const wanted = settings.office.rooms;
   // posti ricalcolati solo a ogni nuovo snapshot o pianta, partendo dai precedenti (posti stabili)
   const [state, setState] = useState(() => {
     const plan = createPlan(wanted);
-    return { snapshot, plan, model: pixelModel(snapshot, EMPTY_PIXEL_SEATING, plan) };
+    return { snapshot, plan, loaded, model: pixelModel(snapshot, EMPTY_PIXEL_SEATING, plan) };
   });
   const next = createPlan(wanted);
-  const plan = next !== state.plan && officeBusy(snapshot?.sessions ?? []) ? state.plan : next;
-  if (state.snapshot !== snapshot || state.plan !== plan) setState({ snapshot, plan, model: pixelModel(snapshot, state.model, plan) });
+  const plan = next !== state.plan && state.loaded && officeBusy(snapshot?.sessions ?? []) ? state.plan : next;
+  if (state.snapshot !== snapshot || state.plan !== plan || state.loaded !== loaded) {
+    setState({ snapshot, plan, loaded, model: pixelModel(snapshot, state.model, plan) });
+  }
   const { model } = state;
 
   const canvas = useRef<HTMLCanvasElement>(null);

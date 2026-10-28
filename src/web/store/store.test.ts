@@ -66,6 +66,12 @@ describe('useOfficeStore', () => {
     expect(useOfficeStore.getState().snapshot?.generatedAt).toBe(1);
     expect(useOfficeStore.getState().connected).toBe(true);
   });
+
+  it('preferenze arrivate dal server: da lì la composizione dell\'ufficio segue la regola del blocco (#108)', () => {
+    expect(useOfficeStore.getState().settingsLoaded).toBe(false);
+    useOfficeStore.getState().setSettings(DEFAULT_DISPLAY);
+    expect(useOfficeStore.getState().settingsLoaded).toBe(true);
+  });
 });
 
 describe('condivisione strutturale degli snapshot', () => {

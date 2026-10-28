@@ -171,13 +171,21 @@ const TASK_STATUS_RE = /<status>(completed|failed|killed)<\/status>/;
 /** id dell'agente nel risultato del tool Agent */
 const AGENT_ID_RE = /agentId: ([\w-]+)/;
 
-/** Esiti nelle task-notification di un testo: id e stato di ciascuna, mai il riassunto o il risultato. */
-function taskEndsIn(text: string): [id: string, end: TaskEnd][] {
-  const out: [string, TaskEnd][] = [];
+/**
+ * Notifica di un agente che si è fermato ad aspettare i suoi comandi in background (#110): arriva con
+ * `<status>completed</status>`, ma l'agente riprenderà alla loro fine e la notifica si ripeterà. Non è una fine.
+ */
+const INTERIM_RE = /background work of its own still running|is waiting on its own background work/;
+
+/**
+ * Task-notification di un testo: id, stato e se è provvisoria (INTERIM_RE); mai il riassunto o il risultato, solo
+ * per riconoscere la nota della notifica provvisoria.
+ */
+function notificationsIn(text: string): { id: string; end: TaskEnd | undefined; interim: boolean }[] {
+  const out: { id: string; end: TaskEnd | undefined; interim: boolean }[] = [];
   for (const part of text.split('<task-notification>').slice(1)) {
     const id = /<task-id>([\w-]+)<\/task-id>/.exec(part)?.[1];
-    const end = TASK_STATUS_RE.exec(part)?.[1] as TaskEnd | undefined;
-    if (id && end) out.push([id, end]);
+    if (id) out.push({ id, end: TASK_STATUS_RE.exec(part)?.[1] as TaskEnd | undefined, interim: INTERIM_RE.test(part) });
   }
   return out;
 }
@@ -287,10 +295,12 @@ export function createAccumulator(): Accumulator {
     state.taskEnds.set(id, end);
     if (state.taskEnds.size > MAX_TASK_ENDS) state.taskEnds.delete(state.taskEnds.keys().next().value!);
   };
-  /** notifiche di fine: liberano i task in background e ne ricordano lo stato */
+  /** notifiche di fine: liberano i task in background e ne ricordano lo stato; quelle provvisorie no */
   const onTaskText = (text: string) => {
-    for (const m of text.matchAll(BACKGROUND_DONE_RE)) background.delete(m[1]!);
-    for (const [id, end] of taskEndsIn(text)) taskEnd(id, end);
+    const notes = notificationsIn(text);
+    const interim = new Set(notes.filter((n) => n.interim).map((n) => n.id));
+    for (const m of text.matchAll(BACKGROUND_DONE_RE)) if (!interim.has(m[1]!)) background.delete(m[1]!);
+    for (const n of notes) if (n.end && !n.interim) taskEnd(n.id, n.end);
   };
   /** stesso tool con lo stesso input della chiamata precedente: la serie cresce, altrimenti riparte da 1 */
   const countRepeat = (name: string, id: string | null, input: Json) => {

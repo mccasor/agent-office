@@ -29,6 +29,8 @@ export interface OfficeStoreState {
   selectedAgent: string | null;
   /** preferenze di visualizzazione da config.json (#94), dal server; i default finché non arrivano */
   settings: DisplaySettings;
+  /** le preferenze sono arrivate dal server (fino ad allora `settings` sono i default) */
+  settingsLoaded: boolean;
   /**
    * subagenti segnati a mano come terminati ("Segna come terminato" dopo "Controlla stato", #104) e quando: nascosti da
    * ufficio e lista finché non hanno attività più recente
@@ -167,6 +169,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   focusSession: new URLSearchParams(globalThis.location?.search ?? '').get('session') || null,
   selectedAgent: null,
   settings: DEFAULT_DISPLAY,
+  settingsLoaded: false,
   markedDone: loadMarked(),
   setSnapshot: (snapshot) => set({ snapshot: share(get().snapshot, snapshot) }),
   // stessi oggetti se nulla cambia: i componenti che leggono una voce non si ridisegnano. La lingua (#93) va impostata
@@ -174,7 +177,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
   setSettings: (settings) => {
     setLocale(settings.locale);
     if (typeof document !== 'undefined') document.documentElement.lang = settings.locale;
-    set({ settings: share(get().settings, settings) });
+    set({ settings: share(get().settings, settings), settingsLoaded: true });
   },
   setConnected: (connected) => set({ connected }),
   focus: (view, sessionId) => {
@@ -213,6 +216,7 @@ export const useOfficeStore = create<OfficeStoreState>()((set, get) => ({
 
 /** Preferenze di visualizzazione correnti. */
 export const useSettings = (): DisplaySettings => useOfficeStore((s) => s.settings);
+export const useSettingsLoaded = (): boolean => useOfficeStore((s) => s.settingsLoaded);
 
 /**
  * Lingua corrente (#93): chi la legge si ridisegna quando cambia, e con lui i figli. La usano le radici (App,
