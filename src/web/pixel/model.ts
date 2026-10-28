@@ -2,7 +2,7 @@ import type { AgentState, SessionState, Snapshot } from '../../shared/types';
 import { BOSS_PREFIX, bossOf } from './boss';
 import { assignSpots } from './seats';
 import { createPlan } from './plan';
-import { INSTANCE_ROOMS, type PixelActor, type PixelModel, type PixelSeating, type Spot } from './types';
+import type { PixelActor, PixelModel, PixelPlan, PixelSeating, Room, Spot } from './types';
 
 export const EMPTY_PIXEL_SEATING: PixelSeating = { rooms: {}, spots: {} };
 
@@ -12,12 +12,12 @@ const byRecency = (a: SessionState, b: SessionState) => b.updatedAt - a.updatedA
  * Stanze stabili per le sessioni attive: chi ce l'ha la tiene, le nuove (dalla più recente) prendono la prima libera.
  * Le altre restano senza stanza, dalla più recente.
  */
-function assignRooms(prev: Record<string, number>, active: SessionState[]): { rooms: Record<string, number>; roomless: string[] } {
+function assignRooms(prev: Record<string, number>, active: SessionState[], count: number): { rooms: Record<string, number>; roomless: string[] } {
   const rooms: Record<string, number> = {};
   const taken = new Set<number>();
   for (const s of active) {
     const r = Object.hasOwn(prev, s.id) ? prev[s.id] : undefined;
-    if (r !== undefined && Number.isInteger(r) && r >= 0 && r < INSTANCE_ROOMS && !taken.has(r)) {
+    if (r !== undefined && Number.isInteger(r) && r >= 0 && r < count && !taken.has(r)) {
       rooms[s.id] = r;
       taken.add(r);
     }
@@ -25,7 +25,7 @@ function assignRooms(prev: Record<string, number>, active: SessionState[]): { ro
   const roomless: string[] = [];
   for (const s of [...active].sort(byRecency)) {
     if (s.id in rooms) continue;
-    const free = Array.from({ length: INSTANCE_ROOMS }, (_, i) => i).find((i) => !taken.has(i));
+    const free = Array.from({ length: count }, (_, i) => i).find((i) => !taken.has(i));
     if (free === undefined) roomless.push(s.id);
     else {
       rooms[s.id] = free;
@@ -35,21 +35,35 @@ function assignRooms(prev: Record<string, number>, active: SessionState[]): { ro
   return { rooms, roomless };
 }
 
-/** Deriva dallo snapshot chi va dove nella vista 2D; `prev` garantisce stanze e posti stabili. */
-export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating): PixelModel {
-  const plan = createPlan();
+/**
+ * Posti delle sale hobby nell'ordine in cui si occupano: a coppie, una sala dopo l'altra (i primi due della prima, i
+ * primi due della seconda...), così chi aspetta si distribuisce tra tutte e al biliardino si gioca in due.
+ */
+export function hobbySeats(rooms: readonly Room[]): Spot[] {
+  const halls = rooms.filter((r) => r.kind === 'lounge');
+  const out: Spot[] = [];
+  const most = Math.max(0, ...halls.map((r) => r.seats.length));
+  for (let k = 0; k < most; k += 2) for (const r of halls) out.push(...r.seats.slice(k, k + 2));
+  return out;
+}
+
+/**
+ * Deriva dallo snapshot chi va dove nella vista 2D; `prev` garantisce stanze e posti stabili. `plan` è la pianta della
+ * composizione (createPlan): stanze e posti che non ci sono più si riassegnano.
+ */
+export function pixelModel(snapshot: Snapshot | null, prev: PixelSeating, plan: PixelPlan = createPlan()): PixelModel {
+  const work = plan.rooms.filter((r) => r.kind === 'instance').length;
   const agents = snapshot?.agents ?? [];
   const active = (snapshot?.sessions ?? []).filter((s) => s.active);
   const bosses = active.map((s) => bossOf(s, active.length > 1));
-  const { rooms, roomless } = assignRooms(prev.rooms, active);
+  const { rooms, roomless } = assignRooms(prev.rooms, active, work);
 
-  // chi ha finito aspetta in sala relax finché lavora un subagente della sua sessione, solo se era già presente
+  // chi ha finito aspetta in una sala hobby finché lavora un subagente della sua sessione, solo se era già presente
   // (un terminato mai visto lavorare, o già uscito, non rientra)
   const busy = new Set(agents.filter((a) => a.status !== 'done').map((a) => a.sessionId));
   const present = (a: AgentState) => a.id.startsWith(BOSS_PREFIX) || Object.hasOwn(prev.spots, a.id);
   const resting = [...agents, ...bosses].filter((a) => a.status === 'done' && busy.has(a.sessionId) && present(a));
-  const lounge = plan.rooms.find((r) => r.kind === 'lounge')!;
-  const spots = assignSpots(prev.spots, resting.map((a) => a.id), lounge.seats.map((s) => s.id));
+  const spots = assignSpots(prev.spots, resting.map((a) => a.id), hobbySeats(plan.rooms).map((s) => s.id));
 
   // al lavoro: boss alla sua scrivania, agenti sulle postazioni della stanza; senza stanza o oltre l'ottavo, corridoio
   const hall: string[] = [];

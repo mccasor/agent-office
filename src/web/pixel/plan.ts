@@ -1,5 +1,8 @@
 import {
-  INSTANCE_ROOMS,
+  DEFAULT_OFFICE_ROOMS, isHobby, officeKey, parseOfficeRooms, type HobbyKind, type OfficeRoom, type WorkRoomType,
+} from '../../shared/office';
+import { FLOOR_LEGEND, WALL_LEGEND, WORK_LAYOUTS, WORK_SIZES, type WorkLayout } from './rooms';
+import {
   WALL_DECOR,
   type Cell,
   type Facing,
@@ -12,20 +15,23 @@ import {
 } from './types';
 
 /**
- * Pianta fissa: corridoio orizzontale al centro con l'ingresso a ovest, tre stanze sopra (room-0..2) e tre sotto
- * (room-3, room-4 e la sala relax). Ogni stanza ha una riga di parete a nord (la faccia visibile) e la porta sul
- * corridoio; le stanze sotto sono le stesse di sopra specchiate (porta a nord, boss a sud).
+ * Pianta a composizione (#108): corridoio orizzontale al centro con l'ingresso a ovest, stanze sopra e sotto. Le
+ * stanze di lavoro (larghe 7, 11 o 15, piante in rooms.ts) riempiono la fila sopra e poi quella sotto; le sale hobby
+ * stanno sempre sotto, in fondo a destra. Ogni stanza ha una riga di parete a nord (la faccia visibile) e la porta sul
+ * corridoio; le stanze di lavoro sotto sono quelle di sopra specchiate (porta a nord, boss a sud), le sale hobby
+ * hanno già la porta a nord. Il corridoio è lungo quanto la fila più lunga.
  */
-const ROOM_W = 11;
 const ROOM_H = 8;
 const CORRIDOR_H = 3;
-const WIDTH = 3 * (ROOM_W + 1) + 1;
 const TOP_Z = 1;
 const CORRIDOR_Z = TOP_Z + ROOM_H + 1;
 const BOTTOM_Z = CORRIDOR_Z + CORRIDOR_H + 1;
 const DEPTH = BOTTOM_Z + ROOM_H + 1;
-/** colonna della porta dentro la stanza */
-const DOOR_X = 5;
+/** sale hobby: larghezza e colonna della porta */
+const HOBBY_W = 11;
+const HOBBY_DOOR = 5;
+/** tinta di pavimento e pareti delle sale hobby (le stanze di lavoro hanno quella della pianta, 0-4) */
+const HOBBY_STYLE = 5;
 
 const FLIP: Record<Facing, Facing> = { up: 'down', down: 'up', left: 'left', right: 'right' };
 
@@ -37,6 +43,7 @@ class RoomBuilder {
     readonly x: number,
     readonly z: number,
     readonly mirrored: boolean,
+    readonly doorX: number,
   ) {}
 
   cell(lx: number, lz: number, h = 1): Cell {
@@ -62,117 +69,95 @@ class RoomBuilder {
 
   /** sul corridoio: a sud per le stanze sopra, a nord per quelle sotto */
   get door(): Cell {
-    return this.z > CORRIDOR_Z ? { x: this.x + DOOR_X, z: this.z - 1 } : { x: this.x + DOOR_X, z: this.z + ROOM_H };
+    return this.z > CORRIDOR_Z ? { x: this.x + this.doorX, z: this.z - 1 } : { x: this.x + this.doorX, z: this.z + ROOM_H };
   }
 }
 
-const slot = (i: number) => ({ x: 1 + (i % 3) * (ROOM_W + 1), z: i < 3 ? TOP_Z : BOTTOM_Z, mirrored: i >= 3 });
-
-/** arredo a parete: tipo, colonna locale, larghezza, variante */
-type WallItem = readonly [FurnitureKind, number, number, number?];
-/** arredo a terra in coordinate locali, come RoomBuilder.place */
-type FloorItem = readonly [FurnitureKind, number, number, number, number, Facing, number?];
-
-/**
- * Arredi minori delle stanze istanza: ognuna ha il suo tema, con scrivanie e boss sempre negli stessi posti. Restano
- * liberi i passaggi lungo le isole (lz 2 e 7, colonne 2..8), il corridoio centrale (colonne 4..6, dove al massimo
- * c'è un tappeto) e l'accesso al boss (colonne 3, 4, 6, 7 delle righe lz 0 e 1). Le stanze sotto sono specchiate:
- * lz 0 è contro la parete sud che non si vede, quindi lì stanno arredi bassi; quelli col fronte vanno a lz 7.
- *
- *   room-0 (studio)               room-3 (archivio, specchiata: nord in alto)
- *   .wwq...oww.  parete            .wwcc.oqww.  parete: w finestre, q quadro, o orologio, c bacheca
- *   TBB..b..KSa  lz 0              TL.......La  lz 7, porta sopra la colonna 5
- *   ....DDD....  lz 1              ..cc...cc..  lz 6: c sedie delle postazioni
- *   (T pianta alta, B libreria, b boss, D sua scrivania, K schedario, S stampante, a appendiabiti, L armadietto)
- */
-const THEMES: readonly { wall: readonly WallItem[]; floor: readonly FloorItem[] }[] = [
-  // studio: libreria, quadro e orologio, schedario e stampante, tappeto blu nel corridoio centrale
-  {
-    wall: [['painting', 3, 1, 0], ['clock', 7, 1]],
-    floor: [
-      ['plant-tall', 0, 0, 1, 1, 'down'], ['bookshelf', 1, 0, 2, 1, 'down'], ['cabinet', 8, 0, 1, 1, 'down'],
-      ['printer', 9, 0, 1, 1, 'down'], ['coat-rack', 10, 0, 1, 1, 'down'], ['whiteboard', 0, 3, 1, 2, 'right'],
-      ['floor-lamp', 10, 2, 1, 1, 'down'], ['plant', 10, 5, 1, 1, 'down'], ['plant', 0, 7, 1, 1, 'down'],
-      ['bin', 1, 7, 1, 1, 'down'], ['cactus', 10, 7, 1, 1, 'down'], ['rug', 4, 2, 3, 5, 'down', 1],
-    ],
-  },
-  // laboratorio: armadietti, bacheca coi post-it, stampante e schedario, lavagna a destra
-  {
-    wall: [['corkboard', 3, 2], ['painting', 7, 1, 1]],
-    floor: [
-      ['cactus', 0, 0, 1, 1, 'down'], ['locker', 1, 0, 2, 1, 'down'], ['printer', 8, 0, 1, 1, 'down'],
-      ['cabinet', 9, 0, 1, 1, 'down'], ['plant', 10, 0, 1, 1, 'down'], ['coat-rack', 0, 2, 1, 1, 'down'],
-      ['plant-tall', 0, 5, 1, 1, 'down'], ['whiteboard', 10, 3, 1, 2, 'left'], ['bin', 10, 6, 1, 1, 'down'],
-      ['plant', 0, 7, 1, 1, 'down'],
-    ],
-  },
-  // creativo: quadri, lampada e piante alte, libreria a destra, tappeto verde
-  {
-    wall: [['painting', 3, 1, 2], ['clock', 6, 1], ['painting', 7, 1, 3]],
-    floor: [
-      ['plant-tall', 0, 0, 1, 1, 'down'], ['floor-lamp', 1, 0, 1, 1, 'down'], ['cactus', 2, 0, 1, 1, 'down'],
-      ['bookshelf', 8, 0, 2, 1, 'down'], ['plant-tall', 10, 0, 1, 1, 'down'], ['whiteboard', 0, 3, 1, 2, 'right'],
-      ['coat-rack', 10, 2, 1, 1, 'down'], ['printer', 10, 6, 1, 1, 'down'], ['bin', 0, 7, 1, 1, 'down'],
-      ['plant', 10, 7, 1, 1, 'down'], ['rug', 4, 2, 3, 5, 'down', 2],
-    ],
-  },
-  // archivio (specchiata): armadietti e appendiabiti alla parete nord, libreria a sinistra, tappeto ocra
-  {
-    wall: [['corkboard', 3, 2], ['clock', 6, 1], ['painting', 7, 1, 4]],
-    floor: [
-      ['plant-tall', 0, 7, 1, 1, 'down'], ['locker', 1, 7, 1, 1, 'up'], ['locker', 9, 7, 1, 1, 'up'],
-      ['coat-rack', 10, 7, 1, 1, 'down'], ['bookshelf', 0, 3, 1, 2, 'right'], ['whiteboard', 10, 3, 1, 2, 'left'],
-      ['plant', 0, 0, 1, 1, 'down'], ['bin', 1, 0, 1, 1, 'down'], ['floor-lamp', 9, 0, 1, 1, 'down'],
-      ['plant', 10, 0, 1, 1, 'down'], ['rug', 4, 2, 3, 5, 'down', 3],
-    ],
-  },
-  // riunioni (specchiata): stampante e schedario alla parete nord, quadro e bacheca, libreria a destra
-  {
-    wall: [['painting', 3, 1, 5], ['clock', 4, 1], ['corkboard', 6, 2]],
-    floor: [
-      ['cactus', 0, 7, 1, 1, 'down'], ['printer', 1, 7, 1, 1, 'up'], ['cabinet', 9, 7, 1, 1, 'up'],
-      ['plant-tall', 10, 7, 1, 1, 'down'], ['whiteboard', 0, 3, 1, 2, 'right'], ['floor-lamp', 10, 1, 1, 1, 'down'],
-      ['bookshelf', 10, 4, 1, 2, 'left'], ['coat-rack', 0, 0, 1, 1, 'down'], ['plant', 1, 0, 1, 1, 'down'],
-      ['bin', 10, 0, 1, 1, 'down'],
-    ],
-  },
-];
-
-/** Stanza istanza: scrivania del boss in fondo, due isole da 4 postazioni affacciate, corridoio centrale fino alla porta. */
-function instanceRoom(n: number): { room: Room; furniture: Furniture[] } {
-  const { x, z, mirrored } = slot(n);
-  const b = new RoomBuilder(`room-${n}`, x, z, mirrored);
-  const theme = THEMES[n % THEMES.length]!;
-  b.wall('window', 1, 2);
-  b.wall('window', 8, 2);
-  for (const [kind, lx, w, variant] of theme.wall) b.wall(kind, lx, w, variant);
-  for (const [kind, lx, lz, w, h, facing, variant] of theme.floor) b.place(kind, lx, lz, w, h, facing, variant);
-
-  b.place('boss-desk', 4, 1, 3, 1, 'up');
-  b.place('chair', 5, 0, 1, 1, 'down');
-  const boss = b.spot(`r${n}-boss`, 5, 0, 'down', true);
-
-  // isole: prima le sedie davanti (in basso, guardano su), poi quelle dietro verso il boss (in alto, guardano giù)
-  const desks: Spot[] = [];
-  for (const [chairZ, deskZ, facing] of [[6, 5, 'up'], [3, 4, 'down']] as const) {
-    for (const lx of [2, 3, 7, 8]) {
-      const toward: Facing = facing === 'down' ? 'up' : 'down';
-      b.place('desk', lx, deskZ, 1, 1, toward);
-      b.place('monitor', lx, deskZ, 1, 1, toward);
-      b.place('chair', lx, chairZ, 1, 1, facing);
-      desks.push(b.spot(`r${n}-desk-${desks.length}`, lx, chairZ, facing, true));
+/** Rettangoli di caratteri uguali di una mappa ASCII ('.' vuoto), da nord-ovest; `single` sono sempre celle singole. */
+function* runs(rows: readonly string[], single = ''): Generator<{ ch: string; lx: number; lz: number; w: number; h: number }> {
+  const seen = rows.map((row) => [...row].map(() => false));
+  for (const [lz, row] of rows.entries()) {
+    for (let lx = 0; lx < row.length; lx++) {
+      const ch = row[lx]!;
+      if (ch === '.' || seen[lz]![lx]) continue;
+      let w = 1;
+      let h = 1;
+      if (!single.includes(ch)) {
+        while (row[lx + w] === ch && !seen[lz]![lx + w]) w++;
+        while (rows[lz + h]?.slice(lx, lx + w) === ch.repeat(w)) h++;
+      }
+      for (let dz = 0; dz < h; dz++) for (let dx = 0; dx < w; dx++) seen[lz + dz]![lx + dx] = true;
+      yield { ch, lx, lz, w, h };
     }
   }
+}
+
+const SEATS = new Set<FurnitureKind>(['sofa', 'armchair']);
+
+/**
+ * Stanza di lavoro dalla sua pianta (rooms.ts). Gli arredi a parete guardano la stanza (lavagne e librerie sui lati),
+ * gli altri verso il basso dello schermo anche nelle stanze specchiate; divani e poltrone verso il tavolino.
+ */
+function workRoom(n: number, type: WorkRoomType, layout: WorkLayout, x: number, z: number, mirrored: boolean): { room: Room; furniture: Furniture[] } {
+  const { w, door } = WORK_SIZES[type];
+  const b = new RoomBuilder(`room-${n}`, x, z, mirrored, door);
+  for (const r of runs([layout.wall])) {
+    const painting = /\d/.test(r.ch);
+    b.wall(painting ? 'painting' : WALL_LEGEND[r.ch]!, r.lx, r.w, painting ? Number(r.ch) : 0);
+  }
+
+  const grid = layout.floor;
+  let boss: Spot | null = null;
+  const chairs: { lx: number; lz: number; facing: Facing }[] = [];
+  for (const r of runs(grid, 'bhm')) {
+    const { ch, lx, lz } = r;
+    if (ch === 'b') {
+      b.place('chair', lx, lz, 1, 1, 'down');
+      boss = b.spot(`r${n}-boss`, lx, lz, 'down', true);
+    } else if (ch === 'h') {
+      // la sedia guarda la sua scrivania, sopra o sotto
+      chairs.push({ lx, lz, facing: grid[lz - 1]?.[lx] === 'm' ? 'up' : 'down' });
+    } else if (ch === 'm') {
+      const toward: Facing = grid[lz + 1]?.[lx] === 'h' ? 'down' : 'up';
+      b.place('desk', lx, lz, 1, 1, toward);
+      b.place('monitor', lx, lz, 1, 1, toward);
+    } else {
+      const kind = FLOOR_LEGEND[ch];
+      if (!kind) throw new Error(`pianta ${layout.name}: '${ch}' non è nella legenda`);
+      if (kind === 'boss-desk') {
+        b.place(kind, lx, lz, r.w, r.h, 'up');
+        continue;
+      }
+      const variant = kind === 'rug' ? (layout.rug ?? 0) : 0;
+      if (SEATS.has(kind)) {
+        const table = (dx: number, dz: number) => grid[lz + dz]?.[lx + dx] === 't';
+        const local: Facing = table(0, r.h) ? 'down' : table(0, -1) ? 'up' : table(r.w, 0) ? 'right' : 'left';
+        b.place(kind, lx, lz, r.w, r.h, local, variant);
+        continue;
+      }
+      // in pianta, non specchiato: sui lati verso l'interno, altrimenti verso chi guarda
+      const side = r.h >= r.w && lz > 0 && lz + r.h < ROOM_H;
+      const facing: Facing = side && lx === 0 ? 'right' : side && lx + r.w === w ? 'left' : 'down';
+      b.furniture.push({ kind, cell: b.cell(lx, lz, r.h), w: r.w, h: r.h, facing, room: b.id, variant });
+    }
+  }
+  if (!boss) throw new Error(`pianta ${layout.name}: manca il boss`);
+
+  // prima le sedie davanti (verso la porta, guardano su), poi quelle dietro verso il boss
+  chairs.sort((p, q) => (p.facing === q.facing ? q.lz - p.lz || p.lx - q.lx : p.facing === 'up' ? -1 : 1));
+  const desks = chairs.map((c, i) => {
+    b.place('chair', c.lx, c.lz, 1, 1, c.facing);
+    return b.spot(`r${n}-desk-${i}`, c.lx, c.lz, c.facing, true);
+  });
   return {
-    room: { id: b.id, kind: 'instance', x, z, w: ROOM_W, h: ROOM_H, door: b.door, desks, boss, seats: [] },
+    room: { id: b.id, kind: 'instance', x, z, w, h: ROOM_H, door: b.door, desks, boss, seats: [] },
     furniture: b.furniture,
   };
 }
 
 /**
- * Sala relax (sotto a destra, porta a nord sopra la colonna 5): in alto i cabinati, il distributore di snack, il
- * frigo e il caffè; a sinistra divani e poltrone attorno al tavolino, a destra il biliardino con i giocatori ai
- * lati lunghi.
+ * Sala relax (porta a nord sopra la colonna 5): in alto i cabinati, il distributore di snack, il frigo e il caffè; a
+ * sinistra divani e poltrone attorno al tavolino, a destra il biliardino con i giocatori ai lati lunghi.
  *
  *   ...wp.p....   parete: w finestra, p poster
  *   TAA...bVFKP   lz 0: T pianta alta, A cabinati, b cestino, V distributore, F frigo, K caffè, P pianta
@@ -184,10 +169,9 @@ function instanceRoom(n: number): { room: Room; furniture: Furniture[] } {
  *   lrSSSr...sW   lz 6: l lampada, W boccione dell'acqua
  *   P.....ss..C   lz 7: due in piedi che chiacchierano, C cactus
  */
-function loungeRoom(): { room: Room; furniture: Furniture[] } {
-  const { x, z } = slot(5);
+function loungeRoom(x: number, z: number): { room: Room; furniture: Furniture[] } {
   // già con la porta a nord: coordinate locali non specchiate
-  const b = new RoomBuilder('lounge', x, z, false);
+  const b = new RoomBuilder('lounge', x, z, false, HOBBY_DOOR);
   b.wall('window', 3, 1);
   b.wall('poster', 4, 1, 1);
   b.wall('poster', 6, 1, 0);
@@ -231,43 +215,132 @@ function loungeRoom(): { room: Room; furniture: Furniture[] } {
     ...standing.map(([lx, lz, f], i) => b.spot(`stand-${i}`, lx, lz, f, false)),
   ];
   return {
-    room: { id: b.id, kind: 'lounge', x, z, w: ROOM_W, h: ROOM_H, door: b.door, desks: [], boss: null, seats },
+    room: { id: b.id, kind: 'lounge', x, z, w: HOBBY_W, h: ROOM_H, door: b.door, desks: [], boss: null, seats },
     furniture: b.furniture,
   };
+}
+
+/**
+ * Sala hobby `kind` con l'angolo nord-ovest dell'interno in (x, z): 11×8, porta a nord sopra la colonna 5, posti in
+ * `seats` nell'ordine in cui si occupano. Id della stanza e dei posti come la sala relax: build li rende unici.
+ */
+export function hobbyRoom(kind: HobbyKind, x: number, z: number): { room: Room; furniture: Furniture[] } {
+  switch (kind) {
+    case 'relax':
+      return loungeRoom(x, z);
+    // parte B (#108): sale console e ping-pong da hobby.ts; per ora ripiegano sulla sala relax
+    case 'console':
+    case 'pingpong':
+      return loungeRoom(x, z);
+  }
 }
 
 /** arredi che non bloccano il passaggio: tappeti e quelli appesi alle pareti */
 const PASSABLE = new Set<FurnitureKind>(['rug', ...WALL_DECOR]);
 
-function build(): PixelPlan {
-  const tiles: TileKind[][] = Array.from({ length: DEPTH }, () => Array<TileKind>(WIDTH).fill('wall'));
-  const styles: number[][] = Array.from({ length: DEPTH }, () => Array<number>(WIDTH).fill(-1));
+type Slot = { kind: 'work'; type: WorkRoomType; layout: WorkLayout } | { kind: 'hobby'; type: HobbyKind };
+
+/**
+ * Piante delle stanze di lavoro: lo stile scelto, oppure a rotazione per taglia tra quelli che nessun'altra stanza
+ * della stessa taglia ha scelto (tutti, se li hanno scelti tutti).
+ */
+function layoutsOf(rooms: readonly OfficeRoom[]): Slot[] {
+  const auto: Partial<Record<WorkRoomType, number>> = {};
+  return rooms.map((r): Slot => {
+    if (isHobby(r.type)) return { kind: 'hobby', type: r.type };
+    const type = r.type;
+    const all = WORK_LAYOUTS[type];
+    if (r.variant !== null) return { kind: 'work', type, layout: all[r.variant - 1]! };
+    const chosen = new Set(rooms.filter((o) => o.type === type && o.variant !== null).map((o) => o.variant! - 1));
+    const free = all.filter((_, i) => !chosen.has(i));
+    const pool = free.length > 0 ? free : all;
+    const k = auto[type] ?? 0;
+    auto[type] = k + 1;
+    return { kind: 'work', type, layout: pool[k % pool.length]! };
+  });
+}
+
+/** Posti in piedi lungo le pareti del corridoio, lontano dalle porte; la riga centrale resta libera. */
+function hallSpots(width: number, topDoors: number[], bottomDoors: number[]): Spot[] {
+  const pick = (from: number, to: number, gap: number, doors: number[]) => {
+    const xs: number[] = [];
+    for (let x = from; x <= to; x++) if (x % 2 === 0 && doors.every((d) => Math.abs(x - d) > gap)) xs.push(x);
+    return xs;
+  };
+  // lontano dalle porte e dalle piante in fondo; in un corridoio corto ci si accontenta di non stare davanti alle porte
+  let top = pick(4, width - 4, 3, topDoors);
+  let bottom = pick(4, width - 4, 3, bottomDoors);
+  if (top.length + bottom.length < 8) {
+    top = pick(2, width - 3, 1, topDoors);
+    bottom = pick(2, width - 3, 1, bottomDoors);
+  }
+  const cells = [
+    ...top.map((x) => ({ x, z: CORRIDOR_Z, facing: 'down' as const })),
+    ...bottom.map((x) => ({ x, z: CORRIDOR_Z + CORRIDOR_H - 1, facing: 'up' as const })),
+  ].sort((a, b) => a.x - b.x || a.z - b.z);
+  return cells.map((c, i) => ({ id: `hall-${i}`, cell: { x: c.x, z: c.z }, facing: c.facing, seated: false }));
+}
+
+function build(composition: readonly OfficeRoom[]): PixelPlan {
+  const slots = layoutsOf(composition);
+  const work = slots.filter((s) => s.kind === 'work');
+  const hobby = slots.filter((s) => s.kind === 'hobby');
+  // lavoro prima sopra, poi sotto; sotto in fondo le sale hobby
+  const topCount = Math.min(work.length, Math.ceil(slots.length / 2));
+  const rows = [work.slice(0, topCount), [...work.slice(topCount), ...hobby]];
+  const widthOf = (s: Slot) => (s.kind === 'work' ? WORK_SIZES[s.type].w : HOBBY_W);
+  const width = Math.max(...rows.map((row) => row.reduce((n, s) => n + widthOf(s) + 1, 1)));
+
+  const tiles: TileKind[][] = Array.from({ length: DEPTH }, () => Array<TileKind>(width).fill('void'));
+  const styles: number[][] = Array.from({ length: DEPTH }, () => Array<number>(width).fill(-1));
   const fill = (x: number, z: number, w: number, h: number, kind: TileKind) => {
     for (let dz = 0; dz < h; dz++) for (let dx = 0; dx < w; dx++) tiles[z + dz]![x + dx] = kind;
   };
 
-  const built = [...Array.from({ length: INSTANCE_ROOMS }, (_, i) => instanceRoom(i)), loungeRoom()];
+  const built: { room: Room; furniture: Furniture[]; style: number }[] = [];
+  let n = 0;
+  let h = 0;
+  for (const [i, row] of rows.entries()) {
+    let x = 1;
+    const z = i === 0 ? TOP_Z : BOTTOM_Z;
+    for (const s of row) {
+      if (s.kind === 'work') {
+        built.push({ ...workRoom(n++, s.type, s.layout, x, z, i === 1), style: s.layout.style });
+      } else {
+        // la prima sala tiene gli id di sempre, le altre li prendono con un prefisso
+        const { room, furniture } = hobbyRoom(s.type, x, z);
+        const id = h === 0 ? room.id : `${room.id}-${h}`;
+        const prefix = h === 0 ? '' : `h${h}-`;
+        built.push({
+          room: { ...room, id, hobby: s.type, seats: room.seats.map((p) => ({ ...p, id: prefix + p.id })) },
+          furniture: furniture.map((f) => ({ ...f, room: id })),
+          style: HOBBY_STYLE,
+        });
+        h++;
+      }
+      x += widthOf(s) + 1;
+    }
+  }
   const rooms = built.map((r) => r.room);
   const furniture = built.flatMap((r) => r.furniture);
-  for (const [i, r] of rooms.entries()) {
+  for (const r of rooms) fill(r.x - 1, r.z - 1, r.w + 2, r.h + 2, 'wall');
+  fill(0, CORRIDOR_Z - 1, width, CORRIDOR_H + 2, 'wall');
+  for (const { room: r, style } of built) {
     fill(r.x, r.z, r.w, r.h, r.kind === 'lounge' ? 'lounge' : 'floor');
-    fill(r.door.x, r.door.z, 1, 1, 'door');
     // tinta della stanza sul pavimento e sulla parete nord, quella che si vede da dentro
-    for (let dz = -1; dz < r.h; dz++) for (let dx = 0; dx < r.w; dx++) styles[r.z + dz]![r.x + dx] = i;
+    for (let dz = -1; dz < r.h; dz++) for (let dx = 0; dx < r.w; dx++) styles[r.z + dz]![r.x + dx] = style;
   }
-  fill(1, CORRIDOR_Z, WIDTH - 2, CORRIDOR_H, 'corridor');
+  fill(1, CORRIDOR_Z, width - 2, CORRIDOR_H, 'corridor');
+  for (const r of rooms) fill(r.door.x, r.door.z, 1, 1, 'door');
   const entrance = { x: 0, z: CORRIDOR_Z + 1 };
   fill(entrance.x, entrance.z, 1, 1, 'door');
 
-  // corridoio: piante alle estremità, posti in piedi lungo le pareti lontano dalle porte; la riga centrale resta libera
-  for (const [px, pz] of [[1, CORRIDOR_Z], [1, CORRIDOR_Z + 2], [WIDTH - 2, CORRIDOR_Z], [WIDTH - 2, CORRIDOR_Z + 2]] as const) {
+  // corridoio: piante alle estremità, posti in piedi lungo le pareti lontano dalle porte
+  for (const [px, pz] of [[1, CORRIDOR_Z], [1, CORRIDOR_Z + 2], [width - 2, CORRIDOR_Z], [width - 2, CORRIDOR_Z + 2]] as const) {
     furniture.push({ kind: 'plant', cell: { x: px, z: pz }, w: 1, h: 1, facing: 'down', room: null });
   }
-  const overflow: Spot[] = [];
-  for (const x of [10, 12, 14, 22, 24, 26]) {
-    overflow.push({ id: `hall-${overflow.length}`, cell: { x, z: CORRIDOR_Z }, facing: 'down', seated: false });
-    overflow.push({ id: `hall-${overflow.length}`, cell: { x, z: CORRIDOR_Z + 2 }, facing: 'up', seated: false });
-  }
+  const doorsAt = (z: number) => rooms.filter((r) => r.door.z === z).map((r) => r.door.x);
+  const overflow = hallSpots(width, doorsAt(CORRIDOR_Z - 1), doorsAt(CORRIDOR_Z + CORRIDOR_H));
 
   const walkable = tiles.map((row) => row.map((t) => t !== 'wall' && t !== 'void'));
   for (const f of furniture) {
@@ -277,12 +350,28 @@ function build(): PixelPlan {
   const spots = [...rooms.flatMap((r) => [...r.desks, ...(r.boss ? [r.boss] : []), ...r.seats]), ...overflow];
   for (const s of spots) walkable[s.cell.z]![s.cell.x] = true;
 
-  return { width: WIDTH, depth: DEPTH, tiles, styles, walkable, rooms, furniture, entrance, overflow };
+  return { width, depth: DEPTH, tiles, styles, walkable, rooms, furniture, entrance, overflow };
 }
 
-const PLAN = build();
+/** piante già costruite, per composizione: le ultime usate (si cambia composizione di rado) */
+const cache = new Map<string, PixelPlan>();
+const CACHE_SIZE = 8;
 
-/** La pianta della vista 2D: fissa, sempre la stessa istanza. */
-export function createPlan(): PixelPlan {
-  return PLAN;
+/**
+ * La pianta della vista 2D per una composizione (#108), sempre la stessa istanza per la stessa composizione: si
+ * costruisce una volta, non a ogni fotogramma. Una composizione non valida vale quella di default.
+ */
+export function createPlan(rooms: readonly OfficeRoom[] = DEFAULT_OFFICE_ROOMS): PixelPlan {
+  const valid = parseOfficeRooms(rooms) ?? DEFAULT_OFFICE_ROOMS;
+  const key = officeKey(valid);
+  let plan = cache.get(key);
+  if (plan) {
+    // in fondo: la più usata di recente
+    cache.delete(key);
+  } else {
+    plan = build(valid);
+    if (cache.size >= CACHE_SIZE) cache.delete(cache.keys().next().value!);
+  }
+  cache.set(key, plan);
+  return plan;
 }
