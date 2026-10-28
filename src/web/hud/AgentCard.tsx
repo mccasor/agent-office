@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import type { AgentState, SessionState } from '../../shared/types';
 import { t } from '../../shared/i18n';
 import { useShown } from '../store';
@@ -7,6 +7,7 @@ import {
   agentName, agentTask, projectName, SESSION_STATUS_LABEL, statusText, STATUS_LABEL, toolErrorsText,
 } from './labels';
 import { AgentAlertNote, ContextMeter, GitSection, OutcomeTag, PopOutButton, RoleChip, Row, SessionAlert } from './panels';
+import { InstanceTabs } from './GitTab';
 import { ProgressBar } from './ProgressBar';
 import { StatusCheck } from './StatusCheck';
 import { TokenSummary } from './TokenBreakdown';
@@ -23,7 +24,8 @@ const DASH = '—';
  * finestra a sé (#92), dove la scheda non ha né l'uno né l'altro pulsante. Dal cruscotto (#97): l'avviso se è fermo
  * o in loop, l'esito di un terminato e gli errori dei tool. Per un subagente non terminato "Controlla stato" (#104),
  * con "Segna come terminato" se c'è `onMarkDone` e il verdetto lo propone. Le voci spente nelle impostazioni (#94)
- * non ci sono, righe e sezioni comprese.
+ * non ci sono, righe e sezioni comprese. Per Claude stesso tutto questo sta nella scheda "Istanza", accanto alla scheda
+ * "Git" con i commit del giorno (#109).
  */
 export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone }: {
   agent: AgentState;
@@ -62,6 +64,8 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone
   const turn = session !== null && show('session.turn');
   const tokens = show(session ? 'session.tokens' : 'agent.tokens');
   const cost = show(session ? 'session.cost' : 'agent.cost');
+  // Claude stesso (#109): il contenuto di sempre nella scheda "Istanza", accanto alla scheda "Git"
+  const tabs = (content: ReactNode) => (session ? <InstanceTabs sessionId={session.id}>{content}</InstanceTabs> : content);
   return (
     <section className="hud-panel hud-card" aria-label={t('card.aria', { name })}>
       <header className="hud-card__head">
@@ -83,58 +87,60 @@ export function AgentCard({ agent, session = null, onClose, onPopOut, onMarkDone
           {issues && <span className="hud-label__issue">{agent.issues.map((n) => `#${n}`).join(' ')}</span>}
         </div>
       )}
-      {description && <p className="hud-card__desc">{agent.description}</p>}
-      {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
-      {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? t('card.someSubagent') : null} />}
-      {!session && agent.waiting && !done && <SessionAlert session={agent} />}
-      {!session && agent.alert && !done && show('agent.alerts') && <AgentAlertNote alert={agent.alert} />}
-      {!session && <StatusCheck agentId={agent.id} done={done} onMarkDone={onMarkDone} />}
-      {session && (
+      {tabs(<>
+        {description && <p className="hud-card__desc">{agent.description}</p>}
+        {/* Claude: la sessione bloccata (anche da un suo subagente); un subagente: il suo blocco */}
+        {session?.waiting && <SessionAlert session={session} who={session.waitingAgentId ? t('card.someSubagent') : null} />}
+        {!session && agent.waiting && !done && <SessionAlert session={agent} />}
+        {!session && agent.alert && !done && show('agent.alerts') && <AgentAlertNote alert={agent.alert} />}
+        {!session && <StatusCheck agentId={agent.id} done={done} onMarkDone={onMarkDone} />}
+        {session && (
+          <dl>
+            <Row label={t('card.project')}>{projectName(session)}</Row>
+          </dl>
+        )}
+        {session && <ContextMeter session={session} compactions />}
+        {session && <GitSection session={session} />}
         <dl>
-          <Row label={t('card.project')}>{projectName(session)}</Row>
+          {!session && show('agent.type') && <Row label={t('card.type')}>{agent.agentType}</Row>}
+          <Row label={t('card.status')}>{status}</Row>
+          {!session && done && agent.outcome && show('agent.outcome') && <Row label={t('card.outcome')}><OutcomeTag outcome={agent.outcome} /></Row>}
+          {toolErrors && <Row label={t('card.errors')}>{toolErrorsText(toolErrors)}</Row>}
+          {session ? (
+            <>
+              {turn && turnStartedAt && <Row label={t('card.turn')}>{t('card.turnRunning', { d: formatDuration(now - turnStartedAt) })}</Row>}
+              {turn && typeof session.lastTurnMs === 'number' && <Row label={t('card.lastTurn')}>{formatDuration(session.lastTurnMs)}</Row>}
+            </>
+          ) : (
+            show('agent.duration') && <Row label={t('card.duration')}>{t(done ? 'dur.in' : 'dur.for', { d: formatDuration(elapsed(agent, now)) })}</Row>
+          )}
+          {show(session ? 'session.model' : 'agent.model') && <Row label={t('card.model')}>{agent.model ?? DASH}</Row>}
+          {show(session ? 'session.effort' : 'agent.effort') && <Row label={t('card.effort')}>{(session ? session.effort : agent.effort) ?? DASH}</Row>}
         </dl>
-      )}
-      {session && <ContextMeter session={session} compactions />}
-      {session && <GitSection session={session} />}
-      <dl>
-        {!session && show('agent.type') && <Row label={t('card.type')}>{agent.agentType}</Row>}
-        <Row label={t('card.status')}>{status}</Row>
-        {!session && done && agent.outcome && show('agent.outcome') && <Row label={t('card.outcome')}><OutcomeTag outcome={agent.outcome} /></Row>}
-        {toolErrors && <Row label={t('card.errors')}>{toolErrorsText(toolErrors)}</Row>}
+        {progress && pct !== null && show('agent.progress') && (
+          <div className="hud-context">
+            <div className="hud-context__head">
+              <span className="hud-muted">{t('card.progress')}</span>
+              <span className="hud-context__pct">{`${progress.completed}/${progress.total} · ${pct}%`}</span>
+            </div>
+            <ProgressBar value={pct} label={t('card.progressOf', { name })} />
+          </div>
+        )}
         {session ? (
           <>
-            {turn && turnStartedAt && <Row label={t('card.turn')}>{t('card.turnRunning', { d: formatDuration(now - turnStartedAt) })}</Row>}
-            {turn && typeof session.lastTurnMs === 'number' && <Row label={t('card.lastTurn')}>{formatDuration(session.lastTurnMs)}</Row>}
+            {/* solo Claude, poi con i subagenti: i due numeri non vanno sommati */}
+            <TokenSummary
+              title="Claude" tokens={session.ownTokens ?? agent.tokens} cost={cost ? (session.ownCost ?? null) : undefined} costTestId="agent-cost" showTokens={tokens}
+            />
+            <TokenSummary
+              title={t('card.withSubagents')} tokens={session.tokensUsed} cost={cost ? (session.cost ?? null) : undefined} costTestId="session-cost" details={false}
+              showTokens={tokens}
+            />
           </>
         ) : (
-          show('agent.duration') && <Row label={t('card.duration')}>{t(done ? 'dur.in' : 'dur.for', { d: formatDuration(elapsed(agent, now)) })}</Row>
+          <TokenSummary tokens={agent.tokens} cost={cost ? (agent.cost ?? null) : undefined} costTestId="agent-cost" showTokens={tokens} />
         )}
-        {show(session ? 'session.model' : 'agent.model') && <Row label={t('card.model')}>{agent.model ?? DASH}</Row>}
-        {show(session ? 'session.effort' : 'agent.effort') && <Row label={t('card.effort')}>{(session ? session.effort : agent.effort) ?? DASH}</Row>}
-      </dl>
-      {progress && pct !== null && show('agent.progress') && (
-        <div className="hud-context">
-          <div className="hud-context__head">
-            <span className="hud-muted">{t('card.progress')}</span>
-            <span className="hud-context__pct">{`${progress.completed}/${progress.total} · ${pct}%`}</span>
-          </div>
-          <ProgressBar value={pct} label={t('card.progressOf', { name })} />
-        </div>
-      )}
-      {session ? (
-        <>
-          {/* solo Claude, poi con i subagenti: i due numeri non vanno sommati */}
-          <TokenSummary
-            title="Claude" tokens={session.ownTokens ?? agent.tokens} cost={cost ? (session.ownCost ?? null) : undefined} costTestId="agent-cost" showTokens={tokens}
-          />
-          <TokenSummary
-            title={t('card.withSubagents')} tokens={session.tokensUsed} cost={cost ? (session.cost ?? null) : undefined} costTestId="session-cost" details={false}
-            showTokens={tokens}
-          />
-        </>
-      ) : (
-        <TokenSummary tokens={agent.tokens} cost={cost ? (agent.cost ?? null) : undefined} costTestId="agent-cost" showTokens={tokens} />
-      )}
+      </>)}
     </section>
   );
 }

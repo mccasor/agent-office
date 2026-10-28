@@ -115,6 +115,19 @@ describe('CardWindow', () => {
     open.mockRestore();
   });
 
+  it('istanza: schede "Istanza" e "Git" (#109), aperta su Git con `tab=git` nell\'URL', async () => {
+    const report = { day: '2026-10-28', days: ['2026-10-28'], status: 'not-repo', project: null, branch: null, commits: [], truncated: false };
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(report), { status: 200 })));
+    history.replaceState(null, '', '/?card=session&id=s1&tab=git');
+    render(<CardWindow kind="session" id="s1" />);
+    push(snap());
+    expect(screen.getByRole('tab', { name: 'Git' }).getAttribute('aria-selected')).toBe('true');
+    expect(await screen.findByText('La cartella dell\'istanza non è un repository git')).toBeTruthy();
+    fireEvent.click(screen.getByRole('tab', { name: 'Istanza' }));
+    expect(screen.getByRole('button', { name: /Claudio Code/ })).toBeTruthy();
+    vi.unstubAllGlobals();
+  });
+
   it('istanza chiusa: ultimo stato noto con una nota', () => {
     render(<CardWindow kind="session" id="s1" />);
     push(snap());
