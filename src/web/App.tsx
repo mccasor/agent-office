@@ -9,6 +9,9 @@ import { HistoryView } from './hud/HistoryView';
 import { TodayBar } from './hud/TodayBar';
 import './app.css';
 
+/** pagina delle offerte, la stessa accettata da `cards::is_donate` nell'app */
+const DONATE_URL = 'https://ko-fi.com/mccasor';
+
 export function App() {
   const fullSnapshot = useOfficeStore((s) => s.snapshot);
   const connected = useOfficeStore((s) => s.connected);
@@ -109,6 +112,10 @@ export function App() {
           <AgentCard agent={selected} session={selectedSession} onClose={closeCard} onPopOut={popOutCard} onMarkDone={markSelected} />
         )}
       </HudOverlay>
+      {/* offerta su Ko-fi: nell'app della menu bar il link si apre nel browser di sistema (cards.rs) */}
+      <a className="app-donate" href={DONATE_URL} target="_blank" rel="noopener noreferrer" title={t('app.donateHint')}>
+        ☕ {t('app.donate')}
+      </a>
     </>
   );
 }

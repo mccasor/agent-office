@@ -365,7 +365,7 @@
   position: fixed;
   inset: 0;
   overflow-y: auto;
-  padding: 72px 16px 24px;
+  padding: 72px 16px 64px; /* in fondo c'è spazio per il pulsante di Ko-fi (app.css) */
   box-sizing: border-box;
   font: 13px/1.45 var(--hud-font);
   color: var(--hud-fg);

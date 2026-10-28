@@ -311,6 +311,8 @@ export const es: Texts = {
   'view.history': 'Análisis',
   'view.historyHint': 'Análisis del día',
   'app.offline': 'Desconectado: reconectando…',
+  'app.donate': 'Invítame a un café',
+  'app.donateHint': 'Apoya Agent Office en Ko-fi',
   'cardWindow.connecting': 'Conectando con la oficina…',
   'cardWindow.agentMissing': 'Agente no encontrado: puede que ya haya salido de la oficina.',
   'cardWindow.sessionMissing': 'Instancia no encontrada: puede que ya se haya cerrado.',

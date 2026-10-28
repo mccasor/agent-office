@@ -330,6 +330,8 @@ export const it = {
   'view.history': 'Analisi',
   'view.historyHint': 'Analisi della giornata',
   'app.offline': 'Disconnesso: riconnessione…',
+  'app.donate': 'Offrimi un caffè',
+  'app.donateHint': 'Sostieni Agent Office su Ko-fi',
   'cardWindow.connecting': 'Connessione all\'ufficio…',
   'cardWindow.agentMissing': 'Agente non trovato: forse è già uscito dall\'ufficio.',
   'cardWindow.sessionMissing': 'Istanza non trovata: forse è già stata chiusa.',

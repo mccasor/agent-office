@@ -311,6 +311,8 @@ export const en: Texts = {
   'view.history': 'Insights',
   'view.historyHint': 'Insights for the day',
   'app.offline': 'Disconnected: reconnecting…',
+  'app.donate': 'Buy me a coffee',
+  'app.donateHint': 'Support Agent Office on Ko-fi',
   'cardWindow.connecting': 'Connecting to the office…',
   'cardWindow.agentMissing': 'Agent not found: it may have already left the office.',
   'cardWindow.sessionMissing': 'Instance not found: it may have already been closed.',
