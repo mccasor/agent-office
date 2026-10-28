@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
 import { DEFAULT_DISPLAY, type DisplaySettings } from '../../shared/settings.js';
-import type { AgentVerdict, HistoryReport, Snapshot } from '../../shared/types.js';
+import type { AgentVerdict, GitDayReport, HistoryReport, Snapshot } from '../../shared/types.js';
 
 export interface OfficeServer {
   url: string;
@@ -21,6 +21,9 @@ const HEARTBEAT_MS = 15_000;
 const MAX_SSE_BUFFER = 4 * 1024 * 1024;
 /** GET /api/agents/<id>/status: id di un subagente (solo lettere, cifre, - e _) */
 const AGENT_STATUS_RE = /^\/api\/agents\/([\w-]{1,128})\/status$/;
+/** GET /api/git: id della sessione (come per i subagenti) e giorno facoltativo */
+const SESSION_ID_RE = /^[\w-]{1,128}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const SECURITY_HEADERS: Record<string, string> = {
   'X-Content-Type-Options': 'nosniff',
@@ -61,7 +64,8 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
 /**
  * Ascolta solo su 127.0.0.1. GET /api/snapshot, GET /api/status, GET /api/config (preferenze di visualizzazione),
  * GET /api/events (SSE: eventi `snapshot` e `config`), GET /api/history (storico della giornata, se c'è `history`),
- * GET /api/agents/<id>/status ("Controlla stato" di un subagente, se c'è `agentStatus`), statici da webDir.
+ * GET /api/agents/<id>/status ("Controlla stato" di un subagente, se c'è `agentStatus`),
+ * GET /api/git?session=<id>&day=YYYY-MM-DD (commit del giorno di un'istanza, se c'è `git`), statici da webDir.
  * Nessuna scrittura: config.json lo scrive l'app della menu bar.
  */
 export async function startServer(opts: {
@@ -73,6 +77,8 @@ export async function startServer(opts: {
   history?: (day: string | null) => Promise<HistoryReport | null>;
   /** verdetto aggiornato su un subagente (#104), rifacendo subito i controlli; null se l'agente non c'è */
   agentStatus?: (agentId: string) => Promise<AgentVerdict | null>;
+  /** commit del giorno di una sessione (#109, null = oggi), calcolati a richiesta; null se la sessione non c'è */
+  git?: (sessionId: string, day: string | null) => Promise<GitDayReport | null>;
 }): Promise<OfficeServer> {
   let current = opts.initial;
   // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
@@ -224,6 +230,23 @@ export async function startServer(opts: {
       const report = await opts.history(new URLSearchParams(query).get('day'));
       if (!report) {
         send(res, 400, 'Bad Request');
+        return;
+      }
+      send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+      return;
+    }
+
+    if (pathname === '/api/git' && opts.git) {
+      const params = new URLSearchParams(query);
+      const session = params.get('session') ?? '';
+      const day = params.get('day');
+      if (!SESSION_ID_RE.test(session) || (day !== null && !DAY_RE.test(day))) {
+        send(res, 400, 'Bad Request');
+        return;
+      }
+      const report = await opts.git(session, day);
+      if (!report) {
+        send(res, 404, 'Not Found');
         return;
       }
       send(res, 200, JSON.stringify(report), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });

@@ -319,3 +319,46 @@ describe('GET /api/agents/<id>/status (#104)', () => {
     }
   });
 });
+
+describe('GET /api/git (#109)', () => {
+  let webDir: string;
+  afterEach(async () => {
+    await rm(webDir, { recursive: true, force: true });
+  });
+
+  it('valida sessione e giorno (400), 404 per una sessione sconosciuta, JSON senza cache', async () => {
+    webDir = await mkdtemp(join(tmpdir(), 'agent-office-http-git-'));
+    const asked: [string, string | null][] = [];
+    const server = await startServer({
+      port: 0,
+      webDir,
+      initial: snap(1),
+      git: async (session, day) => {
+        asked.push([session, day]);
+        if (session !== 's1') return null;
+        return { day: day ?? '2026-10-28', days: ['2026-10-28'], status: 'ok', project: 'p', branch: 'main', commits: [], truncated: false };
+      },
+    });
+    const without = await startServer({ port: 0, webDir, initial: snap(1) });
+    try {
+      let res = await fetch(`${server.url}/api/git?session=s1`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('cache-control')).toBe('no-store');
+      expect((await res.json()).day).toBe('2026-10-28');
+      res = await fetch(`${server.url}/api/git?session=s1&day=2026-10-20`);
+      expect((await res.json()).day).toBe('2026-10-20');
+      expect((await fetch(`${server.url}/api/git?session=zz`)).status).toBe(404);
+      // parametri non validi: non arrivano al calcolo
+      expect((await fetch(`${server.url}/api/git`)).status).toBe(400);
+      expect((await fetch(`${server.url}/api/git?session=s1&day=ieri`)).status).toBe(400);
+      expect((await fetch(`${server.url}/api/git?session=s1&day=2026-10-2`)).status).toBe(400);
+      expect((await fetch(`${server.url}/api/git?session=..%2Fx`)).status).toBe(400);
+      expect((await fetch(`${server.url}/api/git?session=${'a'.repeat(129)}`)).status).toBe(400);
+      expect((await raw(server.url, '/api/git?session=s1', { method: 'POST' })).status).toBe(405);
+      expect(asked).toEqual([['s1', null], ['s1', '2026-10-20'], ['zz', null]]);
+      expect((await fetch(`${without.url}/api/git?session=s1`)).status).toBe(404);
+    } finally {
+      await Promise.all([server.close(), without.close()]);
+    }
+  });
+});

@@ -374,3 +374,64 @@ export interface HistoryReport {
   /** file più toccati: basename e numero di agenti e sessioni che l'hanno letto o modificato */
   files: { name: string; count: number }[];
 }
+
+/** Chi ha fatto un commit (#109): Claude stesso, un suo subagente o nessuno dei due ("fuori da Claude"). */
+export type GitCommitAuthor =
+  | { kind: 'claude' }
+  | { kind: 'agent'; agentId: string; nickname: string; agentType: string }
+  | { kind: 'outside' };
+
+/** File di un commit con le righe aggiunte e tolte (`binary`: file binario, senza righe). */
+export interface GitFileChange {
+  /** percorso nel repository (dopo una rinomina, quello nuovo) */
+  path: string;
+  added: number;
+  removed: number;
+  binary?: true;
+}
+
+/** Commit del giorno nella scheda Git (#109). */
+export interface GitCommit {
+  /** hash corto */
+  hash: string;
+  /** data del commit (committer, epoch ms) */
+  at: number;
+  /** branch da cui il commit è raggiungibile, se ricavabile */
+  branch: string | null;
+  /** prima riga del messaggio */
+  message: string;
+  added: number;
+  removed: number;
+  /** file del commit (al più i primi MAX_COMMIT_FILES) */
+  files: GitFileChange[];
+  /** quanti file in tutto (anche oltre quelli in `files`) */
+  filesCount: number;
+  author: GitCommitAuthor;
+  /**
+   * come è stato attribuito: hash esatto dal transcript, stesso messaggio e minuto (cherry-pick, rebase, amend), o
+   * orario di un `git commit` che non ha stampato l'hash (`-q`); assente se fuori da Claude
+   */
+  matchedBy?: 'hash' | 'message' | 'time';
+}
+
+/**
+ * Stato della scheda Git: `ok` (repository con commit, anche se nessuno nel giorno), `not-repo` (cwd non è un
+ * repository, o la sessione non ha cwd), `no-git` (git non disponibile), `empty` (repository senza commit).
+ */
+export type GitDayStatus = 'ok' | 'not-repo' | 'no-git' | 'empty';
+
+/** Risposta di GET /api/git?session=<id>&day=YYYY-MM-DD. */
+export interface GitDayReport {
+  /** giorno (ora locale del server) */
+  day: string;
+  /** oggi e i giorni degli ultimi 30 con almeno un commit, dal più recente */
+  days: string[];
+  status: GitDayStatus;
+  /** cartella del repository e branch corrente */
+  project: string | null;
+  branch: string | null;
+  /** commit del giorno su tutti i branch locali, dal più recente, merge esclusi */
+  commits: GitCommit[];
+  /** il giorno ha più commit di quelli restituiti */
+  truncated: boolean;
+}

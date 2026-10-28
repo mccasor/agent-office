@@ -5,7 +5,8 @@ import { appTitle, followHeight, inApp, MAX_SCREEN_FRACTION } from './hud/fit';
 import { InstanceBody, StateCounts } from './hud/InstancesPanel';
 import { projectName } from './hud/labels';
 import { StatusDot } from './hud/panels';
-import { openCardWindow, type CardKind } from './hud/popout';
+import { InstanceTabs } from './hud/GitTab';
+import { openCardWindow, tabFromSearch, type CardKind } from './hud/popout';
 import { BOSS_PREFIX, bossOf } from './pixel/boss';
 import { t } from '../shared/i18n';
 import { connectSnapshotStream, isMarkedDone, useLocale, useOfficeStore, watchMarkedDone } from './store';
@@ -119,14 +120,17 @@ function SessionWindow({ snapshot, id, onName }: WindowProps) {
           </span>
           <StateCounts agents={agents} />
         </header>
-        <InstanceBody
-          session={current ? s : { ...s, waiting: false }}
-          boss={boss}
-          agents={agents}
-          selected={null}
-          // il clic su un agente apre la sua scheda in un'altra finestra
-          onSelect={(agentId) => openCardWindow('agent', agentId)}
-        />
+        {/* schede "Istanza" e "Git" (#109): si apre su Git se richiesto dall'URL o da "Scheda Git" nella lista */}
+        <InstanceTabs sessionId={s.id} initial={tabFromSearch(location.search) ?? 'instance'} watch>
+          <InstanceBody
+            session={current ? s : { ...s, waiting: false }}
+            boss={boss}
+            agents={agents}
+            selected={null}
+            // il clic su un agente apre la sua scheda in un'altra finestra
+            onSelect={(agentId) => openCardWindow('agent', agentId)}
+          />
+        </InstanceTabs>
       </section>
     </>
   );

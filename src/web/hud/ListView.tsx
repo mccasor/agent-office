@@ -8,6 +8,8 @@ import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, statusText, toolErrorsShort, toolErrorsText, turnText,
 } from './labels';
 import { finishedAsAgent } from './HistoryView';
+import { GitTodayLine } from './GitTab';
+import { openCardWindow } from './popout';
 import { AlertMark, ContextMeter, GitSection, OutcomeTag, RoleChip, StatusDot } from './panels';
 import { ProgressBar } from './ProgressBar';
 import { CheckButton, useStatusCheck, VerdictNote } from './StatusCheck';
@@ -257,6 +259,8 @@ const SessionCard = memo(function SessionCard({ session: s, agents: all, finishe
       </div>
       <ContextMeter session={s} />
       <GitSection session={s} />
+      {/* commit di oggi (#109); la scheda Git completa si apre nella finestra dell'istanza */}
+      <GitTodayLine sessionId={s.id} onOpen={() => openCardWindow('session', s.id, 'git')} />
       {live.length > 0 && <ul className="list-agents">{live.map((a) => <AgentLine key={a.id} agent={a} now={now} onMarkDone={onMarkDone} />)}</ul>}
       {done.length > 0 && (
         <details className="list-finished">

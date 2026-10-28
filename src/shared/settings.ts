@@ -66,6 +66,8 @@ export const SETTINGS_CATALOG = [
   { key: 'session.branch', tab: 'git', places: ['instances', 'list', 'card', 'panel'], default: true },
   { key: 'session.diff', tab: 'git', places: ['instances', 'list', 'card'], default: true },
   { key: 'session.issues', tab: 'git', places: ['instances', 'list', 'card'], default: true },
+  // scheda Git delle info sull'istanza (#109): commit del giorno, autori e grafici; nella lista il riepilogo
+  { key: 'session.gitTab', tab: 'git', places: ['instances', 'list', 'card'], default: true },
   // istanze e giornata
   { key: 'instances.counts', tab: 'instances', places: ['instances', 'list'], default: true },
   { key: 'instances.done', tab: 'instances', places: ['instances', 'list'], default: true },

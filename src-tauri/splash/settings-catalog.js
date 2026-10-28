@@ -298,6 +298,16 @@ globalThis.AGENT_OFFICE_SETTINGS = {
       "default": true
     },
     {
+      "key": "session.gitTab",
+      "tab": "git",
+      "places": [
+        "instances",
+        "list",
+        "card"
+      ],
+      "default": true
+    },
+    {
       "key": "instances.counts",
       "tab": "instances",
       "places": [

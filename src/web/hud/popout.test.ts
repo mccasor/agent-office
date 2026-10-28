@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { cardFromSearch, cardUrl, cardWindowName, openCardWindow } from './popout';
+import { cardFromSearch, cardUrl, cardWindowName, openCardWindow, requestedTab, requestTab, tabFromSearch, tabKey } from './popout';
 
 describe('schede staccabili (#92)', () => {
   it('scheda chiesta dall\'URL', () => {
@@ -27,5 +27,21 @@ describe('schede staccabili (#92)', () => {
     open.mockReturnValue(null);
     expect(() => openCardWindow('agent', 'a1')).not.toThrow();
     open.mockRestore();
+  });
+
+  it('scheda Git dell\'istanza (#109): nell\'URL e in localStorage (l\'app ricostruisce l\'URL senza `tab`)', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    openCardWindow('session', 's1', 'git');
+    expect(open).toHaveBeenCalledWith(`${location.origin}/?card=session&id=s1&tab=git`, 'agent-office-session-s1', expect.any(String));
+    expect(requestedTab(localStorage.getItem(tabKey('s1')))).toBe('git');
+    open.mockRestore();
+    expect(tabFromSearch('?card=session&id=s1&tab=git')).toBe('git');
+    expect(tabFromSearch('?card=session&id=s1&tab=altro')).toBeNull();
+    // richiesta scaduta o illeggibile: ignorata
+    requestTab('s2', 'git', 1000);
+    expect(requestedTab(localStorage.getItem(tabKey('s2')), 1000 + 60_000)).toBeNull();
+    expect(requestedTab('{rotto')).toBeNull();
+    expect(requestedTab(null)).toBeNull();
+    localStorage.clear();
   });
 });
