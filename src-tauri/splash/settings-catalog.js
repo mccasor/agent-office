@@ -15,6 +15,9 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     },
     {
       "id": "instances"
+    },
+    {
+      "id": "office"
     }
   ],
   "places": [
@@ -350,5 +353,65 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     "it",
     "en",
     "es"
-  ]
+  ],
+  "office": {
+    "types": [
+      "work4",
+      "work8",
+      "work12",
+      "relax",
+      "console",
+      "pingpong"
+    ],
+    "hobby": [
+      "relax",
+      "console",
+      "pingpong"
+    ],
+    "variants": {
+      "work4": 8,
+      "work8": 4,
+      "work12": 4,
+      "relax": 1,
+      "console": 1,
+      "pingpong": 1
+    },
+    "limits": {
+      "rooms": 8,
+      "work": [
+        1,
+        7
+      ],
+      "hobby": [
+        1,
+        3
+      ]
+    },
+    "default": [
+      {
+        "type": "work8",
+        "variant": null
+      },
+      {
+        "type": "work8",
+        "variant": null
+      },
+      {
+        "type": "work8",
+        "variant": null
+      },
+      {
+        "type": "work8",
+        "variant": null
+      },
+      {
+        "type": "work8",
+        "variant": null
+      },
+      {
+        "type": "relax",
+        "variant": null
+      }
+    ]
+  }
 };

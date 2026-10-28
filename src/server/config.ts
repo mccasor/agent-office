@@ -3,6 +3,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { resolveLocale } from '../shared/i18n/index.js';
+import { resolveOffice } from '../shared/office.js';
 import { LANGUAGES, resolveShow, type DisplaySettings } from '../shared/settings.js';
 
 /**
@@ -47,6 +48,8 @@ const FIELDS = {
   language: oneOf(LANGUAGES, 'system'),
   /** voci da mostrare (catalogo in shared/settings.ts): sempre tutte, risolte con i default */
   show: { default: resolveShow(undefined), parse: resolveShow } satisfies Field<DisplaySettings['show']>,
+  /** composizione dell'ufficio (#108): `{ rooms: [{ type, variant }] }`, non valida -> default (shared/office.ts) */
+  office: { default: resolveOffice(undefined), parse: resolveOffice } satisfies Field<DisplaySettings['office']>,
 };
 
 export type ServerConfig = { [K in keyof typeof FIELDS]: (typeof FIELDS)[K]['default'] };
@@ -85,6 +88,7 @@ export const displaySettings = (c: ServerConfig, languages: readonly string[] = 
   language: c.language,
   locale: resolveLocale(c.language, languages),
   show: c.show,
+  office: c.office,
 });
 
 /** File assente o illeggibile -> tutto default. */

@@ -7,8 +7,8 @@ import { PONG_FRAMES, SCREEN_FRAMES, SCREEN_THEMES, TV_FRAMES } from './sprites'
 import type { Furniture } from './types';
 
 const monitor = (facing: Furniture['facing'], x = 3, z = 4): Furniture => ({ kind: 'monitor', cell: { x, z }, w: 1, h: 1, facing, room: 'room-0' });
-const using = (f: Furniture, area: string): FurnitureUse => ({ screens: new Map([[cellKey(f.cell), area]]), players: 0, gamers: new Map(), pong: new Map() });
-const idle: FurnitureUse = { screens: new Map(), players: 0, gamers: new Map(), pong: new Map() };
+const using = (f: Furniture, area: string): FurnitureUse => ({ screens: new Map([[cellKey(f.cell), area]]), players: new Map(), gamers: new Map(), pong: new Map() });
+const idle: FurnitureUse = { screens: new Map(), players: new Map(), gamers: new Map(), pong: new Map() };
 
 describe('screenTheme', () => {
   it('un tema per ruolo: sviluppo a codice, design a forme, docs a testo, research a grafici, architecture a blocchi', () => {
@@ -62,7 +62,7 @@ describe('furnitureLook', () => {
   it('biliardino fermo senza giocatori, in partita con almeno uno', () => {
     const table: Furniture = { kind: 'foosball', cell: { x: 30, z: 18 }, w: 2, h: 1, facing: 'down', room: 'lounge' };
     expect(furnitureLook(table, idle, new AnimClock(5)).frame).toBe(-1);
-    const frames = new Set([0, 0.2, 0.4, 0.6].map((t) => furnitureLook(table, { ...idle, players: 2 }, new AnimClock(t)).frame));
+    const frames = new Set([0, 0.2, 0.4, 0.6].map((t) => furnitureLook(table, { ...idle, players: new Map([[table.room!, 2]]) }, new AnimClock(t)).frame));
     expect(frames.size).toBeGreaterThan(1);
     expect([...frames].every((f) => f >= 0)).toBe(true);
   });

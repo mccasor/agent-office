@@ -6,6 +6,7 @@
  * mostrano la faccia, i personaggi sono più alti di una cella. Coordinate: x verso est, z verso sud (verso il basso
  * dello schermo), le stesse di findPath (path.ts) e advanceAlongPath (motion.ts).
  */
+import type { HobbyKind } from '../../shared/office';
 import type { AgentState } from '../../shared/types';
 import type { Cell } from './path';
 
@@ -17,17 +18,12 @@ export const TILE = 16;
 /** verso cui guarda un personaggio o un arredo */
 export type Facing = 'down' | 'up' | 'left' | 'right';
 
-/** stanze per le istanze di Claude Code */
-export const INSTANCE_ROOMS = 5;
-/** postazioni per gli agenti in ogni stanza istanza (oltre alla scrivania del boss) */
-export const DESKS_PER_ROOM = 8;
-
 export type TileKind =
   /** fuori dalla pianta */
   | 'void'
   /** pavimento delle stanze istanza */
   | 'floor'
-  /** pavimento della sala relax */
+  /** pavimento delle sale hobby */
   | 'lounge'
   /** pavimento del corridoio */
   | 'corridor'
@@ -39,9 +35,9 @@ export type TileKind =
 /** Un posto dove un personaggio si ferma: postazione, scrivania del boss, posto in sala relax, posto in piedi. */
 export interface Spot {
   /**
-   * stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'foos-<n>' (al biliardino), 'lounge-<n>',
-   * 'stand-<n>', 'hall-<n>' (corridoio). Nelle sale hobby di hobby.ts: '<stanza>:<locale>', con il locale 'foos-<n>',
-   * 'pad-<n>' (alla console), 'pong-<n>' (al ping-pong) e gli altri posti della sala
+   * stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'hall-<n>' (corridoio). Nelle sale hobby
+   * (hobby.ts): '<stanza>:<locale>', con il locale 'foos-<n>' (al biliardino), 'pad-<n>' (alla console), 'pong-<n>'
+   * (al ping-pong) e gli altri posti della sala
    */
   id: string;
   cell: Cell;
@@ -52,9 +48,11 @@ export interface Spot {
 }
 
 export interface Room {
-  /** 'room-0'..'room-4' per le istanze, 'lounge' per la sala relax */
+  /** 'room-<n>' per le istanze (n da 0, nell'ordine della composizione), 'lounge' e 'lounge-<n>' per le sale hobby */
   id: string;
   kind: 'instance' | 'lounge';
+  /** sale hobby: quale (#108) */
+  hobby?: HobbyKind;
   /** rettangolo interno calpestabile o arredato, pareti escluse, in celle */
   x: number;
   z: number;
@@ -62,7 +60,7 @@ export interface Room {
   h: number;
   /** vano porta sul corridoio */
   door: Cell;
-  /** stanze istanza: DESKS_PER_ROOM postazioni, nell'ordine in cui si occupano; sala relax: [] */
+  /** stanze istanza: 4, 8 o 12 postazioni, nell'ordine in cui si occupano (prima davanti, poi dietro); sale hobby: [] */
   desks: Spot[];
   /** stanze istanza: scrivania del boss (Claude stesso); sala relax: null */
   boss: Spot | null;
@@ -147,12 +145,12 @@ export interface PixelPlan {
   styles: number[][];
   /** walkable[z][x]: pavimenti, porte e posti; non pareti né arredi (le sedie dei posti sì) */
   walkable: boolean[][];
-  /** stanze istanza (INSTANCE_ROOMS, da 'room-0') e poi la sala relax */
+  /** stanze istanza (da 'room-0', nell'ordine della composizione) e poi le sale hobby */
   rooms: Room[];
   furniture: Furniture[];
   /** cella d'ingresso dall'esterno, nel corridoio: da qui entrano ed escono i personaggi */
   entrance: Cell;
-  /** posti in piedi nel corridoio per chi non trova posto (stanza piena, oltre le 5 istanze) */
+  /** posti in piedi nel corridoio per chi non trova posto (stanza piena, istanze oltre le stanze di lavoro) */
   overflow: Spot[];
 }
 
@@ -173,7 +171,7 @@ export interface PixelActor {
 
 /** Assegnazioni stabili tra uno snapshot e il successivo. */
 export interface PixelSeating {
-  /** sessionId -> indice della stanza istanza (0..INSTANCE_ROOMS-1) */
+  /** sessionId -> indice della stanza istanza (da 0 al numero di stanze di lavoro escluso) */
   rooms: Record<string, number>;
   /** id dell'attore -> id dello Spot occupato (postazione, sala relax o corridoio) */
   spots: Record<string, string>;
@@ -182,7 +180,7 @@ export interface PixelSeating {
 export interface PixelModel extends PixelSeating {
   plan: PixelPlan;
   actors: PixelActor[];
-  /** sessioni attive senza stanza (oltre INSTANCE_ROOMS), dalla più recente */
+  /** sessioni attive senza stanza (oltre le stanze di lavoro), dalla più recente */
   roomless: string[];
   /** sessioni attive inattive (pallino grigio): le loro stanze restano in penombra (#99) */
   idle: string[];

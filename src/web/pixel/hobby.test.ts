@@ -114,7 +114,7 @@ describe('sale hobby', () => {
     const lounge = plan.rooms.find((r) => r.kind === 'lounge')!;
     const relax = hobbyRoom('relax', 'lounge', lounge.x, lounge.z);
     expect(relax.furniture).toEqual(plan.furniture.filter((f) => f.room === 'lounge'));
-    expect(relax.seats.map((s) => ({ ...s, id: s.id.replace(/^lounge:/, '') }))).toEqual(lounge.seats);
+    expect(relax.seats).toEqual(lounge.seats);
     expect(relax.door).toEqual(lounge.door);
     expect(relax.seats).toHaveLength(22);
   });

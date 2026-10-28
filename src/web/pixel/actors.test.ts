@@ -14,8 +14,8 @@ const room = plan.rooms[0]!;
 const desk = room.desks[0]!;
 const lounge = plan.rooms.find((r) => r.kind === 'lounge')!;
 const sofa = lounge.seats.find((s) => s.seated)!;
-const standing = lounge.seats.find((s) => s.id.startsWith('stand-'))!;
-const foosball = lounge.seats.find((s) => s.id.startsWith('foos-'))!;
+const standing = lounge.seats.find((s) => s.id.startsWith('lounge:stand-'))!;
+const foosball = lounge.seats.find((s) => s.id.startsWith('lounge:foos-'))!;
 
 /** avanza a passi da 0.1 s finché `until` o per al massimo `max` secondi */
 function run(m: ActorMotion | undefined, target: Spot | null, from: number, max: number, until?: (m: ActorMotion) => boolean) {

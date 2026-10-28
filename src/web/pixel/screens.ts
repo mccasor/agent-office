@@ -39,8 +39,8 @@ export const PONG_FPS = 8;
 export interface FurnitureUse {
   /** cella del monitor (cellKey) -> area di chi ci digita davanti */
   screens: Map<string, string>;
-  /** giocatori arrivati al biliardino */
-  players: number;
+  /** sale hobby (id della stanza) -> giocatori arrivati al biliardino */
+  players: Map<string, number>;
   /** sale hobby (id della stanza) -> giocatori col controller davanti alle TV */
   gamers: Map<string, number>;
   /** sale hobby (id della stanza) -> giocatori arrivati al tavolo da ping-pong */
@@ -75,7 +75,7 @@ export function furnitureLook(f: Furniture, use: FurnitureUse, clock: AnimClock)
     return { frame: on ? clock.frame(PONG_FPS) % PONG_FRAMES : -1, variant: f.variant ?? 0 };
   }
   if (f.kind === 'foosball') {
-    return { frame: use.players > 0 ? clock.frame(FOOSBALL_FPS) % FOOSBALL_FRAMES : -1, variant: f.variant ?? 0 };
+    return { frame: f.room !== null && (use.players.get(f.room) ?? 0) > 0 ? clock.frame(FOOSBALL_FPS) % FOOSBALL_FRAMES : -1, variant: f.variant ?? 0 };
   }
   return { frame: 0, variant: f.variant ?? 0 };
 }
