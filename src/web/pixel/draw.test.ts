@@ -49,6 +49,8 @@ describe('ordine di profondità', () => {
 
   it('tappeti e finestre sono piatti, il monitor del boss sta davanti alla sua sedia', () => {
     expect(FLAT.has('rug') && FLAT.has('window') && !FLAT.has('desk')).toBe(true);
+    // porta-racchette e segnapunti appesi; la TV no, si anima e sta sul mobile
+    expect(FLAT.has('paddle-rack') && FLAT.has('scoreboard') && !FLAT.has('tv')).toBe(true);
     const all = sceneFurniture(plan);
     for (const r of plan.rooms.filter((r) => r.boss)) {
       const m = all.find((f) => f.kind === 'monitor' && f.cell.x === inFront(r.boss!).x && f.cell.z === inFront(r.boss!).z);

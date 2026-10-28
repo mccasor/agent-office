@@ -121,6 +121,9 @@ export const PALETTE = {
   arcade: ['#b49ae0', '#8a6cc4', '#664c9c', '#463270'],
   arcadeTeal: ['#7ad8cc', '#3cb4a8', '#2a8a80', '#1c625c'],
   night: ['#5a6aa8', '#3a4880', '#28325e', '#1a2040'],
+  // sale console e ping-pong (#108)
+  table: ['#6aa8d8', '#3f7fb8', '#2c5f8e', '#1e4266'],
+  paddle: ['#f08a7c', '#d84a4a', '#a8323c', '#7a222c'],
 } as const;
 
 export interface PixelImage {
@@ -286,7 +289,7 @@ export interface PixelLook {
 export const CHAR_W = 16;
 export const CHAR_H = 24;
 
-export const POSE_FRAMES: Record<Pose, number> = { stand: 2, walk: 4, sit: 2, type: 4, play: 4 };
+export const POSE_FRAMES: Record<Pose, number> = { stand: 2, walk: 4, sit: 2, type: 4, play: 4, game: 4, paddle: 4 };
 
 function dist2(a: string, b: string): number {
   const [r1, g1, b1] = rgba(a);
@@ -621,13 +624,59 @@ interface Leg {
   lift: number;
 }
 
+/** tasti del controller che si accendono a turno */
+const PAD_LIGHTS = [PALETTE.bubble[1], PALETTE.cloth.lime[1], PALETTE.cloth.mustard[1], PALETTE.cloth.blue[1]] as const;
+
+/**
+ * Racchetta del colpo di profilo (verso destra), per fotogramma: [x, dy] dell'avambraccio, [x, dy] della mano,
+ * [x, dy] del centro della paletta, con dy dalla prima riga del busto.
+ */
+const PADDLE_SWING: readonly (readonly [readonly [number, number], readonly [number, number], readonly [number, number]])[] = [
+  [[9, 2], [11, 3], [13, 2]],
+  [[5, 2], [4, 3], [2, 2]],
+  [[9, 1], [11, 1], [13, -1]],
+  [[9, 0], [11, 0], [13, -3]],
+];
+
+/** paletta rossa (di spalle si vede il rovescio nero) col manico, centrata in (cx, cy) */
+function drawPaddle(r: Raster, cx: number, cy: number, back: boolean): void {
+  const c = back ? PALETTE.dark : PALETTE.paddle;
+  r.rect(cx - 1, cy - 1, 3, 3, c[1]);
+  r.px(cx - 1, cy - 1, c[0]);
+  r.px(cx + 1, cy + 1, c[2]);
+  r.px(cx, cy + 2, PALETTE.walnut[1]);
+}
+
+/** braccia col controller, di fronte o di spalle (seduti davanti alla TV) */
+function drawPadFront(r: Raster, look: PixelLook, back: boolean, t: number, f: number): void {
+  const { shirt, skin } = look;
+  if (back) {
+    // da dietro il controller non si vede: i gomiti si muovono a turno e sporgono le impugnature
+    r.vline(3, t, t + 1, shirt[2]);
+    r.vline(12, t, t + 1, shirt[2]);
+    r.px(2, t + 2 - (f % 2), shirt[2]);
+    r.px(13, t + 1 + (f % 2), shirt[2]);
+    r.px(4, t + 3, PALETTE.dark[1]);
+    r.px(11, t + 3, PALETTE.dark[1]);
+    return;
+  }
+  const y = t + 3 - (f === 2 ? 1 : 0);
+  r.vline(3, t, y - 1, shirt[0]);
+  r.vline(12, t, y - 1, shirt[2]);
+  r.rect(4, y, 8, 2, PALETTE.dark[1]);
+  r.px(4, y, skin[1]);
+  r.px(11, y, skin[1]);
+  r.px(6 + (f % 2), y, PALETTE.metal[1]);
+  r.px(9, y, PAD_LIGHTS[f % PAD_LIGHTS.length]);
+}
+
 /** Corpo visto di fronte o di spalle; t = prima riga del busto. */
 function drawBodyFront(
   r: Raster,
   look: PixelLook,
   back: boolean,
   t: number,
-  opts: { hands: [number, number]; seated: boolean; typing: number | null; lift: [number, number] },
+  opts: { hands: [number, number]; seated: boolean; typing: number | null; lift: [number, number]; pad: number | null; paddle: number | null },
 ): void {
   const { shirt, pants, skin, shoes } = look;
   // gambe e scarpe
@@ -682,6 +731,20 @@ function drawBodyFront(
   } else if (look.jacket) {
     r.vline(7, t + 1, t + 4, shirt[2]);
   }
+  if (opts.pad !== null) {
+    drawPadFront(r, look, back, t, opts.pad);
+    return;
+  }
+  if (opts.paddle !== null) {
+    // braccio sinistro lungo il fianco, il destro tiene la racchetta di lato e la alza a tempo
+    r.vline(3, t, t + 3, shirt[back ? 2 : 0]);
+    r.px(3, t + 4, skin[back ? 2 : 1]);
+    const up = [0, 1, 2, 1][opts.paddle]!;
+    r.vline(12, t, t + 2 - up, shirt[2]);
+    r.px(12, t + 3 - up, skin[1]);
+    drawPaddle(r, 13, t + 1 - up, back);
+    return;
+  }
   // braccia: mani alla riga t+4 o una più su (oscillazione); digitando restano in avanti
   ([[3, opts.hands[0], shirt[back ? 2 : 0]], [12, opts.hands[1], shirt[2]]] as const).forEach(([x, dy, c]) => {
     if (opts.typing !== null) {
@@ -713,7 +776,7 @@ function drawBodySide(
   r: Raster,
   look: PixelLook,
   t: number,
-  opts: { swing: number; seated: boolean; typing: number | null; legs: [Leg, Leg] },
+  opts: { swing: number; seated: boolean; typing: number | null; legs: [Leg, Leg]; pad: number | null; paddle: number | null },
 ): void {
   const { shirt, pants, skin } = look;
   if (opts.seated) {
@@ -738,7 +801,22 @@ function drawBodySide(
     r.vline(10, t + 1, t + 3, PALETTE.tie[1]);
   }
   // braccio vicino
-  if (opts.typing !== null) {
+  if (opts.pad !== null) {
+    // controller tenuto davanti, pollice che preme e tasti che si accendono
+    r.rect(7, t, 2, 2, shirt[2]);
+    r.rect(9, t + 2, 2, 1, shirt[2]);
+    const y = t + 1 - (opts.pad === 2 ? 1 : 0);
+    r.rect(11, y, 3, 2, PALETTE.dark[1]);
+    r.px(11 + (opts.pad % 2), y, skin[1]);
+    r.px(13, y, PAD_LIGHTS[opts.pad % PAD_LIGHTS.length]);
+  } else if (opts.paddle !== null) {
+    // pronto, caricamento all'indietro, colpo in avanti, accompagnamento verso l'alto
+    const [arm, hand, head] = PADDLE_SWING[opts.paddle]!;
+    r.rect(7, t, 2, 2, shirt[2]);
+    r.rect(arm[0], t + arm[1], 2, 1, shirt[2]);
+    r.px(hand[0], t + hand[1], skin[1]);
+    drawPaddle(r, head[0], t + head[1], false);
+  } else if (opts.typing !== null) {
     r.rect(7, t, 2, 2, shirt[2]);
     r.rect(9, t + 2, 2, 1, shirt[2]);
     r.rect(11, t + 2 - opts.typing, 2, 1, skin[1]);
@@ -766,13 +844,16 @@ export function characterImage(look: PixelLook, pose: Pose, facing: Facing, fram
   const n = POSE_FRAMES[pose];
   const f = ((Math.trunc(frame) % n) + n) % n;
   const r = new Raster(CHAR_W, CHAR_H);
-  const seated = pose === 'sit' || pose === 'type';
-  // spostamento verticale del corpo (seduto più in basso, passo che rimbalza, saltello al tiro) e della sola testa (respiro)
-  const bob = (pose === 'walk' && f % 2 === 1) || (pose === 'play' && f === 2) ? -1 : 0;
+  const seated = pose === 'sit' || pose === 'type' || pose === 'game';
+  // spostamento verticale del corpo (seduto più in basso, passo che rimbalza, saltello al tiro e al colpo) e della sola testa (respiro)
+  const bob = (pose === 'walk' && f % 2 === 1) || ((pose === 'play' || pose === 'paddle') && f === 2) ? -1 : 0;
   const body = (seated ? 2 : 0) + bob;
   const breath = (pose === 'stand' || pose === 'sit') && f === 1 ? 1 : 0;
   // digita alla tastiera o, in piedi al biliardino, spinge e tira le stecche
   const typing = pose === 'type' ? [0, 1, 0, 1][f]! : pose === 'play' ? [1, 0, 1, 1][f]! : null;
+  // col controller (console) o con la racchetta (ping-pong): il fotogramma decide mani e colpo
+  const pad = pose === 'game' ? f : null;
+  const paddle = pose === 'paddle' ? f : null;
   const t = 13 + body;
   const view: View = facing === 'right' ? 'right' : facing;
 
@@ -783,13 +864,14 @@ export function characterImage(look: PixelLook, pose: Pose, facing: Facing, fram
       [{ hip: 6, foot: 4, lift: 0 }, { hip: 7, foot: 9, lift: 0 }],
       [{ hip: 7, foot: 6, lift: 1 }, { hip: 6, foot: 7, lift: 0 }],
     ];
-    const legs: [Leg, Leg] = pose === 'walk' ? stride[f]! : [{ hip: 7, foot: 7, lift: 0 }, { hip: 6, foot: 6, lift: 0 }];
+    // al ping-pong a gambe larghe, in appoggio sul piede avanti
+    const legs: [Leg, Leg] = pose === 'walk' ? stride[f]! : pose === 'paddle' ? stride[0]! : [{ hip: 7, foot: 7, lift: 0 }, { hip: 6, foot: 6, lift: 0 }];
     const swing = pose === 'walk' ? [-1, 0, 1, 0][f]! : 0;
     // braccio lontano dietro il busto mentre cammina
     if (pose === 'walk' && swing !== 0) {
       r.rect(swing > 0 ? 5 : 9, t + 3, 2, 1, look.skin[2]);
     }
-    drawBodySide(r, look, t, { swing, seated, typing, legs });
+    drawBodySide(r, look, t, { swing, seated, typing, legs, pad, paddle });
   } else {
     const back = view === 'up';
     const lift: [number, number] = pose === 'walk' ? ([[1, 0], [0, 0], [0, 1], [0, 0]] as const)[f]!.slice() as [number, number] : [0, 0];
@@ -797,7 +879,7 @@ export function characterImage(look: PixelLook, pose: Pose, facing: Facing, fram
       pose === 'walk' ? (([[-1, 0], [0, 0], [0, -1], [0, 0]] as const)[f]!.slice() as [number, number])
       : typing !== null ? (f % 2 === 0 ? [typing, 0] : [0, typing])
       : [0, 0];
-    drawBodyFront(r, look, back, t, { hands, seated, typing, lift });
+    drawBodyFront(r, look, back, t, { hands, seated, typing, lift, pad, paddle });
   }
   drawHead(r, look, view, 3 + body + breath);
   r.outline(PALETTE.outline);
@@ -1711,6 +1793,255 @@ function foosball(w: number, h: number, frame: number): PixelImage {
   return finish(r, E);
 }
 
+// sale console e ping-pong (#108) --------------------------------------------------------------------------------
+
+/** fotogrammi del gioco sulla TV accesa */
+export const TV_FRAMES = 6;
+
+/**
+ * Mobile basso con le console nei vani e sopra la TV, contro la parete nord. frame >= 0: accesa, con un gioco a
+ * piattaforme (variante pari) o di corse (dispari) e una riga di sfarfallio che scorre; frame < 0: spenta.
+ */
+function tv(w: number, h: number, frame: number, variant: number): PixelImage {
+  const { r, W, E } = furnitureRaster(w, h, 26);
+  const wood = PALETTE.walnut;
+  box(r, 1, E + 2, W - 2, 6, 7, wood, wood);
+  // console nei vani: una bianca a sinistra, una nera a destra
+  r.rect(3, E + 2, 10, 4, wood[3]);
+  r.rect(4, E + 3, 7, 2, PALETTE.board[1]);
+  r.px(9, E + 3, PALETTE.screen[1]);
+  if (W >= 32) {
+    r.rect(W - 13, E + 2, 10, 4, wood[3]);
+    r.rect(W - 12, E + 3, 7, 2, PALETTE.dark[1]);
+    r.px(W - 7, E + 3, PALETTE.bubble[1]);
+  }
+  // TV sul piedistallo
+  const cx = Math.floor(W / 2);
+  r.rect(cx - 3, E - 3, 6, 1, PALETTE.dark[2]);
+  r.rect(cx - 1, E - 5, 2, 2, PALETTE.dark[2]);
+  const sw = Math.max(12, W - 8);
+  const sh = W >= 48 ? 19 : W >= 32 ? 15 : 10;
+  const sx = cx - sw / 2;
+  const sy = E - 5 - sh;
+  r.rect(sx, sy, sw, sh, PALETTE.dark[1]);
+  r.hline(sx, sx + sw - 1, sy, PALETTE.dark[0]);
+  const ix = sx + 1;
+  const iy = sy + 1;
+  const iw = sw - 2;
+  const ih = sh - 3;
+  r.px(cx, sy + sh - 1, PALETTE.metal[2]);
+  if (frame < 0) {
+    const off = PALETTE.screenOff;
+    r.rect(ix, iy, iw, ih, off[2]);
+    for (let i = 0; i < 3; i++) r.px(ix + iw - 4 + i, iy + 3 - i, off[0]);
+    return finish(r, E);
+  }
+  const f = frame % TV_FRAMES;
+  if (variant % 2 === 0) {
+    // piattaforme: cielo, prato, un mattone sospeso, l'eroe che corre e salta, la moneta che brilla
+    r.rect(ix, iy, iw, ih, PALETTE.sky[2]);
+    r.rect(ix, iy + ih - 3, iw, 3, PALETTE.leaf[2]);
+    r.hline(ix, ix + iw - 1, iy + ih - 3, PALETTE.leaf[1]);
+    const bx = ix + Math.floor(iw / 2);
+    r.rect(bx, iy + ih - 8, 4, 2, PALETTE.pot[1]);
+    r.px(bx + 5, iy + ih - 10, f % 2 === 0 ? PALETTE.lamp[0] : PALETTE.lamp[2]);
+    const hx = ix + 1 + ((f * 3) % Math.max(1, iw - 3));
+    const hy = iy + ih - 6 - (f === 2 || f === 3 ? 2 : 0);
+    r.rect(hx, hy, 2, 3, PALETTE.cloth.coral[1]);
+    r.px(hx, hy, PALETTE.skin.peach[0]);
+    r.px(ix + 2, iy + 1, '#ffffff');
+    r.px(ix + 3, iy + 1, '#ffffff');
+  } else {
+    // corse: strada con la riga che scorre, prato ai lati, l'auto che sterza
+    r.rect(ix, iy, iw, ih, PALETTE.leaf[2]);
+    const rw = Math.max(4, Math.floor(iw / 2));
+    const rx = ix + Math.floor((iw - rw) / 2);
+    r.rect(rx, iy, rw, ih, PALETTE.dark[1]);
+    const mx = rx + Math.floor(rw / 2);
+    for (let y = iy; y < iy + ih; y++) if ((y - iy + f) % 4 < 2) r.px(mx, y, '#ffffff');
+    const car = rx + 1 + (f % 3 === 1 ? 1 : 0) + (f % 3 === 2 ? Math.max(0, rw - 5) : 0);
+    r.rect(car, iy + ih - 4, 2, 3, PALETTE.bubble[1]);
+    r.px(car, iy + ih - 4, PALETTE.bubble[0]);
+  }
+  // sfarfallio: una riga più chiara che scende
+  const sl = iy + ((f * 3) % ih);
+  for (let x = ix; x < ix + iw; x += 2) r.px(x, sl, PALETTE.screen[0]);
+  r.hline(ix, ix + iw - 1, iy + ih - 1, PALETTE.screen[3]);
+  return finish(r, E);
+}
+
+const POUF_COLORS: readonly Ramp[] = [PALETTE.cloth.teal, PALETTE.cloth.coral, PALETTE.cloth.mustard, PALETTE.cloth.violet];
+
+/** pouf tondo: fianco con la cucitura e cuscino ovale visto dall'alto */
+function pouf(variant: number): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 6);
+  const c = POUF_COLORS[variant % POUF_COLORS.length]!;
+  r.ellipse(8, E + 10, 6, 2.5, c[2]);
+  r.rect(2, E + 2, 12, 8, c[2]);
+  r.hline(2, 13, E + 6, c[1]);
+  r.ellipse(8, E + 2, 6, 3.5, c[1]);
+  r.ellipse(7, E + 1, 3.5, 1.5, c[0]);
+  return finish(r, E);
+}
+
+const GAME_BOXES: readonly Ramp[] = [
+  PALETTE.cloth.blue, PALETTE.bubble, PALETTE.cloth.lime, PALETTE.cloth.white, PALETTE.cloth.mustard, PALETTE.cloth.violet,
+];
+
+/** scaffale dei videogiochi: custodie colorate tutte alte uguali, sopra una console e un controller */
+function gameShelf(w: number, h: number, facing: Facing): PixelImage {
+  const { r, W, E } = furnitureRaster(w, h, 22);
+  const wood = PALETTE.wood;
+  if (facing === 'up') {
+    box(r, 1, E + 1, W - 2, 6, 22, wood, wood);
+    return finish(r, E);
+  }
+  box(r, 1, E + 1, W - 2, 5, 22, wood, wood);
+  const fy = E + 1 - 22 + 5;
+  // in cima: console e controller
+  r.rect(3, fy - 3, 6, 2, PALETTE.board[1]);
+  r.px(7, fy - 3, PALETTE.screen[1]);
+  r.rect(W - 7, fy - 2, 4, 1, PALETTE.dark[1]);
+  for (let s = 0; s < 3; s++) {
+    const y0 = fy + 2 + s * 7;
+    r.rect(3, y0, W - 6, 5, wood[3]);
+    for (let x = 3, i = 0; x < W - 4; x += 2, i++) {
+      if (hash2(x, s, W + 5) % 7 === 0) continue;
+      const c = GAME_BOXES[(hash2(i, s, 9) >>> 3) % GAME_BOXES.length]!;
+      r.vline(x, y0 + 1, y0 + 4, c[1]);
+      r.px(x, y0 + 1, c[0]);
+    }
+    r.hline(2, W - 3, y0 + 5, wood[1]);
+  }
+  return finish(r, E);
+}
+
+/** frigo basso delle bibite, con una lattina sopra */
+function miniFridge(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 12);
+  const c = PALETTE.board;
+  box(r, 3, E + 2, 10, 5, 14, c, c);
+  const top = E + 2 - 14 + 5;
+  r.vline(11, top + 2, top + 6, PALETTE.metal[2]);
+  r.px(5, top + 3, PALETTE.cloth.blue[1]);
+  r.px(6, top + 8, PALETTE.cloth.coral[1]);
+  r.rect(6, top - 7, 2, 3, PALETTE.bubble[1]);
+  r.px(6, top - 7, PALETTE.metal[1]);
+  return finish(r, E);
+}
+
+/** fotogrammi di uno scambio al ping-pong: la pallina va da un giocatore all'altro e torna */
+export const PONG_FRAMES = 12;
+/** altezza della pallina sul tavolo lungo un tiro: parte dalla racchetta, rimbalza nella metà avversaria */
+const PONG_ARC = [4, 6, 5, 2, 0, 3] as const;
+
+/**
+ * Tavolo da ping-pong lungo in orizzontale: piano blu con le righe bianche, rete al centro da nord a sud, gambe.
+ * frame >= 0: scambio in corso tra il giocatore a ovest (in basso) e quello a est (in alto), con l'ombra della
+ * pallina sul piano; frame < 0: niente pallina.
+ */
+function pingpong(w: number, h: number, frame: number): PixelImage {
+  const { r, W, D, E } = furnitureRaster(w, h, 12);
+  const t = PALETTE.table;
+  const fy0 = E - 6;
+  const fd = Math.max(6, D - 6);
+  // gambe e spessore del piano
+  r.rect(4, fy0 + fd + 2, 2, D + E - fy0 - fd - 3, PALETTE.metal[3]);
+  r.rect(W - 6, fy0 + fd + 2, 2, D + E - fy0 - fd - 3, PALETTE.metal[3]);
+  r.rect(1, fy0 + fd, W - 2, 2, t[3]);
+  // piano con bordo bianco e riga centrale lungo il tavolo
+  r.rect(1, fy0, W - 2, fd, t[1]);
+  r.rect(2, fy0 + 1, W - 4, 2, t[0]);
+  r.hline(1, W - 2, fy0, '#ffffff');
+  r.hline(1, W - 2, fy0 + fd - 1, '#ffffff');
+  r.vline(1, fy0, fy0 + fd - 1, '#ffffff');
+  r.vline(W - 2, fy0, fy0 + fd - 1, '#ffffff');
+  r.hline(2, W - 3, fy0 + Math.floor(fd / 2), PALETTE.board[2]);
+  // rete: alta 3 px sopra il piano, con l'ombra e i paletti
+  const nx = Math.floor(W / 2);
+  r.vline(nx + 1, fy0 - 1, fy0 + fd - 1, t[3]);
+  r.vline(nx, fy0 - 3, fy0 + fd - 3, PALETTE.board[1]);
+  for (let y = fy0 - 2; y < fy0 + fd - 3; y += 2) r.px(nx, y, PALETTE.board[3]);
+  r.vline(nx, fy0 - 4, fy0 - 3, PALETTE.dark[2]);
+  r.vline(nx, fy0 + fd - 3, fy0 + fd - 1, PALETTE.dark[2]);
+  if (frame >= 0) {
+    const f = frame % PONG_FRAMES;
+    const half = PONG_FRAMES / 2;
+    const step = f % half;
+    // andata da ovest a est, ritorno da est a ovest
+    const s = f < half ? step / (half - 1) : 1 - step / (half - 1);
+    const bx = Math.round(2 + s * (W - 5));
+    const ground = Math.round(fy0 + fd - 3 - s * (fd - 5));
+    // ombra sul piano e pallina arancione, più in alto a metà tiro
+    const by = ground - PONG_ARC[step]! - 2;
+    r.rect(bx, ground, 2, 1, t[3]);
+    r.rect(bx, by, 2, 2, PALETTE.cloth.amber[1]);
+    r.px(bx, by, PALETTE.cloth.amber[0]);
+  }
+  return finish(r, E);
+}
+
+/** panca di legno a doghe, senza schienale */
+function bench(w: number, h: number): PixelImage {
+  const { r, W, E } = furnitureRaster(w, h, 6);
+  const wood = PALETTE.wood;
+  r.rect(3, E + 10, 2, 4, wood[3]);
+  r.rect(W - 5, E + 10, 2, 4, wood[3]);
+  box(r, 1, E + 4, W - 2, 7, 5, wood, wood);
+  r.hline(1, W - 2, E + 1, wood[2]);
+  r.hline(1, W - 2, E + 3, wood[2]);
+  return finish(r, E);
+}
+
+/** sgabello alto: seduta tonda imbottita, gamba di metallo e poggiapiedi */
+function stool(): PixelImage {
+  const { r, E } = furnitureRaster(1, 1, 8);
+  r.ellipse(8, E + 12, 4, 1.5, PALETTE.metal[3]);
+  r.rect(7, E + 2, 2, 10, PALETTE.metal[2]);
+  r.hline(5, 10, E + 8, PALETTE.metal[1]);
+  r.ellipse(8, E + 2, 5, 2.5, PALETTE.walnut[2]);
+  r.ellipse(8, E + 1, 5, 2.5, PALETTE.walnut[1]);
+  r.hline(6, 9, E, PALETTE.walnut[0]);
+  return finish(r, E);
+}
+
+/** porta-racchette a parete: due racchette appese e le palline sulla mensola */
+function paddleRack(w: number, h: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  const x0 = Math.floor((W - TILE) / 2);
+  r.rect(x0 + 2, 3, 12, 2, PALETTE.walnut[1]);
+  r.hline(x0 + 2, x0 + 13, 3, PALETTE.walnut[0]);
+  for (const [cx, c] of [[x0 + 5, PALETTE.paddle], [x0 + 10, PALETTE.dark]] as const) {
+    r.vline(cx, 5, 6, PALETTE.walnut[2]);
+    r.ellipse(cx + 0.5, 9.5, 2.5, 2.5, c[1]);
+    r.px(cx - 1, 8, c[0]);
+  }
+  r.rect(x0 + 3, 13, 10, 1, PALETTE.walnut[2]);
+  r.px(x0 + 6, 12, '#ffffff');
+  r.px(x0 + 8, 12, PALETTE.cloth.amber[0]);
+  return finish(r, 0);
+}
+
+/** cifre 3×5 del segnapunti */
+const DIGITS: Readonly<Record<string, readonly string[]>> = {
+  '2': ['##.', '..#', '.#.', '#..', '###'],
+  '3': ['##.', '..#', '.#.', '..#', '##.'],
+};
+
+/** segnapunti elettronico: 3 a 2 per i rossi */
+function scoreboard(w: number, h: number): PixelImage {
+  const { r, W } = furnitureRaster(w, h, 0);
+  r.rect(2, 3, W - 4, 10, PALETTE.dark[2]);
+  r.hline(2, W - 3, 3, PALETTE.dark[0]);
+  r.rect(3, 4, W - 6, 8, PALETTE.night[3]);
+  const cx = Math.floor(W / 2);
+  r.stamp(DIGITS['3']!, cx - 5, 5, () => PALETTE.bubble[0]);
+  r.stamp(DIGITS['2']!, cx + 2, 5, () => PALETTE.screen[1]);
+  r.px(cx - 1, 6, PALETTE.lamp[0]);
+  r.px(cx - 1, 8, PALETTE.lamp[0]);
+  return finish(r, 0);
+}
+
 /** sprite da una cella al centro di un'impronta w×h (stessa altezza sopra l'impronta) */
 function centered(img: PixelImage, w: number, h: number): PixelImage {
   if (w === 1 && h === 1) return img;
@@ -1721,14 +2052,17 @@ function centered(img: PixelImage, w: number, h: number): PixelImage {
   return r.image(0, img.ay);
 }
 
-/** frame di animazione degli arredi che ne hanno (monitor: schermo che cambia; biliardino: la partita) */
-export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = { monitor: SCREEN_FRAMES, foosball: FOOSBALL_FRAMES };
+/** frame di animazione degli arredi che ne hanno (monitor: schermo; biliardino: partita; TV: il gioco; ping-pong: lo scambio) */
+export const FURNITURE_FRAMES: Partial<Record<FurnitureKind, number>> = {
+  monitor: SCREEN_FRAMES, foosball: FOOSBALL_FRAMES, tv: TV_FRAMES, pingpong: PONG_FRAMES,
+};
 
 /**
  * Arredo w×h celle. L'immagine è larga w·TILE e alta h·TILE più l'altezza dell'oggetto: l'ancora (0, ay) è l'angolo
  * nord-ovest dell'impronta. `facing` è il lato del fronte: dove guarda chi siede (sedia, divano, poltrona), dove è
  * rivolto lo schermo (monitor), il fronte di libreria e lavagna. Monitor: frame >= 0 acceso, < 0 spento, `variant`
- * è il tema dello schermo (SCREEN_THEMES); biliardino: frame >= 0 partita in corso. `variant` sceglie anche colori
+ * è il tema dello schermo (SCREEN_THEMES); biliardino: frame >= 0 partita in corso; TV: frame >= 0 accesa, `variant`
+ * è il gioco; ping-pong: frame >= 0 scambio in corso. `variant` colora anche i pouf. `variant` sceglie anche colori
  * del tappeto, soggetto di quadri e poster, colore dei cabinati.
  */
 export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h: number, frame = 0, variant = 0): PixelImage {
@@ -1765,6 +2099,15 @@ export function furnitureImage(kind: FurnitureKind, facing: Facing, w: number, h
     case 'vending': return centered(vending(), w, h);
     case 'fridge': return centered(fridge(), w, h);
     case 'arcade': return centered(arcade(variant), w, h);
+    case 'tv': return tv(w, h, frame, variant);
+    case 'pouf': return centered(pouf(variant), w, h);
+    case 'game-shelf': return gameShelf(w, h, facing);
+    case 'mini-fridge': return centered(miniFridge(), w, h);
+    case 'pingpong': return pingpong(w, h, frame);
+    case 'bench': return bench(w, h);
+    case 'stool': return centered(stool(), w, h);
+    case 'paddle-rack': return paddleRack(w, h);
+    case 'scoreboard': return scoreboard(w, h);
   }
 }
 

@@ -3,12 +3,12 @@ import { AnimClock } from './clock';
 import { cellKey, sceneFurniture } from './draw';
 import { createPlan } from './plan';
 import { furnitureLook, screenTheme, screenVisible, type FurnitureUse } from './screens';
-import { SCREEN_FRAMES, SCREEN_THEMES } from './sprites';
+import { PONG_FRAMES, SCREEN_FRAMES, SCREEN_THEMES, TV_FRAMES } from './sprites';
 import type { Furniture } from './types';
 
 const monitor = (facing: Furniture['facing'], x = 3, z = 4): Furniture => ({ kind: 'monitor', cell: { x, z }, w: 1, h: 1, facing, room: 'room-0' });
-const using = (f: Furniture, area: string): FurnitureUse => ({ screens: new Map([[cellKey(f.cell), area]]), players: 0 });
-const idle: FurnitureUse = { screens: new Map(), players: 0 };
+const using = (f: Furniture, area: string): FurnitureUse => ({ screens: new Map([[cellKey(f.cell), area]]), players: 0, gamers: new Map(), pong: new Map() });
+const idle: FurnitureUse = { screens: new Map(), players: 0, gamers: new Map(), pong: new Map() };
 
 describe('screenTheme', () => {
   it('un tema per ruolo: sviluppo a codice, design a forme, docs a testo, research a grafici, architecture a blocchi', () => {
@@ -65,6 +65,27 @@ describe('furnitureLook', () => {
     const frames = new Set([0, 0.2, 0.4, 0.6].map((t) => furnitureLook(table, { ...idle, players: 2 }, new AnimClock(t)).frame));
     expect(frames.size).toBeGreaterThan(1);
     expect([...frames].every((f) => f >= 0)).toBe(true);
+  });
+
+  it('TV della sala console accese solo se nella stessa sala qualcuno gioca col controller', () => {
+    const tv: Furniture = { kind: 'tv', cell: { x: 2, z: 14 }, w: 3, h: 1, facing: 'down', room: 'console', variant: 1 };
+    expect(furnitureLook(tv, idle, new AnimClock(3))).toEqual({ frame: -1, variant: 1 });
+    expect(furnitureLook(tv, { ...idle, gamers: new Map([['altra', 3]]) }, new AnimClock(3)).frame).toBe(-1);
+    const on = { ...idle, gamers: new Map([['console', 1]]) };
+    const frames = [0, 0.25, 0.5, 0.75].map((t) => furnitureLook(tv, on, new AnimClock(t)));
+    expect(new Set(frames.map((f) => f.frame)).size).toBeGreaterThan(1);
+    expect(frames.every((f) => f.frame >= 0 && f.frame < TV_FRAMES && f.variant === 1)).toBe(true);
+  });
+
+  it('pallina del ping-pong solo con tutti e due i giocatori al tavolo della sala', () => {
+    const table: Furniture = { kind: 'pingpong', cell: { x: 4, z: 17 }, w: 3, h: 2, facing: 'down', room: 'pong' };
+    expect(furnitureLook(table, idle, new AnimClock(2)).frame).toBe(-1);
+    expect(furnitureLook(table, { ...idle, pong: new Map([['pong', 1]]) }, new AnimClock(2)).frame).toBe(-1);
+    expect(furnitureLook(table, { ...idle, pong: new Map([['altra', 2]]) }, new AnimClock(2)).frame).toBe(-1);
+    const both = { ...idle, pong: new Map([['pong', 2]]) };
+    const frames = [0, 0.125, 0.25, 0.375].map((t) => furnitureLook(table, both, new AnimClock(t)).frame);
+    expect(new Set(frames).size).toBe(4);
+    expect(frames.every((f) => f >= 0 && f < PONG_FRAMES)).toBe(true);
   });
 
   it('gli altri arredi restano fermi con la loro variante', () => {

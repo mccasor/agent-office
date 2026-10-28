@@ -96,22 +96,29 @@ export const isVisible = (m: ActorMotion): boolean => m.phase === 'walking' || m
 /** postazione o scrivania del boss: chi ci lavora digita */
 export const isDeskSpot = (spot: Spot): boolean => /-(desk-\d+|boss)$/.test(spot.id);
 
-/** posto al biliardino: chi ci sta gioca */
-export const isFoosballSpot = (spot: Spot): boolean => spot.id.startsWith('foos-');
+/** posto al biliardino: chi ci sta gioca (anche '<stanza>:foos-<n>' delle sale hobby, vedi hobby.ts) */
+export const isFoosballSpot = (spot: Spot): boolean => /(^|:)foos-\d+$/.test(spot.id);
+
+/** posto davanti alla TV della sala console: chi ci siede gioca col controller */
+export const isConsoleSpot = (spot: Spot): boolean => /(^|:)pad-\d+$/.test(spot.id);
+
+/** posto di un giocatore al tavolo da ping-pong */
+export const isPingPongSpot = (spot: Spot): boolean => /(^|:)pong-\d+$/.test(spot.id);
 
 /**
- * Posa del personaggio: cammina, digita alla scrivania se lavora, seduto se inattivo o sul divano, gioca al
- * biliardino, altrimenti in piedi.
+ * Posa del personaggio: cammina, digita alla scrivania se lavora, gioca col controller davanti alla TV, seduto se
+ * inattivo o sul divano, gioca al biliardino o a ping-pong, altrimenti in piedi.
  */
 export function poseOf(actor: PixelActor, m: ActorMotion): Pose {
   if (m.phase !== 'arrived' || !m.at) return 'walk';
-  if (!m.at.seated) return isFoosballSpot(m.at) ? 'play' : 'stand';
+  if (!m.at.seated) return isFoosballSpot(m.at) ? 'play' : isPingPongSpot(m.at) ? 'paddle' : 'stand';
+  if (isConsoleSpot(m.at)) return 'game';
   const working = actor.agent.status === 'working' || actor.agent.status === 'entering';
   return working && isDeskSpot(m.at) ? 'type' : 'sit';
 }
 
 /** fotogrammi al secondo delle animazioni: passo e digitazione svelti, respiro lento */
-export const POSE_FPS: Record<Pose, number> = { walk: 8, type: 7, stand: 1.5, sit: 1.2, play: 5 };
+export const POSE_FPS: Record<Pose, number> = { walk: 8, type: 7, stand: 1.5, sit: 1.2, play: 5, game: 4, paddle: 4 };
 
 /** fotogramma all'istante dell'orologio delle animazioni; `seed` sfasa i personaggi tra loro */
 export function frameAt(pose: Pose, clock: AnimClock, seed: number): number {

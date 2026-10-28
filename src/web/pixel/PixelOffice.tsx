@@ -13,6 +13,7 @@ import { actorTag, ALL_LABELS_ZOOM, drawLabel, labelTheme, officeShow, type Acto
 import { litZones, RoomLights } from './lights';
 import { EMPTY_PIXEL_SEATING, pixelModel } from './model';
 import { createPlan } from './plan';
+import { hobbySpotRoom } from './hobby';
 import { furnitureLook, type FurnitureUse } from './screens';
 import {
   alertImage, bossLook, bubbleImage, cachedImage, characterSprite, furnitureSprite, PALETTE, pickLook, selectionImage, shadowImage,
@@ -244,7 +245,7 @@ function render(
   // chi digita alla propria scrivania accende il monitor che ha davanti (a tema col ruolo), chi gioca il biliardino
   const ops: DrawOp[] = [];
   const rects: HitRect[] = [];
-  const use: FurnitureUse = { screens: new Map(), players: 0 };
+  const use: FurnitureUse = { screens: new Map(), players: 0, gamers: new Map(), pong: new Map() };
   const tags: (ActorTag & { actor: PixelActor; x: number; y: number })[] = [];
   // ingrandita abbastanza c'è posto per il nome di tutti (compatto, senza ruolo); altrimenti boss, bloccati e selezionato
   const everyone = view.scale / dpr >= ALL_LABELS_ZOOM;
@@ -255,6 +256,12 @@ function render(
     const pose = poseOf(e.actor, e.motion);
     if (pose === 'type' && e.motion.at) use.screens.set(cellKey(inFront(e.motion.at)), e.actor.agent.area);
     if (pose === 'play') use.players++;
+    if ((pose === 'game' || pose === 'paddle') && e.motion.at) {
+      // TV e tavolo da ping-pong si animano per sala: la stanza è nell'id del posto (hobby.ts)
+      const room = hobbySpotRoom(e.motion.at.id);
+      const counts = pose === 'game' ? use.gamers : use.pong;
+      if (room !== null) counts.set(room, (counts.get(room) ?? 0) + 1);
+    }
     const selected = e.actor.id === selectedId;
     ops.push(...actorOps({
       id: e.actor.id, pos: e.motion.pos, look: lookOf(e.actor, model), pose, facing: e.motion.facing,
