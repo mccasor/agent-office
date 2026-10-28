@@ -110,6 +110,7 @@
 
     .notice { margin: 0 2px; font-size: 12px; color: var(--muted); }
     .notice--error { color: var(--danger); }
+    .notice--warn { color: var(--warn); }
   </style>
 </head>
 <body>
@@ -151,9 +152,10 @@
       agents: '<circle cx="9" cy="8" r="3.2"/><path d="M3 19.5a6 6 0 0 1 12 0"/><circle cx="17" cy="9" r="2.4"/><path d="M16 13.6a4.6 4.6 0 0 1 5.5 4.4"/>',
       git: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7.5v9M18 10c0 4-6 3.5-11 7"/>',
       instances: '<rect x="3.5" y="4.5" width="17" height="6" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6" rx="1.5"/><path d="M7 7.5h6M7 16.5h6"/>',
+      office: '<rect x="4.5" y="3.5" width="15" height="17" rx="1.5"/><path d="M8.5 7.5h2M13.5 7.5h2M8.5 11.5h2M13.5 11.5h2M10.5 20.5v-4h3v4"/>',
     };
     /** colore del quadrato dell'icona di ogni sezione, come nelle Impostazioni di Sistema */
-    const ICON_COLORS = { general: '#8e8e93', claude: '#d97757', agents: '#007aff', git: '#f05133', instances: '#34c759' };
+    const ICON_COLORS = { general: '#8e8e93', claude: '#d97757', agents: '#007aff', git: '#f05133', instances: '#34c759', office: '#5856d6' };
     const icon = (name) =>
       `<span class="tab__icon" style="background:${ICON_COLORS[name] ?? '#8e8e93'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg></span>`;
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -257,6 +259,85 @@
       return (tabId === 'agents' ? alerts() : '') + group(T(`settings.group.${tabId}`), rows, T('settings.showNote'));
     }
 
+    // ufficio (#108): composizione delle stanze, stesse regole di src/shared/office.ts (dati in CATALOG.office)
+    const OFFICE = CATALOG.office;
+    const isHobbyType = (type) => OFFICE.hobby.includes(type);
+    /** elenco valido: tipi noti, stili da 1 al numero di piante (o null), da 1 a 7 di lavoro e da 1 a 3 hobby, 8 in tutto */
+    function validRooms(raw) {
+      if (!Array.isArray(raw) || raw.length > OFFICE.limits.rooms) return false;
+      let hobby = 0;
+      for (const r of raw) {
+        if (!r || typeof r !== 'object' || Array.isArray(r) || !OFFICE.types.includes(r.type)) return false;
+        const v = r.variant ?? null;
+        if (v !== null && !(Number.isInteger(v) && v >= 1 && v <= OFFICE.variants[r.type])) return false;
+        if (isHobbyType(r.type)) hobby++;
+      }
+      const work = raw.length - hobby;
+      const [minWork, maxWork] = OFFICE.limits.work;
+      const [minHobby, maxHobby] = OFFICE.limits.hobby;
+      return work >= minWork && work <= maxWork && hobby >= minHobby && hobby <= maxHobby;
+    }
+    /** stanze di config.json; mancanti o non valide: il default, come nel server */
+    const officeRooms = () => {
+      const office = state.config.office;
+      const raw = office && typeof office === 'object' ? office.rooms : undefined;
+      return (validRooms(raw) ? raw : OFFICE.default).map((r) => ({ type: r.type, variant: r.variant ?? null }));
+    };
+
+    function office() {
+      const rooms = officeRooms();
+      const locked = state.officeLocked === true;
+      const off = locked ? 'disabled' : '';
+      const hobby = rooms.filter((r) => isHobbyType(r.type)).length;
+      const work = rooms.length - hobby;
+      const full = rooms.length >= OFFICE.limits.rooms;
+      const list = (hobbyGroup) => {
+        const count = hobbyGroup ? hobby : work;
+        const min = OFFICE.limits[hobbyGroup ? 'hobby' : 'work'][0];
+        const types = OFFICE.types.filter((t) => isHobbyType(t) === hobbyGroup);
+        return rooms
+          .map((r, i) => ({ r, i }))
+          .filter(({ r }) => isHobbyType(r.type) === hobbyGroup)
+          .map(({ r, i }, k) => {
+            const label = T(hobbyGroup ? 'office.hobbyRoom' : 'office.room', { n: k + 1 });
+            const typeMenu = `<select data-office="type" data-index="${i}" aria-label="${esc(`${label}: ${T('office.typeLabel')}`)}" ${off}>${types
+              .map((t) => `<option value="${t}" ${t === r.type ? 'selected' : ''}>${esc(T(`office.type.${t}`))}</option>`)
+              .join('')}</select>`;
+            const styles = Array.from({ length: OFFICE.variants[r.type] }, (_, v) => v + 1);
+            // le sale hobby hanno una pianta sola: niente stile da scegliere
+            const variantMenu = styles.length > 1
+              ? `<select data-office="variant" data-index="${i}" aria-label="${esc(`${label}: ${T('office.styleLabel')}`)}" ${off}><option value="auto" ${r.variant === null ? 'selected' : ''}>${esc(T('office.variantAuto'))}</option>${styles
+                .map((v) => `<option value="${v}" ${v === r.variant ? 'selected' : ''}>${esc(T('office.variant', { n: v }))}</option>`)
+                .join('')}</select>`
+              : '';
+            const remove = `<button class="button" data-office="remove" data-index="${i}" ${locked || count <= min ? 'disabled' : ''}>${esc(T('office.remove'))}</button>`;
+            return row(esc(label), '', `<span class="row__actions">${typeMenu}${variantMenu}${remove}</span>`);
+          });
+      };
+      const canAddWork = !locked && !full && work < OFFICE.limits.work[1];
+      const canAddHobby = !locked && !full && hobby < OFFICE.limits.hobby[1];
+      const add = (action, text, enabled) => `<button class="button" data-office="${action}" ${enabled ? '' : 'disabled'}>${esc(T(text))}</button>`;
+      return [
+        locked ? `<p class="notice notice--warn" role="status">${esc(T('office.locked'))}</p>` : '',
+        group(T('office.work'), [...list(false), row('', '', add('add-work', 'office.addWork', canAddWork))], esc(T('office.workNote'))),
+        group(T('office.hobby'), [...list(true), row('', '', add('add-hobby', 'office.addHobby', canAddHobby))], esc(T('office.hobbyNote'))),
+        group('', [row(esc(T('office.limits')), '', `<button class="button" data-office="reset" ${off}>${esc(T('office.reset'))}</button>`)]),
+      ].join('');
+    }
+
+    /** Modifica la composizione e la salva: le stanze nuove in fondo (una sala hobby di un tipo che manca, se c'è). */
+    function editOffice(action, index, value) {
+      let rooms = officeRooms();
+      if (action === 'type') rooms[index] = { type: value, variant: null };
+      else if (action === 'variant') rooms[index] = { ...rooms[index], variant: value === 'auto' ? null : Number(value) };
+      else if (action === 'remove') rooms.splice(index, 1);
+      else if (action === 'add-work') rooms.push({ type: 'work8', variant: null });
+      else if (action === 'add-hobby') rooms.push({ type: OFFICE.hobby.find((t) => !rooms.some((r) => r.type === t)) ?? OFFICE.hobby[0], variant: null });
+      else if (action === 'reset') rooms = OFFICE.default.map((r) => ({ ...r }));
+      // la pagina non propone niente fuori dai limiti: un elenco non valido qui è un errore, non si salva
+      if (validRooms(rooms)) save('office.rooms', rooms);
+    }
+
     function render() {
       if (!state) return;
       const current = CATALOG.tabs.find((t) => t.id === tab);
@@ -268,7 +349,7 @@
         <main class="pane" role="tabpanel" aria-label="${esc(title)}">
           <h1 class="pane__title">${esc(title)}</h1>
           <div class="content">
-            ${tab === 'general' ? general() : items(tab)}
+            ${tab === 'general' ? general() : tab === 'office' ? office() : items(tab)}
             ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
           </div>
         </main>`;
@@ -314,6 +395,7 @@
     /** Salva una chiave: subito a schermo, poi nel file; se non riesce si rilegge lo stato vero. */
     async function save(key, value) {
       if (key.startsWith('show.')) state.config.show = { ...(typeof state.config.show === 'object' ? state.config.show : {}), [key.slice(5)]: value };
+      else if (key.startsWith('office.')) state.config.office = { ...(typeof state.config.office === 'object' ? state.config.office : {}), [key.slice(7)]: value };
       else state.config[key] = value;
       saveError = null;
       render();
@@ -336,15 +418,19 @@
     }
 
     document.addEventListener('click', (e) => {
-      const el = e.target.closest('[data-tab], [data-key], [data-action]');
+      const el = e.target.closest('[data-tab], [data-key], [data-action], [data-office]');
       if (!el || el.disabled || el.tagName === 'SELECT') return;
-      if (el.dataset.tab) selectTab(el.dataset.tab);
+      if (el.dataset.office) editOffice(el.dataset.office, Number(el.dataset.index));
+      else if (el.dataset.tab) selectTab(el.dataset.tab);
       else if (el.dataset.key) save(el.dataset.key, el.getAttribute('aria-checked') !== 'true');
       else invoke('settings_action', { action: el.dataset.action }).then(refresh, refresh);
     });
     document.addEventListener('change', (e) => {
       const key = e.target.dataset.key;
-      if (key in RANGES) {
+      if (e.target.dataset.office) {
+        e.target.blur();
+        editOffice(e.target.dataset.office, Number(e.target.dataset.index), e.target.value);
+      } else if (key in RANGES) {
         e.target.blur();
         save(key, Number(e.target.value));
       } else if (key === 'language') {
@@ -353,7 +439,7 @@
       }
     });
     document.addEventListener('keydown', (e) => {
-      // ⌘W chiude (l'app non ha la barra dei menu che lo farebbe); ⌘1…⌘5 cambiano scheda
+      // ⌘W chiude (l'app non ha la barra dei menu che lo farebbe); ⌘1…⌘6 cambiano scheda
       if (e.metaKey && e.key === 'w') {
         e.preventDefault();
         invoke('settings_action', { action: 'close' });

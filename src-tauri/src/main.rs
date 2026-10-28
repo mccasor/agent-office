@@ -547,11 +547,21 @@ fn panel_resize(app: AppHandle, height: f64) {
     }
 }
 
+/// Qualcuno sta lavorando davvero: una sessione attiva al lavoro o in attesa (pallino verde o rosso; il grigio no).
+/// Finché è così la composizione dell'ufficio non si cambia (#108), come officeBusy in src/shared/office.ts.
+fn office_locked(snapshot: &Value) -> bool {
+    snapshot["sessions"].as_array().into_iter().flatten().any(|s| {
+        s["active"].as_bool() == Some(true) && matches!(s["dot"].as_str(), Some("working" | "waiting"))
+    })
+}
+
 /// Stato della finestra Impostazioni: config.json com'è (i default li applica la pagina) e quanto non sta nel file.
 #[tauri::command]
 fn settings_state(app: AppHandle) -> Value {
     let ui = app.state::<Ui>();
+    let office_locked = office_locked(&ui.snapshot.lock().unwrap());
     json!({
+        "officeLocked": office_locked,
         "version": version(&app),
         "config": Value::Object(config::read()),
         "autostart": autostart_enabled(),
@@ -567,6 +577,10 @@ fn settings_state(app: AppHandle) -> Value {
 #[tauri::command]
 fn settings_set(window: WebviewWindow, app: AppHandle, key: String, value: Value) -> Result<(), String> {
     settings::only_settings(&window)?;
+    // l'ufficio non si ricompone mentre gli agenti lavorano (#108): la pagina lo impedisce, qui si ripete
+    if key.starts_with("office.") && office_locked(&app.state::<Ui>().snapshot.lock().unwrap()) {
+        return Err(i18n::t("office.locked"));
+    }
     config::update(|c| config::set(c, &key, value))?;
     if key.starts_with("notify") {
         *app.state::<Ui>().prefs.lock().unwrap() = notify::load();
@@ -786,6 +800,17 @@ mod tests {
       ],
       "agents": []
     }"#;
+
+    #[test]
+    fn ufficio_bloccato_solo_con_sessioni_al_lavoro_o_in_attesa() {
+        let snap = |sessions: Value| json!({ "status": "idle", "sessions": sessions, "agents": [] });
+        assert!(!office_locked(&Value::Null));
+        assert!(!office_locked(&snap(json!([]))));
+        assert!(!office_locked(&snap(json!([{ "id": "a", "active": true, "dot": "idle" }]))));
+        assert!(!office_locked(&snap(json!([{ "id": "a", "active": false, "dot": "working" }]))));
+        assert!(office_locked(&snap(json!([{ "id": "a", "active": true, "dot": "idle" }, { "id": "b", "active": true, "dot": "working" }]))));
+        assert!(office_locked(&snap(json!([{ "id": "a", "active": true, "dot": "waiting" }]))));
+    }
 
     #[test]
     fn stato_e_sessioni_attive_dallo_snapshot() {

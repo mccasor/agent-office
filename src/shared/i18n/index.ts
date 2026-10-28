@@ -81,10 +81,10 @@ export const clock = (at: number): string =>
 /** Testi usati dalle pagine locali dell'app (pannello, Impostazioni, splash). */
 export const PAGE_PREFIXES = [
   'format.', 'dur.', 'status.', 'waiting.', 'activity.', 'instances.', 'tray.', 'update.', 'panel.', 'settings.', 'tab.', 'place.',
-  'setting.', 'splash.',
+  'setting.', 'splash.', 'office.',
 ] as const;
 /** Testi usati dall'app della menu bar in Rust (icona, notifiche, aggiornamenti, hook, server, errori dei comandi). */
-export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.', 'error.'] as const;
+export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.', 'error.', 'office.locked'] as const;
 
 /** Testi delle chiavi con uno dei prefissi, per lingua. Pura. */
 export function pick(prefixes: readonly string[]): Record<Locale, Record<string, string>> {

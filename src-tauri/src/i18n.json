@@ -38,7 +38,8 @@
     "error.configInvalid": "config.json non è un oggetto JSON valido",
     "error.noHome": "cartella home sconosciuta",
     "error.settingsOnly": "comando riservato alla finestra Impostazioni",
-    "error.unknownAction": "azione sconosciuta: {action}"
+    "error.unknownAction": "azione sconosciuta: {action}",
+    "office.locked": "Impossibile modificare l'ufficio: gli agenti sono al lavoro"
   },
   "en": {
     "tray.working": "Claude is working",
@@ -79,7 +80,8 @@
     "error.configInvalid": "config.json is not a valid JSON object",
     "error.noHome": "unknown home folder",
     "error.settingsOnly": "command reserved for the Settings window",
-    "error.unknownAction": "unknown action: {action}"
+    "error.unknownAction": "unknown action: {action}",
+    "office.locked": "The office can't be changed: agents are at work"
   },
   "es": {
     "tray.working": "Claude está trabajando",
@@ -120,6 +122,7 @@
     "error.configInvalid": "config.json no es un objeto JSON válido",
     "error.noHome": "carpeta de inicio desconocida",
     "error.settingsOnly": "comando reservado a la ventana Ajustes",
-    "error.unknownAction": "acción desconocida: {action}"
+    "error.unknownAction": "acción desconocida: {action}",
+    "office.locked": "No se puede modificar la oficina: los agentes están trabajando"
   }
 }

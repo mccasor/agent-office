@@ -8,9 +8,10 @@
  * valide valgono il default del catalogo. Le chiavi sono stabili: rinominarle perde le scelte salvate.
  */
 import { isLocale, resolveLocale, type Locale } from './i18n/index.js';
+import { DEFAULT_OFFICE_ROOMS, OFFICE_LIMITS, resolveOffice, ROOM_TYPES, ROOM_VARIANTS, HOBBY_ROOM_TYPES, type OfficeRoom } from './office.js';
 
 /** schede della finestra Impostazioni, nell'ordine della barra; i nomi sono i testi `tab.<id>` (src/shared/i18n) */
-export const SETTINGS_TABS = [{ id: 'general' }, { id: 'claude' }, { id: 'agents' }, { id: 'git' }, { id: 'instances' }] as const;
+export const SETTINGS_TABS = [{ id: 'general' }, { id: 'claude' }, { id: 'agents' }, { id: 'git' }, { id: 'instances' }, { id: 'office' }] as const;
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
@@ -22,7 +23,7 @@ export const SETTING_PLACES: readonly SettingPlace[] = ['office', 'instances', '
 /** Voce del catalogo: il nome è il testo `setting.<key>` (src/shared/i18n), i posti i testi `place.<posto>`. */
 export interface SettingItem {
   key: string;
-  tab: Exclude<SettingsTab, 'general'>;
+  tab: Exclude<SettingsTab, 'general' | 'office'>;
   /** dove si vede: l'interruttore lo dice sotto l'etichetta */
   places: readonly SettingPlace[];
   default: boolean;
@@ -88,6 +89,8 @@ export interface DisplaySettings {
   locale: Locale;
   /** tutte le voci del catalogo, già risolte con i default */
   show: Record<SettingKey, boolean>;
+  /** composizione dell'ufficio (#108), già validata (src/shared/office.ts) */
+  office: { rooms: OfficeRoom[] };
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -100,7 +103,7 @@ export function resolveShow(raw: unknown): Record<SettingKey, boolean> {
   ) as Record<SettingKey, boolean>;
 }
 
-export const DEFAULT_DISPLAY: DisplaySettings = { language: 'system', locale: 'it', show: resolveShow(undefined) };
+export const DEFAULT_DISPLAY: DisplaySettings = { language: 'system', locale: 'it', show: resolveShow(undefined), office: resolveOffice(undefined) };
 
 /** La voce è da mostrare: valore delle preferenze, o default del catalogo se manca (server vecchio). Pura. */
 export function isShown(settings: Pick<DisplaySettings, 'show'>, key: SettingKey): boolean {
@@ -115,7 +118,7 @@ export function toDisplaySettings(raw: unknown): DisplaySettings {
   const v = isObject(raw) ? raw : {};
   const language = LANGUAGES.find((l) => l === v.language) ?? 'system';
   const locale = isLocale(v.locale) ? v.locale : resolveLocale(language, []);
-  return { language, locale, show: resolveShow(v.show) };
+  return { language, locale, show: resolveShow(v.show), office: resolveOffice(v.office) };
 }
 
 /**
@@ -124,7 +127,8 @@ export function toDisplaySettings(raw: unknown): DisplaySettings {
  * sono in `i18n.js` (src/shared/i18n). Un test controlla che il file sia aggiornato.
  */
 export function catalogScript(): string {
-  const data = { tabs: SETTINGS_TABS, places: SETTING_PLACES, items: SETTINGS_CATALOG, languages: LANGUAGES };
+  const office = { types: ROOM_TYPES, hobby: HOBBY_ROOM_TYPES, variants: ROOM_VARIANTS, limits: OFFICE_LIMITS, default: DEFAULT_OFFICE_ROOMS };
+  const data = { tabs: SETTINGS_TABS, places: SETTING_PLACES, items: SETTINGS_CATALOG, languages: LANGUAGES, office };
   return `// Generato da src/shared/settings.ts con \`npm run settings:catalog\`: non modificare a mano.\n` +
     `globalThis.AGENT_OFFICE_SETTINGS = ${JSON.stringify(data, null, 2)};\n`;
 }

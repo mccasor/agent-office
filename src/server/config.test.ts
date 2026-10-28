@@ -47,8 +47,8 @@ describe('parseConfig', () => {
     expect(parseConfig([1, 2])).toEqual(DEFAULT_CONFIG);
   });
 
-  it('alle pagine solo lingua (scelta e risolta) e voci da mostrare', () => {
-    expect(Object.keys(displaySettings(DEFAULT_CONFIG)).sort()).toEqual(['language', 'locale', 'show']);
+  it('alle pagine solo lingua (scelta e risolta), voci da mostrare e composizione dell\'ufficio', () => {
+    expect(Object.keys(displaySettings(DEFAULT_CONFIG)).sort()).toEqual(['language', 'locale', 'office', 'show']);
   });
 
   it('lingua "system" risolta una volta qui: macOS (dall\'app), poi il terminale, poi italiano', () => {

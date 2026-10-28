@@ -16,8 +16,8 @@ describe('catalogo delle impostazioni', () => {
       expect(tabs.has(item.tab) && (item.tab as string) !== 'general').toBe(true);
       expect(item.places.length).toBeGreaterThan(0);
     }
-    // ogni scheda (tranne Generali) ha qualcosa da mostrare
-    for (const tab of SETTINGS_TABS.filter((t) => t.id !== 'general')) {
+    // ogni scheda (tranne Generali e Ufficio, che hanno le loro impostazioni) ha qualcosa da mostrare
+    for (const tab of SETTINGS_TABS.filter((t) => t.id !== 'general' && t.id !== 'office')) {
       expect(SETTINGS_CATALOG.some((i) => i.tab === tab.id)).toBe(true);
     }
   });
