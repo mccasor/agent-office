@@ -18,7 +18,7 @@ import { createRepoPoller } from './server/git/poller.js';
 import { folderSources } from './server/git/attribution.js';
 import { createGitReports } from './server/git/day.js';
 import { buildSnapshot } from './server/state/index.js';
-import { agentVerdict, lastWrite } from './server/state/verdict.js';
+import { agentVerdict, endedCount, lastWrite } from './server/state/verdict.js';
 import { createSessionProcesses } from './server/sessions/index.js';
 import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
@@ -144,14 +144,15 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
 
   /**
    * "Controlla stato" (#104): rifà subito il controllo dei processi, pubblica se qualcosa è cambiato (un agente chiuso
-   * esce dall'ufficio) e dà il verdetto dallo snapshot aggiornato. Dei comandi in background solo l'mtime dell'output.
+   * esce dall'ufficio) e dà il verdetto dallo snapshot aggiornato. Dei comandi in background l'mtime dell'output e la
+   * riga di fine in coda (#110): quelli già chiusi non contano.
    */
   const checkAgent = async (agentId: string) => {
     if (await processes.refresh(true)) publish();
     const next = snapshot();
     const agent = next.agents.find((a) => a.id === agentId) ?? next.finished?.find((a) => a.id === agentId);
     const bg = agent ? transcript.backgroundOf(agent.sessionId, agent.id) : null;
-    const background = bg && { count: bg.count, lastOutputAt: await lastWrite(bg.outputs) };
+    const background = bg && { count: Math.max(0, bg.count - (await endedCount(bg.outputs))), lastOutputAt: await lastWrite(bg.outputs) };
     return agentVerdict({ agent, process: agent && processes.get(agent.sessionId), background, now: Date.now() });
   };
 

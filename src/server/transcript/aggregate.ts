@@ -53,9 +53,11 @@ function agentStatus(s: FileSummary, updatedAt: number, t: number, opts: Aggrega
   const { finished, hasAssistant, backgroundTasks } = s;
   // fallito o fermato secondo la notifica alla sessione: non arriverà altro, anche se il suo transcript non lo dice
   if (end === 'failed' || end === 'killed') return 'done';
-  // fine del turno ma con comandi in background aperti: riprenderà alla loro notifica, non ha finito
+  // fine del turno ma con comandi in background aperti: riprenderà alla loro notifica, non ha finito; tranne se la
+  // sessione ha già avuto la sua notifica di fine (#110): ha consegnato il rapporto, e un comando chiuso da fuori o
+  // dopo di lui non gli manderà mai la notifica che lo farebbe scendere a zero
   const done = finished === 'confirmed' || (finished === 'tentative' && t - updatedAt >= opts.doneGraceMs);
-  if (done && backgroundTasks === 0) return 'done';
+  if (done && (backgroundTasks === 0 || end === 'completed')) return 'done';
   if (!hasAssistant) return 'entering';
   return t - updatedAt > opts.idleAfterMs ? 'idle' : 'working';
 }

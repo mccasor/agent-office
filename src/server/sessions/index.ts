@@ -180,7 +180,8 @@ export function createSessionProcesses(opts: SessionProcessesOptions): SessionPr
     let starts: Map<number, string> | null = null;
     if (toCheck.length > 0) {
       try {
-        starts = await probe.startTimes([...new Set(toCheck.map((e) => e.pid))]);
+        // in ordine: i file arrivano in ordine di lettura, che cambia da un giro all'altro
+        starts = await probe.startTimes([...new Set(toCheck.map((e) => e.pid))].sort((x, y) => x - y));
       } catch {
         starts = null; // ps non disponibile: basta che il processo esista
       }

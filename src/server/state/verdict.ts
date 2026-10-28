@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises';
+import { open, stat } from 'node:fs/promises';
 import type { AgentState, AgentVerdict } from '../../shared/types.js';
 import type { SessionProcessInfo } from '../sessions/index.js';
 
@@ -30,6 +30,36 @@ export function agentVerdict(input: {
   if (!process) return { kind: 'unknown', checkedAt, ...details };
   const busy = details.tool !== null || details.waiting !== null || details.background > 0;
   return { kind: busy ? 'running' : 'silent', checkedAt, ...details };
+}
+
+/** riga con cui Claude Code chiude l'output di un comando in background: fermato o uscito con un codice */
+const OUTPUT_END_RE = /\[(?:killed|exited with code -?\d+)\]\s*$/;
+/** byte letti in fondo a ogni output: bastano per la riga di fine */
+const TAIL_BYTES = 64;
+
+/**
+ * Quanti dei comandi in background risultano chiusi dalla riga di fine in coda al loro output (#110): un comando
+ * chiuso da fuori non manda la notifica all'agente, che altrimenti sembrerebbe in esecuzione per sempre. Si leggono
+ * solo gli ultimi TAIL_BYTES byte e si cerca solo quella riga: dell'output non si tiene né si espone nulla.
+ */
+export async function endedCount(paths: readonly string[]): Promise<number> {
+  const ended = await Promise.all(
+    paths.map(async (p) => {
+      const file = await open(p, 'r').catch(() => null);
+      if (!file) return false;
+      try {
+        const { size } = await file.stat();
+        const length = Math.min(TAIL_BYTES, size);
+        const { buffer } = await file.read(Buffer.alloc(length), 0, length, size - length);
+        return OUTPUT_END_RE.test(buffer.toString('utf8'));
+      } catch {
+        return false;
+      } finally {
+        await file.close();
+      }
+    }),
+  );
+  return ended.filter(Boolean).length;
 }
 
 /** Ultima modifica tra i file di output dei comandi in background (solo stat, mai il contenuto); null se nessuno. */

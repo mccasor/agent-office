@@ -100,6 +100,22 @@ describe('aggregate', () => {
     expect(snap.agents[0]?.status).toBe(status);
   });
 
+  it('#110: fine notificata alla sessione con un comando in background mai chiuso nel suo transcript: terminato', () => {
+    const open = { hasAssistant: true, finished: 'confirmed' as const, backgroundTasks: 1, lastAt: T };
+    const snap = aggregate(
+      [session({ taskEnds: new Map([['a1', 'completed']]) }), agent('a1', open), agent('a2', open), agent('a3', { ...open, finished: false })],
+      noMetas,
+      T,
+      OPTS,
+    );
+    const by = new Map(snap.agents.map((a) => [a.id, a]));
+    expect(by.get('a1')).toMatchObject({ status: 'done', outcome: 'ok' });
+    // senza la notifica aspetta ancora il suo comando, come prima
+    expect(by.get('a2')?.status).toBe('working');
+    // notificato ma col transcript che va avanti (ripreso dopo il rapporto): non è finito
+    expect(by.get('a3')?.status).not.toBe('done');
+  });
+
   it('tool in uso: nascosto quando l’agente ha finito', () => {
     const tool = { name: 'Bash', target: null, since: T };
     const snap = aggregate(

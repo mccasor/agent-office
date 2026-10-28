@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AgentState } from '../../shared/types.js';
-import { agentVerdict, lastWrite } from './verdict.js';
+import { agentVerdict, endedCount, lastWrite } from './verdict.js';
 
 const NOW = 5_000_000;
 const zeroTokens = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, total: 0 };
@@ -41,6 +41,24 @@ describe('agentVerdict (#104)', () => {
       .toMatchObject({ kind: 'silent', claude: 'idle', background: 0 });
     expect(agentVerdict({ agent: agent({ tool: { name: 'Read', target: 'a.ts', since: 1 } }), process: undefined, ...none }))
       .toMatchObject({ kind: 'unknown', tool: { name: 'Read', since: 1 }, claude: null });
+  });
+});
+
+describe('endedCount (#110)', () => {
+  it('conta gli output che finiscono con la riga di fine di Claude Code; mancanti, vuoti o aperti no', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'ao-verdict-'));
+    const file = async (name: string, text: string) => {
+      const p = join(dir, name);
+      await writeFile(p, text);
+      return p;
+    };
+    const killed = await file('k.output', `${'x'.repeat(500)}\nAgent Office: http://127.0.0.1:4399\n\n[killed]\n`);
+    const exited = await file('e.output', 'fatto\n[exited with code 1]');
+    const running = await file('r.output', 'in corso… [killed] scritto a metà\nancora output\n');
+    const empty = await file('v.output', '');
+    expect(await endedCount([killed, exited, running, empty, join(dir, 'manca.output')])).toBe(2);
+    expect(await endedCount([])).toBe(0);
+    await rm(dir, { recursive: true, force: true });
   });
 });
 
