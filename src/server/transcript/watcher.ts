@@ -53,6 +53,8 @@ export interface TranscriptWatcher extends Omit<Watcher<TranscriptSnapshot>, 'on
    * e i percorsi non escono dal server); null se il transcript non è seguito.
    */
   backgroundOf(sessionId: string, agentId: string): { count: number; outputs: string[] } | null;
+  /** percorso del transcript principale di una sessione seguita (#109, attribuzione dei commit); null se non c'è */
+  transcriptOf(sessionId: string): string | null;
   /**
    * Nuova finestra di attività (config.json cambiato, #94): vale dal prossimo current(). I transcript più vecchi della
    * finestra di discovery all'avvio restano non letti fino al riavvio.
@@ -337,6 +339,11 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
         if (p.kind !== 'agent' || p.sessionId !== sessionId || p.agentId !== agentId) continue;
         return { count: f.acc.state.backgroundTasks, outputs: [...f.acc.state.backgroundOutputs] };
       }
+      return null;
+    },
+    transcriptOf(sessionId) {
+      // chiamato solo a scheda Git aperta: basta scorrere i file seguiti
+      for (const [abs, f] of files) if (f.parsed.kind === 'session' && f.parsed.sessionId === sessionId) return abs;
       return null;
     },
     setActiveWindowMs(ms) {

@@ -15,6 +15,8 @@ import {
 } from './server/hooks/index.js';
 import { displaySettings, loadConfig, systemLanguages, watchConfig, type ServerConfig } from './server/config.js';
 import { createRepoPoller } from './server/git/poller.js';
+import { sessionSources } from './server/git/attribution.js';
+import { createGitReports } from './server/git/day.js';
 import { buildSnapshot } from './server/state/index.js';
 import { agentVerdict, lastWrite } from './server/state/verdict.js';
 import { createSessionProcesses } from './server/sessions/index.js';
@@ -153,10 +155,23 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
     return agentVerdict({ agent, process: agent && processes.get(agent.sessionId), background, now: Date.now() });
   };
 
+  /**
+   * Scheda Git (#109): commit del giorno nel repository della sessione, attribuiti con i suoi transcript (anche dei
+   * subagenti già usciti dall'ufficio). Solo a richiesta, mai nel poller.
+   */
+  const gitReports = createGitReports();
+  const gitDay = async (sessionId: string, day: string | null) => {
+    const session = transcript.current().sessions.find((s) => s.id === sessionId);
+    if (!session) return null;
+    const path = transcript.transcriptOf(sessionId);
+    const sources = path ? await sessionSources(path, sessionId) : [];
+    return gitReports.report(session.cwd ?? (opts.all ? null : opts.cwd), day, sources);
+  };
+
   const first = snapshot();
   const server = await startServer({
     port: opts.port, webDir: WEB_DIR, initial: first, settings: displaySettings(config), history: (day) => history.report(day),
-    agentStatus: checkAgent,
+    agentStatus: checkAgent, git: gitDay,
   });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
