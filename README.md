@@ -121,10 +121,11 @@ Other behaviour:
 - A red "!" marks who is blocked on you, subagents included: the instance inherits the wait of its subagents.
 - Clicking a character opens its **agent card**: name, task, issue, role, type, status, tool in use, duration, model, estimated cost, token breakdown, progress, and (for Claudio Code) project, branch, effort and context used.
 - The left panel lists the instances as an accordion (branch, uncommitted diff, context, agents with status and tool). Agent cards and instance details can be **detached** into separate windows.
+- Claudio Code's card and the detached instance details have two tabs: **Istanza** (as above) and **Git**, with the commits of the chosen day on all local branches (merges excluded): who made each one (Claude, the subagent by name, or "Fuori da Claude"), time, message, lines +/- and files; a split bar by author, the 10 most touched files, lines per hour and file types. The day picker works like the Analysis view. Computed only when the tab is open, with a cache per repository and day; it can be turned off in Settings (Git tab).
 
 ### List ("Lista")
 
-Switch views from the top-right toggle. One block per instance: status dot, project, branch, issues, session title, diff, model, effort, output tokens, estimated cost, age, status or tool, context bar, and its agents with role, status, tool, duration and progress. A filter bar searches project, branch or agent and offers "Solo in attesa" (only waiting) and "Nascondi terminati" (hide finished). The "Nell'ufficio" (In the office) checkbox picks which instances appear in the office. "Terminati oggi" (Finished today) lists the agents that finished today and have already left.
+Switch views from the top-right toggle. One block per instance: status dot, project, branch, issues, session title, diff, model, effort, output tokens, estimated cost, age, status or tool, context bar, and its agents with role, status, tool, duration and progress. A filter bar searches project, branch or agent and offers "Solo in attesa" (only waiting) and "Nascondi terminati" (hide finished). The "Nell'ufficio" (In the office) checkbox picks which instances appear in the office. "Terminati oggi" (Finished today) lists the agents that finished today and have already left. Each instance also shows today's commits with the split bar by author and a "Scheda Git" button that opens the instance details on the Git tab.
 
 ### Data sources
 
@@ -137,6 +138,8 @@ Switch views from the top-right toggle. One block per instance: status dot, proj
 | Context used | input tokens of the last request over the model's window (200k, or 1M, see [Known limitations](#known-limitations)) |
 | Tokens and estimated cost | input, output and cache (read and write) of the session and all its subagents; cost from the public Anthropic API price list (an estimate) |
 | Project, branch, lines +/- | `git` in each instance's working folder (uncommitted changes) |
+| Commits of the day (Git tab) | `git log --numstat --no-merges` on the local branches of the instance's repository, on demand |
+| Who made a commit | the transcripts of the sessions in the same working folder: a `git commit` run by a main session is Claude's, one in `subagents/agent-*.jsonl` is that agent's (also after it left the office). Matched by the hash printed by `git commit` (`[branch abc1234] message`), then by message and minute (cherry-pick, rebase, amend), then by the time of a `git commit -q`; otherwise "Fuori da Claude". Only the `Bash` calls with `git commit` and their results are read, and only hash, branch and message are kept |
 | Instant agent states | hook events in `~/.agent-office/events/<folder>.jsonl` |
 | Waiting for your input | unanswered question in the transcript (`AskUserQuestion`, `ExitPlanMode`) + `Notification` hook, attributed to the subagent through `PermissionRequest`/`PreToolUse`. Never the text of the question |
 
@@ -165,6 +168,7 @@ Environment variables: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_
 - The server listens only on `127.0.0.1` and rejects requests with a different `Host` header (DNS rebinding protection).
 - It exposes metadata and numbers only: never the text of prompts, responses or tool inputs. For the tool in use it shows the tool name plus just the file name (no folder) for file tools, or the host for `WebFetch`.
 - **Text derived from prompts:** the session title (written by Claude Code) and the agents' names and descriptions (written by Claude when it starts them) summarise the requested work and are shown as they are. Working folder and branch are exposed too. The API has no authentication: any process on the same Mac, even another user's, can read them from `127.0.0.1`. Keep this in mind on a shared Mac.
+- **Commits (Git tab):** `GET /api/git?session=<id>&day=YYYY-MM-DD` exposes, for the commits of that day on the local branches of the instance's repository, the short hash, time, branch, the **first line of the commit message**, lines added and removed, the **paths of the changed files** with their lines, and who made the commit (Claude, a subagent's name and type, or outside Claude). Commit messages are not prompts, but they are data the other endpoints do not expose. To attribute commits the server reads from the transcripts only the `Bash` calls containing `git commit` (the command is not kept) and their results, from which it keeps hash, branch and message: never the text of prompts or other tool results.
 - The hooks record event names, ids, agent type, tool name and working folder: no prompt or tool input.
 - The server makes no outbound network calls. The menu bar app queries GitHub (`api.github.com`, releases of the `mccasor/homebrew-agent-office` tap) to look for updates: shortly after launch, every 6 hours and when you click "Cerca aggiornamenti".
 
@@ -188,9 +192,9 @@ git (branch, diff --shortstat) ──────┘            ▲
 | `src/shared` | data contract (`Snapshot`, `types.ts`), person names (`nickname.ts`), price list (`pricing.ts`) |
 | `src/server/transcript` | transcripts: `watcher` (files and changes), `discovery` (sessions from other folders), `cwdscan`, `reader` (incremental reads), `parser`, `aggregate` (sessions and agents), `classify` (role), `models` (context window), `paths`, `encode` |
 | `src/server/hooks` | hook → JSONL events (`events`), install/uninstall (`install`), watcher |
-| `src/server/git` | project, branch, lines +/- per working folder (`poller`) |
+| `src/server/git` | project, branch, lines +/- per working folder (`poller`); commits of a day (`log`), their attribution from the transcripts (`attribution`) and the Git tab report (`day`) |
 | `src/server/state` | aggregation into the `Snapshot`: statuses, waits, lounge, finished today |
-| `src/server/http` | API (`/api/snapshot`, `/api/status`, `/api/events` SSE) + static files |
+| `src/server/http` | API (`/api/snapshot`, `/api/status`, `/api/events` SSE, `/api/git`) + static files |
 | `src/server/config.ts` | `config.json` settings |
 | `src/cli.ts` | `agent-office` command |
 | `src/web/pixel` | pixel-art office: floor plan, seats, A* pathfinding, motion, sprites, animated screens, camera and zoom |
