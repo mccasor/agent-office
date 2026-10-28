@@ -94,9 +94,25 @@ pub fn system_languages() -> Vec<String> {
     objc2_foundation::NSLocale::preferredLanguages().to_vec().iter().map(|l| l.to_string()).collect()
 }
 
+/// Lingue della sessione (Linux), come le sceglie gettext: `LANGUAGE` (elenco separato da `:`), poi la prima tra
+/// `LC_ALL`, `LC_MESSAGES` e `LANG`.
 #[cfg(not(target_os = "macos"))]
 pub fn system_languages() -> Vec<String> {
-    std::env::var("LANG").ok().into_iter().collect()
+    env_languages(|name| std::env::var(name).ok())
+}
+
+/// Lingue preferite dalle variabili d'ambiente lette con `var`. Con la locale "C" o "POSIX" gettext ignora
+/// `LANGUAGE`, e qui si ignora tutto: non sono lingue (vale il default). Pura.
+#[cfg(any(not(target_os = "macos"), test))]
+pub fn env_languages(var: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    let real = |v: &String| !v.is_empty() && v != "C" && v != "POSIX" && !v.starts_with("C.");
+    let locale = ["LC_ALL", "LC_MESSAGES", "LANG"].into_iter().find_map(|name| var(name).filter(|v| !v.is_empty()));
+    if locale.as_ref().is_some_and(|l| !real(l)) {
+        return vec![];
+    }
+    let mut list: Vec<String> = var("LANGUAGE").unwrap_or_default().split(':').map(str::to_string).filter(real).collect();
+    list.extend(locale);
+    list
 }
 
 /// Rilegge la lingua da config.json e la rende corrente; restituisce quella nuova.
@@ -143,6 +159,21 @@ mod tests {
     }
 
     #[test]
+    fn lingue_dalle_variabili_d_ambiente() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| v.to_string())
+        };
+        assert_eq!(env_languages(env(&[("LANGUAGE", "es:en"), ("LANG", "it_IT.UTF-8")])), langs(&["es", "en", "it_IT.UTF-8"]));
+        assert_eq!(env_languages(env(&[("LC_ALL", "en_US.UTF-8"), ("LANG", "it_IT.UTF-8")])), langs(&["en_US.UTF-8"]));
+        assert_eq!(env_languages(env(&[("LC_MESSAGES", "es_ES.UTF-8"), ("LANG", "it_IT.UTF-8")])), langs(&["es_ES.UTF-8"]));
+        // locale "C": nessuna lingua, nemmeno da LANGUAGE
+        assert_eq!(env_languages(env(&[("LANGUAGE", "en"), ("LC_ALL", "C")])), Vec::<String>::new());
+        assert_eq!(env_languages(env(&[("LANG", "C.UTF-8")])), Vec::<String>::new());
+        assert_eq!(env_languages(env(&[])), Vec::<String>::new());
+        assert_eq!(resolve("system", &env_languages(env(&[("LANGUAGE", "fr:es"), ("LANG", "en_US.UTF-8")]))), Locale::Es);
+    }
+
+    #[test]
     fn testi_nelle_tre_lingue() {
         assert_eq!(text_in(Locale::It, "tray.idle"), "Claude è inattivo");
         assert_eq!(text_in(Locale::En, "tray.working"), "Claude is working");
@@ -161,6 +192,7 @@ mod tests {
             include_str!("settings.rs"),
             include_str!("config.rs"),
             include_str!("i18n.rs"),
+            include_str!("tray_menu.rs"),
         ];
         let mut keys = vec![];
         for source in sources {

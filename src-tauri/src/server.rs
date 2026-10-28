@@ -44,16 +44,50 @@ fn version_of(node: &Path) -> Option<u64> {
     out.status.success().then(|| node_major(&String::from_utf8_lossy(&out.stdout))).flatten()
 }
 
+/// `node` secondo la shell di login `shell` (ultima riga dell'output: la prima può essere il saluto della shell).
+fn login_shell_node(shell: &Path) -> Option<PathBuf> {
+    let out = output_with_timeout(Command::new(shell).args(["-lic", "command -v node"]), PROBE_TIMEOUT)?;
+    String::from_utf8_lossy(&out.stdout).lines().last().map(|line| PathBuf::from(line.trim()))
+}
+
+#[cfg(target_os = "macos")]
 fn candidates() -> Vec<PathBuf> {
     let mut list: Vec<PathBuf> = std::env::var_os("AGENT_OFFICE_NODE").map(PathBuf::from).into_iter().collect();
     list.extend(["/opt/homebrew/bin/node", "/usr/local/bin/node"].map(PathBuf::from));
     // l'app parte da launchd con un PATH minimo: nvm, fnm, asdf… si trovano solo con una shell di login
-    if let Some(out) = output_with_timeout(Command::new("/bin/zsh").args(["-lic", "command -v node"]), PROBE_TIMEOUT) {
-        if let Some(line) = String::from_utf8_lossy(&out.stdout).lines().last() {
-            list.push(PathBuf::from(line.trim()));
-        }
-    }
+    list.extend(login_shell_node(Path::new("/bin/zsh")));
     list.into_iter().filter(|p| p.is_absolute() && p.exists()).collect()
+}
+
+/// Su Linux zsh spesso manca: la shell dell'utente (`SHELL`) o bash. Poi i gestori di versioni più diffusi (volta, fnm,
+/// nvm, dal più recente), che dalla sessione grafica non sono nel PATH, e per ultimo il Node di sistema, spesso
+/// vecchio (find_node lo scarta se è sotto MIN_NODE).
+#[cfg(not(target_os = "macos"))]
+fn candidates() -> Vec<PathBuf> {
+    let mut list: Vec<PathBuf> = std::env::var_os("AGENT_OFFICE_NODE").map(PathBuf::from).into_iter().collect();
+    let shell = std::env::var_os("SHELL").map(PathBuf::from).filter(|s| s.is_absolute() && s.exists());
+    list.extend(login_shell_node(&shell.unwrap_or_else(|| PathBuf::from("/bin/bash"))));
+    if let Some(home) = crate::system::home() {
+        list.push(home.join(".volta/bin/node"));
+        let fnm = std::env::var_os("FNM_DIR").map(PathBuf::from).unwrap_or_else(|| home.join(".local/share/fnm"));
+        list.push(fnm.join("aliases/default/bin/node"));
+        list.push(home.join(".fnm/aliases/default/bin/node"));
+        let nvm = std::env::var_os("NVM_DIR").map(PathBuf::from).unwrap_or_else(|| home.join(".nvm"));
+        let versions: Vec<String> = std::fs::read_dir(nvm.join("versions/node"))
+            .map(|dir| dir.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default();
+        list.extend(newest_first(versions).into_iter().map(|v| nvm.join("versions/node").join(v).join("bin/node")));
+    }
+    list.extend(["/usr/local/bin/node", "/usr/bin/node"].map(PathBuf::from));
+    list.into_iter().filter(|p| p.is_absolute() && p.exists()).collect()
+}
+
+/// Cartelle delle versioni di nvm (`v22.3.0`) dalla più recente; i nomi che non sono versioni sono scartati. Pura.
+#[cfg(any(not(target_os = "macos"), test))]
+fn newest_first(names: Vec<String>) -> Vec<String> {
+    let mut versions: Vec<_> = names.into_iter().filter_map(|n| crate::updates::parse_version(&n).map(|v| (v, n))).collect();
+    versions.sort_by_key(|(v, _)| std::cmp::Reverse(*v));
+    versions.into_iter().map(|(_, n)| n).collect()
 }
 
 /// Node da usare: il primo abbastanza recente. Trovato una volta resta in memoria; l'errore no (si riprova).
@@ -75,7 +109,8 @@ pub fn find_node() -> Result<PathBuf, String> {
     }
     Err(match too_old {
         Some(major) => tf("server.nodeOld", &[("major", &major.to_string()), ("min", &MIN_NODE.to_string())]),
-        None => t("server.nodeMissing"),
+        None if cfg!(target_os = "macos") => t("server.nodeMissing"),
+        None => t("server.nodeMissingLinux"),
     })
 }
 
@@ -97,7 +132,7 @@ pub fn probe(status_body: Option<&str>) -> Probe {
 }
 
 fn log_path() -> Option<PathBuf> {
-    let dir = PathBuf::from(std::env::var_os("HOME")?).join(".agent-office");
+    let dir = crate::system::home()?.join(".agent-office");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir.join("server.log"))
 }
@@ -218,6 +253,12 @@ mod tests {
         assert_eq!(node_major("v26.12.0\n"), Some(26));
         assert_eq!(node_major("v18.20.1"), Some(18));
         assert_eq!(node_major("boh"), None);
+    }
+
+    #[test]
+    fn versioni_di_nvm_dalla_piu_recente() {
+        let names = ["v18.20.1", "v22.10.0", "v22.9.0", "system", "v24.0.0"].map(String::from).to_vec();
+        assert_eq!(newest_first(names), ["v24.0.0", "v22.10.0", "v22.9.0", "v18.20.1"]);
     }
 
     #[test]

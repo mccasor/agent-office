@@ -3,6 +3,7 @@
 //! aggiornamenti, lo stato, le istanze di Claude Code con i loro agenti, le impostazioni e l'uscita (panel.rs); le
 //! impostazioni stanno in una finestra a sé (settings.rs) e si salvano in ~/.agent-office/config.json (config.rs).
 //! Il server Node di agent-office (`--all`) gira in background come processo figlio e chiude con l'app.
+//! Su Linux (#107) l'icona sta nel tray e i clic non arrivano: al posto del pannello c'è un menu nativo (tray_menu.rs).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::io::{Read, Write};
@@ -25,8 +26,8 @@ const PORT: u16 = 4318;
 const TRAY_ID: &str = "status";
 const WINDOW_ID: &str = "office";
 const POLL: Duration = Duration::from_secs(2);
-const LAUNCH_AGENT: &str = "app.agent-office.menubar";
 
+mod autostart;
 mod cards;
 mod config;
 mod i18n;
@@ -35,7 +36,11 @@ mod notify;
 mod panel;
 mod server;
 mod settings;
+mod system;
+#[cfg(any(target_os = "linux", test))]
+mod tray_menu;
 mod updates;
+use autostart::{enabled as autostart_enabled, set as set_autostart};
 use notify::{Alert, AlertFacts, Prefs, SessionFacts};
 use server::{find_node, probe, Probe, Supervisor};
 use updates::{Upgrade, UpdateState};
@@ -260,6 +265,12 @@ fn status_item_is_dark(_: &AppHandle) -> Option<bool> {
     None
 }
 
+#[cfg(target_os = "linux")]
+fn system_is_dark() -> bool {
+    system::panel_is_dark()
+}
+
+#[cfg(not(target_os = "linux"))]
 fn system_is_dark() -> bool {
     Command::new("defaults")
         .args(["read", "-g", "AppleInterfaceStyle"])
@@ -325,39 +336,6 @@ fn register_bundle() {
     quiet(Command::new("/usr/bin/mdimport").arg(bundle));
 }
 
-fn launch_agent_path() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/LaunchAgents").join(format!("{LAUNCH_AGENT}.plist")))
-}
-
-fn autostart_enabled() -> bool {
-    launch_agent_path().is_some_and(|p| p.exists())
-}
-
-/// Avvio al login con un LaunchAgent dell'utente che lancia l'eseguibile dell'app.
-fn set_autostart(enabled: bool) {
-    let (Some(path), Ok(exe)) = (launch_agent_path(), std::env::current_exe()) else {
-        return;
-    };
-    if !enabled {
-        let _ = std::fs::remove_file(path);
-        return;
-    }
-    let exe = exe.to_string_lossy().replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-    let plist = format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
-         <plist version=\"1.0\"><dict>\n\
-         <key>Label</key><string>{LAUNCH_AGENT}</string>\n\
-         <key>ProgramArguments</key><array><string>{exe}</string></array>\n\
-         <key>RunAtLoad</key><true/>\n\
-         </dict></plist>\n"
-    );
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::write(path, plist);
-}
-
 /// Mostra la finestra dell'ufficio sulla vista indicata ("pixel" o "list"), evidenziando la sessione `focus`;
 /// la crea alla prima apertura (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
@@ -409,7 +387,11 @@ fn send_notifications(app: &AppHandle, prev: &Overview, next: &Overview) {
     let mut messages = notify::messages(&prev.facts, &next.facts, prefs);
     messages.extend(notify::alert_messages(&prev.alerts, &next.alerts, prefs));
     for (title, body) in messages {
-        let _ = app.notification().builder().title(title).body(body).sound("default").show();
+        let builder = app.notification().builder().title(title).body(body);
+        // suono di sistema solo su macOS: su Linux "default" non è un suono del tema e dipende dal demone
+        #[cfg(target_os = "macos")]
+        let builder = builder.sound("default");
+        let _ = builder.show();
     }
 }
 
@@ -661,11 +643,17 @@ fn main() {
             }
 
             let initial = Overview::offline();
-            TrayIconBuilder::with_id(TRAY_ID)
+            let tray = TrayIconBuilder::with_id(TRAY_ID)
                 .icon(Image::from_bytes(initial.status.tray_icon(system_is_dark()))?)
                 .icon_as_template(false)
-                .tooltip("Agent Office")
-                // niente menu nativo: il clic apre il pannello
+                .tooltip("Agent Office");
+            // su Linux AppIndicator mostra solo un menu e non manda i clic: menu nativo al posto del pannello
+            #[cfg(target_os = "linux")]
+            let tray = tray
+                .menu(&tray_menu::build(&handle, &tray_menu::entries(initial.status.label(), &[], &UpdateState::Unknown, &version(&handle)))?)
+                .on_menu_event(tray_menu::on_event);
+            tray
+                // macOS: niente menu nativo, il clic apre il pannello (su Linux il clic non arriva)
                 .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { rect, button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
@@ -700,6 +688,9 @@ fn main() {
                 // stato delle sessioni e avvisi al giro precedente: al primo snapshot nessuna notifica (non è un
                 // cambiamento)
                 let mut seen: Option<Overview> = None;
+                // voci del menu del tray mostrate (Linux): si ricostruisce solo se cambiano
+                #[cfg(target_os = "linux")]
+                let mut menu: Vec<tray_menu::Entry> = vec![];
                 loop {
                     let status = match http_get("/api/status", None) {
                         Fetched::Body(body, _) => probe(Some(&body)),
@@ -735,6 +726,12 @@ fn main() {
                             tooltip = text;
                         }
                     }
+                    #[cfg(target_os = "linux")]
+                    tray_menu::sync(
+                        &handle,
+                        &mut menu,
+                        tray_menu::entries(overview.status.label(), &overview.facts, &update_state(&handle), &version(&handle)),
+                    );
                     let changed = last.as_ref().is_none_or(|(o, d)| *o != overview || *d != dark);
                     if changed {
                         *handle.state::<Ui>().snapshot.lock().unwrap() = overview.snapshot.clone();

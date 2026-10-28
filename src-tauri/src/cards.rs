@@ -118,7 +118,8 @@ pub fn on_new_window(app: AppHandle, port: u16) -> impl Fn(Url, NewWindowFeature
             // dopo il callback di WebKit: creare la finestra al suo interno può bloccare il ciclo degli eventi
             let _ = app.run_on_main_thread(move || open(&handle, card, port));
         } else if is_donate(&url) {
-            let _ = std::process::Command::new("/usr/bin/open").arg(DONATE_URL).spawn();
+            // in un thread: open_url aspetta il comando, e qui siamo nel callback di WebKit
+            std::thread::spawn(|| crate::system::open_url(DONATE_URL));
         }
         NewWindowResponse::Deny
     }
