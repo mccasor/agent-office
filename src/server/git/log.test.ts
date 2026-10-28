@@ -137,14 +137,20 @@ describe('createGitDayReader', () => {
     git(dir, ['checkout', '-q', 'main']);
     commit(dir, 'd.txt', 'y\n', at(12));
     git(dir, ['merge', '-q', '--no-ff', '-m', 'merge feature', 'feature'], at(13));
+    // branch di un agente con la punta più recente: i commit di main restano di main
+    git(dir, ['checkout', '-q', '-b', 'wt']);
+    commit(dir, 'e.txt', 'z\n', at(14));
+    git(dir, ['checkout', '-q', 'main']);
     const reader = createGitDayReader({ now: () => at(15, 21) });
     const day = await reader.read(dir, '2026-10-20');
     expect(day.status).toBe('ok');
     expect(day.project).toBe(basename(dir));
     expect(day.branch).toBe('main');
     expect(day.commits.map((c) => [c.message, c.branch, c.added])).toEqual([
+      ['add e.txt', 'wt', 1],
       ['add d.txt', 'main', 1],
-      ['add c.txt', 'feature', 1],
+      // unito in main
+      ['add c.txt', 'main', 1],
       ['add b.txt', 'main', 2],
     ]);
     expect(day.days).toEqual(['2026-10-20', '2026-10-19']);

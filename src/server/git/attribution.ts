@@ -1,5 +1,5 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { basename, dirname, join } from 'node:path';
 import { nicknameOf } from '../../shared/nickname.js';
 import type { GitCommit, GitCommitAuthor } from '../../shared/types.js';
 import { createLineReader, type LineReader } from '../transcript/reader.js';
@@ -125,16 +125,37 @@ function ingest(scan: FileScan, line: string): void {
   }
 }
 
-/** transcript dei subagenti di una sessione: <cartella del transcript>/<sessione>/subagents/[workflows/<x>/]agent-<id>.jsonl */
-export async function sessionSources(sessionPath: string, sessionId: string): Promise<TranscriptSource[]> {
-  const sources: TranscriptSource[] = [{ path: sessionPath, agentId: null }];
+/** il file è stato scritto da `since` in poi (un transcript fermo da prima non può contenere commit del giorno) */
+const touchedSince = async (path: string, since: number): Promise<boolean> =>
+  since <= 0 || (await stat(path).then((s) => s.mtimeMs >= since, () => false));
+
+/**
+ * Transcript di una sessione e dei suoi subagenti: <cartella>/<sessione>.jsonl e
+ * <cartella>/<sessione>/subagents/[workflows/<x>/]agent-<id>.jsonl; con `since` solo quelli scritti da allora.
+ */
+export async function sessionSources(sessionPath: string, sessionId: string, since = 0): Promise<TranscriptSource[]> {
+  const sources: TranscriptSource[] = [];
+  if (await touchedSince(sessionPath, since)) sources.push({ path: sessionPath, agentId: null });
   const dir = join(dirname(sessionPath), sessionId, 'subagents');
   const names = await readdir(dir, { recursive: true }).catch(() => [] as string[]);
   for (const name of names) {
     const m = /^(?:workflows[\\/][^\\/]+[\\/])?agent-([^\\/]+)\.jsonl$/.exec(name);
-    if (m?.[1]) sources.push({ path: join(dir, name), agentId: m[1] });
+    if (m?.[1] && (await touchedSince(join(dir, name), since))) sources.push({ path: join(dir, name), agentId: m[1] });
   }
   return sources;
+}
+
+/**
+ * Transcript di tutte le sessioni della stessa cartella di projects (stessa cartella di lavoro), la sessione data per
+ * prima: i commit fatti da un'altra sessione di Claude nello stesso repository non sono "fuori da Claude".
+ */
+export async function folderSources(sessionPath: string, since = 0): Promise<TranscriptSource[]> {
+  const dir = dirname(sessionPath);
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const paths = [sessionPath, ...names.filter((n) => n.endsWith('.jsonl')).map((n) => join(dir, n)).filter((p) => p !== sessionPath)];
+  const out: TranscriptSource[] = [];
+  for (const path of paths) out.push(...(await sessionSources(path, basename(path, '.jsonl'), since)));
+  return out;
 }
 
 export interface CommitScanner {

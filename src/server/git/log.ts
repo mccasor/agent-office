@@ -220,12 +220,21 @@ export function createGitDayReader(opts: GitDayReaderOptions = {}): GitDayReader
 
       const { start, end } = dayBounds(day);
       const base = ['-c', 'core.quotepath=off', 'log', '--branches', 'HEAD', '--no-merges', '--source'];
-      const [log, recent] = await Promise.all([
-        run(cwd, [...base, '--numstat', `--max-count=${MAX_DAY_COMMITS + 1}`, `--since=@${Math.floor(start / 1000)}`, `--until=@${Math.floor(end / 1000) - 1}`, LOG_FORMAT]),
+      const range = [`--since=@${Math.floor(start / 1000)}`, `--until=@${Math.floor(end / 1000) - 1}`];
+      const [log, recent, onHead] = await Promise.all([
+        run(cwd, [...base, '--numstat', `--max-count=${MAX_DAY_COMMITS + 1}`, ...range, LOG_FORMAT]),
         run(cwd, ['log', '--branches', 'HEAD', '--no-merges', '--format=%ct', `--since=@${Math.floor(dayBounds(today).start / 1000) - GIT_DAYS * 86_400}`]),
+        // --source dà il primo branch che raggiunge il commit (spesso il worktree di un agente con la punta più
+        // recente): quelli raggiungibili da HEAD valgono il branch corrente
+        branch ? run(cwd, ['rev-list', 'HEAD', '--no-merges', `--max-count=${MAX_DAY_COMMITS + 1}`, ...range]) : Promise.resolve(null),
       ]);
+      const head = new Set(onHead?.ok ? onHead.stdout.split('\n').filter(Boolean) : []);
       // --since/--until di git sono euristiche sulla data del commit: il giorno si ricontrolla qui
-      const all = log.ok ? parseLog(log.stdout).filter((c) => c.at >= start && c.at < end) : [];
+      const all = log.ok
+        ? parseLog(log.stdout)
+          .filter((c) => c.at >= start && c.at < end)
+          .map((c) => (head.has(c.hash) ? { ...c, branch } : c))
+        : [];
       const days = recent.ok
         ? [...new Set(recent.stdout.split('\n').filter(Boolean).map((s) => localDay(Number(s) * 1000)))].sort().reverse()
         : [];

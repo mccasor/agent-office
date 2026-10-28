@@ -1,9 +1,9 @@
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { nicknameOf } from '../../shared/nickname.js';
-import { attribute, createCommitScanner, parseCommitOutput, sessionSources, type TranscriptCommit } from './attribution.js';
+import { attribute, createCommitScanner, folderSources, parseCommitOutput, sessionSources, type TranscriptCommit } from './attribution.js';
 import type { LogCommit } from './log.js';
 
 const dirs: string[] = [];
@@ -63,6 +63,23 @@ describe('sessionSources', () => {
     const sources = await sessionSources(session, 's1');
     expect(sources[0]).toEqual({ path: session, agentId: null });
     expect(sources.slice(1).map((s) => s.agentId).sort()).toEqual(['a1', 'w2']);
+  });
+
+  it('sessioni della stessa cartella, la sessione data per prima; `since` salta i transcript fermi da prima', async () => {
+    const { dir, session, sub } = project();
+    writeFileSync(session, '');
+    writeFileSync(join(sub, 'agent-a1.jsonl'), '');
+    const other = join(dir, 's0.jsonl');
+    writeFileSync(other, '');
+    const old = join(dir, 'vecchia.jsonl');
+    writeFileSync(old, '');
+    utimesSync(old, new Date(T0 - 86_400_000), new Date(T0 - 86_400_000));
+    const all = await folderSources(session);
+    expect(all[0]).toEqual({ path: session, agentId: null });
+    expect(all.map((s) => s.path).sort()).toEqual([join(sub, 'agent-a1.jsonl'), old, other, session].sort());
+    const recent = await folderSources(session, T0);
+    expect(recent.map((s) => s.path)).not.toContain(old);
+    expect(recent).toHaveLength(3);
   });
 
   it('senza cartella dei subagenti: solo la sessione', async () => {
