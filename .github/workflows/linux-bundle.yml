@@ -3,12 +3,9 @@ name: Linux bundle
 # distribuzioni più recenti) e lasciati come artifact del workflow. Si lancia a mano (Actions → Run workflow) o con un
 # tag v*. Il bundle macOS resta a scripts/release.mjs; i target Linux stanno in src-tauri/tauri.linux.conf.json.
 #
-# TODO(#107) pubblicazione: oggi i pacchetti NON vanno da nessuna parte. Le release sono nel tap pubblico
-# mccasor/homebrew-agent-office (dove l'app cerca gli aggiornamenti, updates.rs) e questo repository è privato: per
-# allegare AppImage e deb alla release del tap serve un token con accesso in scrittura al tap, salvato come segreto
-# (es. TAP_TOKEN), e un passo `gh release upload v<versione> <file> --repo mccasor/homebrew-agent-office --clobber`
-# dopo che scripts/release.mjs --publish ha creato la release. In alternativa si scaricano gli artifact e si allegano a
-# mano. La scelta spetta a chi gestisce le release.
+# Pubblicazione: con il segreto TAP_TOKEN (token con Contents: read and write sul tap pubblico
+# mccasor/homebrew-agent-office) AppImage e deb si allegano alla release v<versione> del tap, che scripts/release.mjs
+# --publish deve aver già creato: si lancia a mano dopo la release macOS. Senza il segreto restano solo come artifact.
 on:
   workflow_dispatch:
   push:
@@ -41,3 +38,11 @@ jobs:
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/deb/*.deb
           if-no-files-found: error
+      - name: Allega i pacchetti alla release del tap
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+        if: env.GH_TOKEN != ''
+        run: >-
+          gh release upload "v${{ steps.version.outputs.version }}"
+          src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/deb/*.deb
+          --repo mccasor/homebrew-agent-office --clobber
