@@ -1,7 +1,8 @@
 //! Schede staccabili (#92): nella WebView di Tauri `window.open` non apre nulla, quindi le richieste di nuova finestra
 //! dell'ufficio (e delle schede stesse) si intercettano qui. Si accettano solo le schede del server locale
 //! (`http://127.0.0.1:<porta>/?card=agent|session&id=...`) e per ognuna si apre una finestra Tauri dedicata, riusata
-//! se è già aperta; tutto il resto si nega. Nessun comando né permesso esposto alla pagina remota.
+//! se è già aperta; la pagina delle offerte su Ko-fi si apre nel browser di sistema; tutto il resto si nega. Nessun
+//! comando né permesso esposto alla pagina remota.
 //!
 //! La finestra prende l'altezza del contenuto: WKWebView ignora `window.resizeTo`/`resizeBy`, quindi la pagina (che
 //! qui riceve `app=1` nell'URL) mette l'altezza desiderata in coda al titolo, dopo un carattere di uso privato
@@ -31,6 +32,14 @@ pub struct Card {
     pub label: String,
     pub url: String,
     pub size: (f64, f64),
+}
+
+/// pagina delle offerte, come `DONATE_URL` in App.tsx
+const DONATE_URL: &str = "https://ko-fi.com/mccasor";
+
+/// L'URL è esattamente la pagina delle offerte (niente parametri né varianti). Pura.
+pub fn is_donate(url: &Url) -> bool {
+    url.as_str() == DONATE_URL
 }
 
 /// La finestra è quella di una scheda (si chiude davvero, non si nasconde come l'ufficio).
@@ -108,6 +117,8 @@ pub fn on_new_window(app: AppHandle, port: u16) -> impl Fn(Url, NewWindowFeature
             let handle = app.clone();
             // dopo il callback di WebKit: creare la finestra al suo interno può bloccare il ciclo degli eventi
             let _ = app.run_on_main_thread(move || open(&handle, card, port));
+        } else if is_donate(&url) {
+            let _ = std::process::Command::new("/usr/bin/open").arg(DONATE_URL).spawn();
         }
         NewWindowResponse::Deny
     }
@@ -183,6 +194,14 @@ mod tests {
         assert_eq!(clamp_height(4000, None), 4000.0);
         // schermo minuscolo: almeno l'altezza minima
         assert_eq!(clamp_height(500, Some(200.0)), MIN_HEIGHT);
+    }
+
+    #[test]
+    fn pagina_delle_offerte() {
+        assert!(is_donate(&DONATE_URL.parse().unwrap()));
+        for url in ["http://ko-fi.com/mccasor", "https://ko-fi.com/mccasor?x=1", "https://ko-fi.com/other", "https://evil.example/mccasor"] {
+            assert!(!is_donate(&url.parse().unwrap()), "{url}");
+        }
     }
 
     #[test]
