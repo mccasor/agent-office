@@ -67,7 +67,7 @@ pub fn layout(window: &WebviewWindow, height: f64, title: &str) {
 }
 
 fn claude_settings_file() -> Option<PathBuf> {
-    let home = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).or_else(|| Some(PathBuf::from(std::env::var_os("HOME")?).join(".claude")))?;
+    let home = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).or_else(|| Some(crate::system::home()?.join(".claude")))?;
     Some(home.join("settings.json"))
 }
 

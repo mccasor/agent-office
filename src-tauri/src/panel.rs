@@ -4,7 +4,9 @@
 
 use std::time::{Duration, Instant};
 
+#[cfg(target_os = "macos")]
 use tauri::utils::config::WindowEffectsConfig;
+#[cfg(target_os = "macos")]
 use tauri::window::{Effect, EffectState};
 use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Rect, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -17,25 +19,26 @@ const REOPEN_GUARD: Duration = Duration::from_millis(300);
 
 /// Crea il pannello (nascosto) all'avvio: alla prima apertura è già pronto.
 pub fn create(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    WebviewWindowBuilder::new(app, PANEL_ID, WebviewUrl::App("panel.html".into()))
+    let builder = WebviewWindowBuilder::new(app, PANEL_ID, WebviewUrl::App("panel.html".into()))
         .title("Agent Office")
         .inner_size(WIDTH, 420.0)
         .decorations(false)
-        .transparent(true)
         .resizable(false)
         .always_on_top(true)
         .skip_taskbar(true)
         .visible(false)
-        .shadow(true)
-        .effects(WindowEffectsConfig {
-            // Liquid Glass su macOS 26, materiale dei popover sulle versioni precedenti
-            effects: vec![Effect::LiquidGlassRegular, Effect::Popover],
-            state: Some(EffectState::Active),
-            radius: Some(14.0),
-            color: None,
-            interactive: false,
-        })
-        .build()
+        .shadow(true);
+    // fuori da macOS niente materiali di sistema, e la trasparenza dipende dal compositor: sfondo opaco (#107)
+    #[cfg(target_os = "macos")]
+    let builder = builder.transparent(true).effects(WindowEffectsConfig {
+        // Liquid Glass su macOS 26, materiale dei popover sulle versioni precedenti
+        effects: vec![Effect::LiquidGlassRegular, Effect::Popover],
+        state: Some(EffectState::Active),
+        radius: Some(14.0),
+        color: None,
+        interactive: false,
+    });
+    builder.build()
 }
 
 /// Apre il pannello centrato sotto l'icona (`icon` = posizione e dimensioni dell'icona), o lo chiude se aperto.

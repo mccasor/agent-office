@@ -1,7 +1,9 @@
 //! Aggiornamenti dell'app: confronto con le release del tap Homebrew su GitHub e voce "Aggiornamenti" del menu.
 //! Con una versione nuova la voce diventa "Aggiorna alla versione X" con un pallino blu (freccia in giù), rosso
-//! (punto esclamativo) se le versioni mancanti sono OUTDATED_AFTER o più. Il clic aggiorna via Homebrew.
+//! (punto esclamativo) se le versioni mancanti sono OUTDATED_AFTER o più. Il clic aggiorna via Homebrew (su Linux
+//! apre la pagina della release).
 
+#[cfg(target_os = "macos")]
 use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -12,6 +14,7 @@ use crate::i18n::{t, tf};
 
 /// Repository del tap: le sue release contengono il .dmg di ogni versione.
 pub const TAP: &str = "mccasor/homebrew-agent-office";
+#[cfg(target_os = "macos")]
 const CASK: &str = "mccasor/agent-office/agent-office";
 /// da quante versioni indietro il pallino diventa rosso
 pub const OUTDATED_AFTER: usize = 4;
@@ -122,7 +125,9 @@ impl UpdateState {
 /// Release del tap dall'API di GitHub (curl di sistema: niente TLS da includere nell'app).
 pub fn check(current: &str) -> UpdateState {
     let url = format!("https://api.github.com/repos/{TAP}/releases?per_page=100");
-    let out = Command::new("/usr/bin/curl")
+    // su Linux curl sta quasi sempre in /usr/bin, ma lo si cerca nel PATH
+    let curl = if cfg!(target_os = "macos") { "/usr/bin/curl" } else { "curl" };
+    let out = Command::new(curl)
         .args(["-fsSL", "-m", "15", "-H", "Accept: application/vnd.github+json", &url])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -136,14 +141,20 @@ pub fn check(current: &str) -> UpdateState {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn brew() -> Option<PathBuf> {
     ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].into_iter().map(PathBuf::from).find(|p| p.exists())
+}
+
+fn release_page() -> String {
+    format!("https://github.com/{TAP}/releases/latest")
 }
 
 /// Come è partito l'aggiornamento.
 #[derive(Debug)]
 pub enum Upgrade {
-    /// brew in corso: sostituisce l'app (senza chiuderla: brew gira dentro di lei); poi `relaunch`
+    /// brew in corso: sostituisce l'app (senza chiuderla: brew gira dentro di lei); poi `relaunch`. Solo macOS.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     Brew(Child),
     /// app non installata da Homebrew: aperta la pagina della release
     Page,
@@ -152,6 +163,7 @@ pub enum Upgrade {
 
 /// Aggiorna via Homebrew se l'app è installata dal cask, altrimenti apre la pagina della release. brew sostituisce
 /// il bundle ma non chiude l'app ("brew is running inside it"): a fine aggiornamento l'app chiama `relaunch`.
+#[cfg(target_os = "macos")]
 pub fn upgrade() -> Upgrade {
     let installed = brew().filter(|b| {
         Command::new(b)
@@ -162,9 +174,7 @@ pub fn upgrade() -> Upgrade {
             .is_ok_and(|s| s.success())
     });
     let Some(brew) = installed else {
-        let page = format!("https://github.com/{TAP}/releases/latest");
-        let opened = Command::new("/usr/bin/open").arg(page).status().is_ok_and(|s| s.success());
-        return if opened { Upgrade::Page } else { Upgrade::Failed };
+        return if crate::system::open_url(&release_page()) { Upgrade::Page } else { Upgrade::Failed };
     };
     let brew = brew.to_string_lossy().replace('\'', "'\\''");
     // aggiorna solo il nostro tap: `brew update` passa da tutti i tap e uno irraggiungibile costa minuti
@@ -172,8 +182,8 @@ pub fn upgrade() -> Upgrade {
         "git -C \"$('{brew}' --repository {TAP})\" pull --quiet --ff-only; HOMEBREW_NO_AUTO_UPDATE=1 '{brew}' upgrade --cask {CASK}"
     );
     // uscita di brew in ~/.agent-office/upgrade.log, per capire un aggiornamento non riuscito
-    let log = std::env::var_os("HOME")
-        .map(|h| PathBuf::from(h).join(".agent-office/upgrade.log"))
+    let log = crate::system::home()
+        .map(|h| h.join(".agent-office/upgrade.log"))
         .and_then(|p| {
             std::fs::create_dir_all(p.parent()?).ok()?;
             OpenOptions::new().create(true).append(true).open(p).ok()
@@ -193,9 +203,16 @@ pub fn upgrade() -> Upgrade {
         .map_or(Upgrade::Failed, Upgrade::Brew)
 }
 
+/// Su Linux niente Homebrew: deb e AppImage si aggiornano dalla pagina della release (il deb poi passa dal gestore
+/// dei pacchetti), aperta con xdg-open.
+#[cfg(not(target_os = "macos"))]
+pub fn upgrade() -> Upgrade {
+    if crate::system::open_url(&release_page()) { Upgrade::Page } else { Upgrade::Failed }
+}
+
 /// file che la versione appena aggiornata legge all'avvio: contiene la versione di prima
 fn marker_path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/updated-from"))
+    Some(crate::system::home()?.join(".agent-office/updated-from"))
 }
 
 /// Dopo un aggiornamento riuscito: avvia la versione nuova (stesso bundle, sostituito da brew), che chiude questa

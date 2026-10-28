@@ -26,7 +26,7 @@ pub const LOOP_REPEATS: std::ops::RangeInclusive<u64> = 2..=100;
 const MAX_ITEM_KEY: usize = 64;
 
 pub fn path() -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("HOME")?).join(".agent-office/config.json"))
+    Some(crate::system::home()?.join(".agent-office/config.json"))
 }
 
 /// Contenuto del file; assente → oggetto vuoto. Err se c'è ma non è un oggetto JSON: non va sovrascritto.

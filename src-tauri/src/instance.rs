@@ -7,7 +7,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 /// eseguibile dentro un bundle .app (non `tauri dev`, che non è un bundle)
+#[cfg(target_os = "macos")]
 const PATTERN: &str = r"\.app/Contents/MacOS/agent-office-menubar$";
+/// eseguibile installato dal deb (`/usr/bin/…`, o il solo nome se lanciato dal file .desktop) o dentro l'AppImage
+/// (`/tmp/.mount_…/usr/bin/…`); non `tauri dev` (`target/debug/…`). Senza argomenti dopo: l'app non ne riceve.
+#[cfg(not(target_os = "macos"))]
+const PATTERN: &str = r"(^|/usr/bin/)agent-office-menubar$";
 /// attesa massima per la chiusura delle altre copie
 const WAIT: Duration = Duration::from_secs(3);
 
