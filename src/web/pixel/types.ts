@@ -40,7 +40,8 @@ export type TileKind =
 export interface Spot {
   /**
    * stabile e unico nella pianta: 'r<stanza>-desk-<n>', 'r<stanza>-boss', 'foos-<n>' (al biliardino), 'lounge-<n>',
-   * 'stand-<n>', 'hall-<n>' (corridoio)
+   * 'stand-<n>', 'hall-<n>' (corridoio). Nelle sale hobby di hobby.ts: '<stanza>:<locale>', con il locale 'foos-<n>',
+   * 'pad-<n>' (alla console), 'pong-<n>' (al ping-pong) e gli altri posti della sala
    */
   id: string;
   cell: Cell;
@@ -102,10 +103,23 @@ export type FurnitureKind =
   | 'foosball'
   | 'vending'
   | 'fridge'
-  | 'arcade';
+  | 'arcade'
+  // sala console (#108)
+  | 'tv'
+  | 'pouf'
+  | 'game-shelf'
+  | 'mini-fridge'
+  // sala ping-pong (#108)
+  | 'pingpong'
+  | 'bench'
+  | 'stool'
+  | 'paddle-rack'
+  | 'scoreboard';
 
 /** arredi appesi alle pareti: stanno sulla riga di parete, piatti, non bloccano nulla */
-export const WALL_DECOR: ReadonlySet<FurnitureKind> = new Set<FurnitureKind>(['window', 'painting', 'clock', 'corkboard', 'poster']);
+export const WALL_DECOR: ReadonlySet<FurnitureKind> = new Set<FurnitureKind>([
+  'window', 'painting', 'clock', 'corkboard', 'poster', 'paddle-rack', 'scoreboard',
+]);
 
 /** Un arredo: occupa w×h celle a partire da `cell` (angolo nord-ovest). */
 export interface Furniture {
@@ -174,5 +188,8 @@ export interface PixelModel extends PixelSeating {
   idle: string[];
 }
 
-/** Pose di un personaggio, una riga di fotogrammi per ciascuna; play: in piedi alle stecche del biliardino. */
-export type Pose = 'stand' | 'walk' | 'sit' | 'type' | 'play';
+/**
+ * Pose di un personaggio, una riga di fotogrammi per ciascuna; play: in piedi alle stecche del biliardino; game:
+ * seduto col controller in mano (sala console); paddle: in piedi con la racchetta (ping-pong).
+ */
+export type Pose = 'stand' | 'walk' | 'sit' | 'type' | 'play' | 'game' | 'paddle';

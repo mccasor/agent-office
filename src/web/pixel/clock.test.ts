@@ -45,10 +45,10 @@ describe('orologio delle animazioni', () => {
   it('gli schermi accesi chiedono un risveglio, quelli spenti no', () => {
     const monitor: Furniture = { kind: 'monitor', cell: { x: 3, z: 4 }, w: 1, h: 1, facing: 'down', room: 'room-0' };
     const off = new AnimClock(5);
-    furnitureLook(monitor, { screens: new Map(), players: 0 }, off);
+    furnitureLook(monitor, { screens: new Map(), players: 0, gamers: new Map(), pong: new Map() }, off);
     expect(off.next).toBe(Infinity);
     const on = new AnimClock(5);
-    furnitureLook(monitor, { screens: new Map([['3,4', 'backend']]), players: 0 }, on);
+    furnitureLook(monitor, { screens: new Map([['3,4', 'backend']]), players: 0, gamers: new Map(), pong: new Map() }, on);
     expect(on.next).toBe(5.25);
   });
 });

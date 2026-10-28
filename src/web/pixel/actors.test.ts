@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { AnimClock } from './clock';
 import type { AgentState } from '../../shared/types';
 import { START_GAP, StartQueue, WALK_SPEED } from './motion';
-import { arrivedAt, facingOf, frameAt, isDeskSpot, isFoosballSpot, isVisible, poseOf, stepMotion, type ActorMotion } from './actors';
+import {
+  arrivedAt, facingOf, frameAt, isConsoleSpot, isDeskSpot, isFoosballSpot, isPingPongSpot, isVisible, poseOf, stepMotion, type ActorMotion,
+} from './actors';
+import { hobbyRoom } from './hobby';
 import { createPlan } from './plan';
 import type { PixelActor, Spot } from './types';
 
@@ -106,6 +109,25 @@ describe('poseOf', () => {
     expect(poseOf(actor('done'), arrivedAt(foosball, 0))).toBe('play');
     expect(poseOf(actor('done'), run(undefined, foosball, 0, 0.1).m)).toBe('walk');
     expect(frameAt('play', new AnimClock(1), 0) - frameAt('play', new AnimClock(0), 0)).toBeGreaterThanOrEqual(4);
+  });
+
+  it('nelle sale hobby: col controller davanti alla TV, con la racchetta al ping-pong, al biliardino col prefisso', () => {
+    const console = hobbyRoom('console', 'console-1', 0, 0).seats;
+    const pad = console.find(isConsoleSpot)!;
+    const couch = console.find((s) => s.seated && !isConsoleSpot(s))!;
+    expect(poseOf(actor('done'), arrivedAt(pad, 0))).toBe('game');
+    expect(poseOf(actor('done'), arrivedAt(couch, 0))).toBe('sit');
+    const pong = hobbyRoom('pingpong', 'pong-1', 0, 0).seats;
+    const player = pong.find(isPingPongSpot)!;
+    expect(isPingPongSpot(pong.find((s) => !s.seated && !isPingPongSpot(s))!)).toBe(false);
+    expect(poseOf(actor('done'), arrivedAt(player, 0))).toBe('paddle');
+    const foos = hobbyRoom('relax', 'relax-2', 0, 0).seats[0]!;
+    expect(foos.id).toBe('relax-2:foos-0');
+    expect(poseOf(actor('done'), arrivedAt(foos, 0))).toBe('play');
+    expect(isConsoleSpot(foos) || isPingPongSpot(foos)).toBe(false);
+    for (const pose of ['game', 'paddle'] as const) {
+      expect(frameAt(pose, new AnimClock(1), 0) - frameAt(pose, new AnimClock(0), 0)).toBeGreaterThanOrEqual(4);
+    }
   });
 
   it('riconosce postazioni e scrivanie del boss', () => {

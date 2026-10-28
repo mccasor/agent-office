@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { CHARACTER_PRESETS } from './presets';
 import {
-  alertImage, bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, POSE_FRAMES, rgba,
-  SCREEN_FRAMES, SCREEN_THEMES, selectionImage, shadowImage, tileImage, type PixelImage,
+  alertImage, bossLook, bubbleImage, CHAR_H, CHAR_W, characterImage, FOOSBALL_FRAMES, furnitureImage, PALETTE, pickLook, PONG_FRAMES,
+  POSE_FRAMES, rgba, SCREEN_FRAMES, SCREEN_THEMES, selectionImage, shadowImage, tileImage, TV_FRAMES, type PixelImage,
 } from './sprites';
 import { TILE, type Facing, type FurnitureKind, type Pose, type TileKind } from './types';
 
 const FACINGS: Facing[] = ['down', 'up', 'left', 'right'];
-const POSES: Pose[] = ['stand', 'walk', 'sit', 'type', 'play'];
+const POSES: Pose[] = ['stand', 'walk', 'sit', 'type', 'play', 'game', 'paddle'];
 const FURNITURE: FurnitureKind[] = [
   'desk', 'boss-desk', 'chair', 'monitor', 'plant', 'sofa', 'armchair', 'coffee-table', 'coffee-machine', 'water-cooler',
   'bookshelf', 'rug', 'whiteboard', 'window', 'painting', 'clock', 'corkboard', 'poster', 'floor-lamp', 'cabinet', 'locker',
-  'printer', 'bin', 'coat-rack', 'plant-tall', 'cactus', 'foosball', 'vending', 'fridge', 'arcade',
+  'printer', 'bin', 'coat-rack', 'plant-tall', 'cactus', 'foosball', 'vending', 'fridge', 'arcade', 'tv', 'pouf', 'game-shelf',
+  'mini-fridge', 'pingpong', 'bench', 'stool', 'paddle-rack', 'scoreboard',
 ];
 const TILES: TileKind[] = ['void', 'floor', 'lounge', 'corridor', 'wall', 'door'];
 
@@ -138,8 +139,36 @@ describe('arredi', () => {
     expect(frames.every((f) => !sameData(f, still))).toBe(true);
   });
 
-  it('le varianti cambiano tappeti, quadri, poster e cabinati', () => {
-    for (const [kind, n] of [['rug', 4], ['painting', 6], ['poster', 2], ['arcade', 2]] as const) {
+  it('la TV accesa anima il gioco e si distingue da spenta; due giochi diversi', () => {
+    for (const [w, variant] of [[3, 0], [2, 1]] as const) {
+      const off = furnitureImage('tv', 'down', w, 1, -1, variant);
+      const frames = Array.from({ length: TV_FRAMES }, (_, f) => furnitureImage('tv', 'down', w, 1, f, variant));
+      expect(new Set(frames.map((f) => Array.from(f.data).join())).size).toBe(TV_FRAMES);
+      expect(frames.every((f) => !sameData(f, off))).toBe(true);
+      expect(sameData(furnitureImage('tv', 'down', w, 1, TV_FRAMES, variant), frames[0]!)).toBe(true);
+    }
+    expect(sameData(furnitureImage('tv', 'down', 3, 1, 0, 0), furnitureImage('tv', 'down', 3, 1, 0, 1))).toBe(false);
+    // la TV grande sporge sopra il mobile fino alla parete
+    expect(furnitureImage('tv', 'down', 3, 1, 0).ay).toBeGreaterThanOrEqual(TILE);
+  });
+
+  it('il tavolo da ping-pong in partita fa andare la pallina avanti e indietro, fermo resta senza', () => {
+    const still = furnitureImage('pingpong', 'down', 3, 2, -1);
+    const frames = Array.from({ length: PONG_FRAMES }, (_, f) => furnitureImage('pingpong', 'down', 3, 2, f));
+    expect(new Set(frames.map((f) => Array.from(f.data).join())).size).toBeGreaterThanOrEqual(PONG_FRAMES / 2 + 2);
+    expect(frames.every((f) => !sameData(f, still))).toBe(true);
+    // la pallina (i pixel che cambiano rispetto al tavolo fermo): a ovest a inizio andata, a est a fine andata
+    const changed = (img: PixelImage) => {
+      const xs: number[] = [];
+      for (let i = 0; i < img.data.length; i += 4) if (img.data[i] !== still.data[i]) xs.push((i / 4) % img.w);
+      return xs;
+    };
+    expect(Math.max(...changed(frames[0]!))).toBeLessThan(TILE);
+    expect(Math.min(...changed(frames[PONG_FRAMES / 2 - 1]!))).toBeGreaterThan(2 * TILE);
+  });
+
+  it('le varianti cambiano tappeti, quadri, poster, cabinati e pouf', () => {
+    for (const [kind, n] of [['rug', 4], ['painting', 6], ['poster', 2], ['arcade', 2], ['pouf', 4]] as const) {
       const imgs = Array.from({ length: n }, (_, v) => Array.from(furnitureImage(kind, 'down', 1, 1, 0, v).data).join());
       expect(new Set(imgs).size, kind).toBe(n);
     }
