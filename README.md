@@ -2,7 +2,7 @@
 
 A pixel-art 2D office that shows your Claude Code agents at work, in real time. Each Claude Code instance gets its own room, where Claude itself sits at the boss's desk as **Claudio Code**. Its subagents walk in from the corridor, take a workstation and work at the computer; those who finish wait in the lounge while another agent of the same instance is still working, then they all leave together.
 
-It runs as a macOS menu bar app (all active Claude Code sessions, in any folder) or as a command-line server for a single folder, viewed in the browser. Everything stays on your Mac: Agent Office only reads Claude Code's local transcripts and, optionally, events from its hooks.
+It runs as a macOS menu bar app or Linux tray app (all active Claude Code sessions, in any folder) or as a command-line server for a single folder, viewed in the browser. Everything stays on your computer: Agent Office only reads Claude Code's local transcripts and, optionally, events from its hooks.
 
 ## Installation
 
@@ -27,9 +27,21 @@ brew upgrade --cask agent-office
 
 Then reinstall the hooks (see [Hooks](#hooks)). To uninstall, remove the hooks first ("Rimuovi", Remove), then `brew uninstall --cask agent-office` (`--zap` also deletes `~/.agent-office`).
 
+### Linux app (AppImage or deb)
+
+See [Linux](#linux) for requirements and limits. Download the `.AppImage` or the `.deb` (x86_64), then:
+
+```bash
+sudo apt install ./Agent.Office_<version>_amd64.deb     # Debian, Ubuntu and derivatives
+# or
+chmod +x Agent.Office_<version>_amd64.AppImage && ./Agent.Office_<version>_amd64.AppImage
+```
+
+The packages are built by the `Linux bundle` workflow (`.github/workflows/linux-bundle.yml`, built on Ubuntu 22.04); they are not yet attached to the public releases.
+
 ### From source (CLI)
 
-Requirements: Node ≥ 22, git.
+Requirements: Node ≥ 22, git. Works the same on macOS and Linux.
 
 ```bash
 git clone git@github.com:mccasor/agent-office.git
@@ -110,6 +122,37 @@ Other behaviour:
 - **Launch at login** uses a user LaunchAgent (`~/Library/LaunchAgents/app.agent-office.menubar.plist`).
 - **Updates** are checked shortly after launch, every 6 hours and from "Cerca aggiornamenti"; the output of `brew upgrade` goes to `~/.agent-office/upgrade.log`.
 
+## Linux
+
+Both modes run on Linux (x86_64, glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36 and newer).
+
+**Browser mode** (`agent-office` / `node bin/agent-office.mjs`, see [Usage](#usage-cli)) only needs Node ≥ 22: the browser opens with `xdg-open`, hooks are plain `sh`. Distribution Node packages are often too old (Ubuntu 24.04 ships Node 18): install Node from [NodeSource](https://github.com/nodesource/distributions) or with nvm, fnm or volta.
+
+**Tray app**, requirements:
+
+- `libwebkit2gtk-4.1-0` and `libayatana-appindicator3-1` (the deb declares them; the AppImage expects them on the system): `sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1`, on Fedora `webkit2gtk4.1 libayatana-appindicator-gtk3`;
+- a tray: KDE Plasma, Xfce, Cinnamon, MATE and Ubuntu's GNOME have one. **Vanilla GNOME (Fedora, Debian, Arch) has no tray**: install the [AppIndicator and KStatusNotifierItem Support](https://extensions.gnome.org/extension/615/appindicator-support/) extension, otherwise the icon does not appear (use browser mode instead);
+- a notification daemon (every desktop has one) for notifications.
+
+Differences from macOS:
+
+- **Menu instead of panel**: AppIndicator shows a menu and does not report clicks, so the icon opens a native menu: status, open instances (click one to open the list on it), "Apri ufficio", "Impostazioni…", the update when one is available, "Esci da Agent Office". It is rebuilt only when something in it changes.
+- **Tray icon colour**: white on GNOME (its top bar is always dark); elsewhere it follows the `org.freedesktop.appearance` portal or `gsettings` (`color-scheme`, `gtk-theme`), white when unknown.
+- **Node lookup**: `AGENT_OFFICE_NODE`, the login shell's `node` (`$SHELL -lic`, bash if unset), `~/.volta`, fnm (`$FNM_DIR` or `~/.local/share/fnm`), nvm (`$NVM_DIR` or `~/.nvm`, newest first), `/usr/local/bin/node`, `/usr/bin/node`; the first one ≥ 22 wins.
+- **Language**: "system" follows `LANGUAGE`, then `LC_ALL`, `LC_MESSAGES`, `LANG`, like gettext.
+- **Launch at login** writes `~/.config/autostart/agent-office.desktop` (`$XDG_CONFIG_HOME` if set); for an AppImage it points to the `.AppImage` file itself.
+- **Updates**: no Homebrew. "Aggiorna alla versione X" opens the release page with `xdg-open`; install the new deb with your package manager or replace the AppImage.
+- **One copy at a time**: as on macOS, for the deb (`/usr/bin/agent-office-menubar`) and the AppImage.
+
+**inotify limit**: the server watches `~/.claude/projects` recursively. With many projects it can exhaust the inotify watches (`ENOSPC: System limit for number of file watchers reached` in `~/.agent-office/server.log`). Check and raise the limit:
+
+```bash
+cat /proc/sys/fs/inotify/max_user_watches
+echo fs.inotify.max_user_watches=524288 | sudo tee /etc/sysctl.d/60-agent-office.conf && sudo sysctl --system
+```
+
+Known limits on Linux: the panel under the icon (macOS) is replaced by the menu; under Wayland windows are placed by the compositor; the AppImage is not signed; no rpm, Flatpak or AUR package yet.
+
 ## What it shows
 
 ### Office ("Ufficio")
@@ -172,7 +215,7 @@ Environment variables: `CLAUDE_CONFIG_DIR` (default `~/.claude`), `AGENT_OFFICE_
 
 - Claude Code's transcript format is undocumented: verified on Claude Code 2.1.306; reading it is isolated in `src/server/transcript`.
 - The 1M context window is recognised from the `[1m]` suffix (model id or "model" attachment) or once usage goes over 200k: on Claude Code 2.1.306 there is no reliable signal to detect it earlier.
-- The menu bar app is macOS only (11 or later).
+- The menu bar app runs on macOS 11 or later and on Linux x86_64 (see [Linux](#linux)); the Linux build is compiled and tested in CI on Ubuntu 22.04.
 
 ## Architecture
 
@@ -197,7 +240,7 @@ git (branch, diff --shortstat) ──────┘            ▲
 | `src/web/hud` | panels, agent card, instance list, list view, detachable cards |
 | `src/web/CardWindow.tsx` | page of a detached card (`?card=agent\|session&id=...`) |
 | `src/web/store` | client state + SSE stream |
-| `src-tauri/src` | menu bar app: `main` (icon, polling, actions), `panel` (panel under the icon, content in `src-tauri/splash/panel.html`), `server` (Node lookup and supervisor), `instance` (single copy), `notify` (notifications and preferences), `updates` (GitHub releases, `brew upgrade`), `cards` (card windows) |
+| `src-tauri/src` | menu bar app: `main` (icon, polling, actions), `panel` (panel under the icon, content in `src-tauri/splash/panel.html`), `server` (Node lookup and supervisor), `instance` (single copy), `notify` (notifications and preferences), `updates` (GitHub releases, `brew upgrade`), `cards` (card windows), `tray_menu` (native tray menu on Linux), `autostart` (LaunchAgent or XDG autostart), `system` (home, opening URLs, Linux tray theme) |
 | `scripts` | `release.mjs` (release), `prepare-tauri.mjs` (app resources), `make-icons.py` (icons), `pixel-preview.ts` (sprite preview PNG) |
 | `packaging/homebrew` | cask template |
 | `test` | end-to-end test and fixtures |
@@ -222,6 +265,8 @@ npm run app:build    # src-tauri/target/release/bundle/macos/Agent Office.app
 ```
 
 Both run `npm run build` and `scripts/prepare-tauri.mjs` first, which copies `bin/`, `dist/` and the server's runtime dependencies into the app's resources.
+
+On Linux install the build dependencies first (`sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev patchelf`); `npm run app:build` then produces the AppImage and the deb (targets in `src-tauri/tauri.linux.conf.json`) under `src-tauri/target/release/bundle/`.
 
 ### Release
 
