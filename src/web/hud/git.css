@@ -71,7 +71,8 @@
 .git-commit { border-top: 1px solid var(--hud-border); }
 .git-commit summary {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  /* autore a larghezza fissa: i messaggi partono tutti dalla stessa colonna */
+  grid-template-columns: auto 9.5em minmax(0, 1fr);
   align-items: baseline;
   gap: 2px 8px;
   padding: 5px 0;
@@ -81,7 +82,7 @@
 .git-commit summary::-webkit-details-marker { display: none; }
 .git-commit summary:focus-visible { outline: 2px solid var(--hud-accent); outline-offset: 1px; border-radius: 4px; }
 .git-commit time { font-variant-numeric: tabular-nums; }
-.git-commit__author { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 11em; }
+.git-commit__author { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .git-commit__msg { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .git-commit details[open] .git-commit__msg { white-space: normal; }
 .git-commit__stats { grid-column: 2 / 3; display: inline-flex; gap: 6px; white-space: nowrap; }
