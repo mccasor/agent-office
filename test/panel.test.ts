@@ -32,7 +32,7 @@ const calls: { cmd: string; args: unknown }[] = [];
 async function show(over: Record<string, boolean> = {}, snap: unknown = snapshot, locale = 'it'): Promise<HTMLElement> {
   state = {
     version: '0.6.3', snapshot: snap, serverError: null, update: { kind: 'unknown' }, notice: null, show: over, locale,
-    launch: { models: ['opus', 'sonnet'], permissionModes: ['plan', 'acceptEdits'] },
+    launch: { models: ['opus', 'sonnet'], permissionModes: ['plan', 'acceptEdits'], roles: ['Reviewer', 'Tech Lead'] },
   };
   const w = window as unknown as Record<string, unknown> & { agentPanelRefresh?: () => Promise<void> };
   if (!w.agentPanelRefresh) {
@@ -118,11 +118,35 @@ describe('pannello della menu bar: nuova istanza (#119)', () => {
     (root.querySelector('[data-action="new-toggle"]') as HTMLElement).click();
     root = document.getElementById('root')!;
     const selects = [...root.querySelectorAll<HTMLSelectElement>('.launch select')];
-    expect(selects.map((s) => [...s.options].map((o) => o.value))).toEqual([['', 'opus', 'sonnet'], ['', 'plan', 'acceptEdits']]);
+    expect(selects.map((s) => [...s.options].map((o) => o.value))).toEqual([['', 'opus', 'sonnet'], ['', 'plan', 'acceptEdits'], ['', 'Reviewer', 'Tech Lead']]);
     selects[0]!.value = 'sonnet';
     selects[0]!.dispatchEvent(new Event('change', { bubbles: true }));
     calls.length = 0;
     (root.querySelector('[data-action="new-instance"]') as HTMLElement).click();
-    expect(calls).toEqual([{ cmd: 'panel_action', args: { action: 'new-instance', arg: JSON.stringify({ model: 'sonnet', permissionMode: null }) } }]);
+    expect(calls).toEqual([{ cmd: 'panel_action', args: { action: 'new-instance', arg: JSON.stringify({ model: 'sonnet', permissionMode: null, role: null }) } }]);
+  });
+
+  it('ruolo (#122): "Nessuno" di default, poi solo i nomi dei ruoli dell\'app', async () => {
+    let root = await show();
+    (root.querySelector('[data-action="new-toggle"]') as HTMLElement).click();
+    root = document.getElementById('root')!;
+    const role = root.querySelector<HTMLSelectElement>('select[data-launch="role"]')!;
+    expect(role.closest('label')!.textContent).toContain('Ruolo');
+    expect([...role.options].map((o) => o.textContent)).toEqual(['Nessuno', 'Reviewer', 'Tech Lead']);
+    expect(role.value).toBe('');
+    role.value = 'Tech Lead';
+    role.dispatchEvent(new Event('change', { bubbles: true }));
+    calls.length = 0;
+    (root.querySelector('[data-action="new-instance"]') as HTMLElement).click();
+    const action = calls.find((c) => c.cmd === 'panel_action')!.args as { action: string; arg: string };
+    expect(action.action).toBe('new-instance');
+    expect(JSON.parse(action.arg).role).toBe('Tech Lead');
+    // un ruolo sparito nel frattempo non si manda: Rust lo rifiuterebbe
+    root = await show();
+    (root.querySelector('[data-action="new-toggle"]') as HTMLElement).click();
+    (state.launch as { roles: string[] }).roles = ['Reviewer'];
+    calls.length = 0;
+    (document.querySelector('[data-action="new-instance"]') as HTMLElement).click();
+    expect(JSON.parse((calls.find((c) => c.cmd === 'panel_action')!.args as { arg: string }).arg).role).toBeNull();
   });
 });

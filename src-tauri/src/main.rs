@@ -37,6 +37,7 @@ mod notify;
 mod panel;
 mod pty;
 mod resume;
+mod roles;
 mod server;
 mod settings;
 mod system;
@@ -516,8 +517,8 @@ fn panel_state(app: AppHandle) -> Value {
         "locale": i18n::current().code(),
         // interruttori così come sono nel file: i default li applica la pagina (settings-catalog.js)
         "show": config::read().remove("show").unwrap_or(Value::Null),
-        // scelte di "Nuova istanza" (#119): solo questi valori sono accettati da panel_action
-        "launch": { "models": pty::MODELS, "permissionModes": pty::PERMISSION_MODES },
+        // scelte di "Nuova istanza" (#119): solo questi valori sono accettati da panel_action; dei ruoli (#122) i nomi
+        "launch": { "models": pty::MODELS, "permissionModes": pty::PERMISSION_MODES, "roles": roles::list() },
     })
 }
 
@@ -542,7 +543,7 @@ fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
             hide();
             settings::open(&app);
         }
-        // arg: `{"model": …, "permissionMode": …}`, validati prima di chiedere la cartella
+        // arg: `{"model": …, "permissionMode": …, "role": …}`, validati prima di chiedere la cartella
         "new-instance" => match pty::LaunchOptions::parse(arg.as_deref()) {
             Ok(options) => {
                 hide();
@@ -588,6 +589,8 @@ fn settings_state(app: AppHandle) -> Value {
         "update": update_json(&ui.update.lock().unwrap(), &version(&app)),
         "notice": current_notice(&ui),
         "locale": i18n::current().code(),
+        // ruoli (#122): solo i nomi; il testo lo chiede la pagina con settings_role
+        "roles": roles::list(),
     })
 }
 
@@ -628,6 +631,39 @@ fn settings_action(window: WebviewWindow, app: AppHandle, action: String) -> Res
         _ => return Err(i18n::tf("error.unknownAction", &[("action", &action)])),
     }
     Ok(())
+}
+
+/// Ruoli delle istanze (#122), dalla finestra Impostazioni: "read" (ritorna il testo), "save" (crea o sostituisce con
+/// `text`), "delete" (chiede conferma con un dialog nativo, poi la pagina si rilegge). Il testo passa solo di qui.
+#[tauri::command]
+fn settings_role(window: WebviewWindow, app: AppHandle, action: String, name: String, text: Option<String>) -> Result<Value, String> {
+    settings::only_settings(&window)?;
+    match action.as_str() {
+        "read" => Ok(Value::String(roles::read(&name)?)),
+        "save" => roles::write(&name, text.as_deref().unwrap_or_default()).map(|_| Value::Null),
+        "delete" => {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+            roles::file(&name)?;
+            let refresh_app = app.clone();
+            app.dialog()
+                .message(i18n::tf("roles.confirmDelete", &[("name", &name)]))
+                .title("Agent Office")
+                .kind(MessageDialogKind::Warning)
+                .buttons(MessageDialogButtons::OkCancelCustom(i18n::t("roles.delete"), i18n::t("roles.cancel")))
+                .parent(&window)
+                .show(move |ok| {
+                    if ok {
+                        if let Err(e) = roles::delete(&name) {
+                            set_notice(&refresh_app, e);
+                        }
+                        settings::refresh(&refresh_app);
+                        refresh_panel(&refresh_app);
+                    }
+                });
+            Ok(Value::Null)
+        }
+        _ => Err(i18n::tf("error.unknownAction", &[("action", &action)])),
+    }
 }
 
 /// La pagina delle impostazioni chiede l'altezza della scheda mostrata e ne dà il nome come titolo.
@@ -700,6 +736,7 @@ fn main() {
             settings_set,
             settings_action,
             settings_layout,
+            settings_role,
             pty::pty_start,
             pty::pty_write,
             pty::pty_resize,
@@ -1028,7 +1065,7 @@ mod tests {
             granted,
             [
                 "panel_action", "panel_resize", "panel_state", "pty_kill", "pty_resize", "pty_start", "pty_write",
-                "settings_action", "settings_layout", "settings_set", "settings_state",
+                "settings_action", "settings_layout", "settings_role", "settings_set", "settings_state",
             ]
         );
     }

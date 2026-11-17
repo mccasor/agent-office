@@ -2,5 +2,5 @@
   "identifier": "settings",
   "description": "Finestra Impostazioni (settings.html): solo i comandi settings_*. Solo pagine locali, nessun accesso remote.",
   "windows": ["settings"],
-  "permissions": ["allow-settings-state", "allow-settings-set", "allow-settings-action", "allow-settings-layout"]
+  "permissions": ["allow-settings-state", "allow-settings-set", "allow-settings-action", "allow-settings-layout", "allow-settings-role"]
 }

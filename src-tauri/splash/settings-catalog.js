@@ -18,6 +18,9 @@ globalThis.AGENT_OFFICE_SETTINGS = {
     },
     {
       "id": "office"
+    },
+    {
+      "id": "roles"
     }
   ],
   "places": [

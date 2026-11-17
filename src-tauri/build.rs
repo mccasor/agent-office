@@ -8,6 +8,7 @@ const COMMANDS: &[&str] = &[
     "settings_set",
     "settings_action",
     "settings_layout",
+    "settings_role",
     "pty_start",
     "pty_write",
     "pty_resize",

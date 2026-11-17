@@ -16,8 +16,12 @@ const script = /<script>\s*([\s\S]*?)<\/script>/.exec(html)![1]!;
 
 const state = {
   version: '0.6.3', config: {} as Record<string, unknown>, autostart: false, hooks: 'installed', update: { kind: 'unknown' }, notice: null,
-  locale: 'it', officeLocked: false,
+  locale: 'it', officeLocked: false, roles: [] as string[],
 };
+/** ruoli (#122) come i file di ~/.agent-office/roles: nome → testo */
+const roleFiles = new Map<string, string>();
+/** chiamate a settings_role */
+const roleCalls: Record<string, unknown>[] = [];
 const saved: [string, unknown][] = [];
 let title = '';
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -30,6 +34,15 @@ async function open(): Promise<HTMLElement> {
         invoke: async (cmd: string, args: Record<string, unknown>) => {
           if (cmd === 'settings_state') return structuredClone(state);
           if (cmd === 'settings_layout') title = args.title as string;
+          if (cmd === 'settings_role') {
+            // come settings_role in main.rs (la conferma dell'eliminazione qui è un sì)
+            roleCalls.push(args);
+            const name = args.name as string;
+            if (args.action === 'read') return roleFiles.get(name);
+            if (args.action === 'save') roleFiles.set(name, args.text as string);
+            if (args.action === 'delete') roleFiles.delete(name);
+            state.roles = [...roleFiles.keys()].sort();
+          }
           if (cmd === 'settings_set') {
             // come settings_set in main.rs: l'ufficio non si cambia mentre gli agenti lavorano
             if ((args.key as string).startsWith('office.') && state.officeLocked) throw new Error('bloccato');
@@ -57,7 +70,7 @@ const tabs = (root: HTMLElement) => [...root.querySelectorAll('.tab__label')].ma
 describe('finestra Impostazioni: lingua (#93)', () => {
   it('menu "Lingua" nei Generali, ogni lingua col suo nome; scelta salvata e applicata subito', async () => {
     let root = await open();
-    expect(tabs(root)).toEqual(['Generali', 'Claude', 'Agenti', 'Git', 'Istanze', 'Ufficio']);
+    expect(tabs(root)).toEqual(['Generali', 'Claude', 'Agenti', 'Git', 'Istanze', 'Ufficio', 'Ruoli']);
     expect(title).toBe('Generali');
     const menu = root.querySelector<HTMLSelectElement>('select[data-key="language"]')!;
     expect(menu.getAttribute('aria-label')).toBe('Lingua');
@@ -72,7 +85,7 @@ describe('finestra Impostazioni: lingua (#93)', () => {
     await tick();
     expect(saved.at(-1)).toEqual(['language', 'en']);
     root = document.getElementById('app')!;
-    expect(tabs(root)).toEqual(['General', 'Claude', 'Agents', 'Git', 'Instances', 'Office']);
+    expect(tabs(root)).toEqual(['General', 'Claude', 'Agents', 'Git', 'Instances', 'Office', 'Roles']);
     expect(title).toBe('General');
     expect(document.documentElement.lang).toBe('en');
     expect(root.textContent).toContain('Open at login');
@@ -88,7 +101,7 @@ describe('finestra Impostazioni: lingua (#93)', () => {
     state.config.language = 'es';
     state.locale = 'es';
     let root = await open();
-    expect(tabs(root)).toEqual(['General', 'Claude', 'Agentes', 'Git', 'Instancias', 'Oficina']);
+    expect(tabs(root)).toEqual(['General', 'Claude', 'Agentes', 'Git', 'Instancias', 'Oficina', 'Roles']);
     (root.querySelector('[data-tab="agents"]') as HTMLElement).click();
     root = document.getElementById('app')!;
     expect(title).toBe('Agentes');
@@ -214,5 +227,69 @@ describe('finestra Impostazioni: ufficio (#108)', () => {
     expect(root.textContent).toContain('No se puede modificar la oficina: los agentes están trabajando');
     state.locale = 'it';
     state.officeLocked = false;
+  });
+});
+
+describe('finestra Impostazioni: ruoli (#122)', () => {
+  const app = () => document.getElementById('app')!;
+  const settle = async () => {
+    for (let i = 0; i < 4; i++) await tick();
+  };
+  const type = (field: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+    field.value = value;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const click = (selector: string) => (app().querySelector(selector) as HTMLElement).click();
+
+  it('crea, modifica ed elimina un ruolo; il testo passa solo per settings_role', async () => {
+    state.config = {};
+    state.locale = 'it';
+    roleFiles.clear();
+    state.roles = [];
+    await open();
+    click('[data-tab="roles"]');
+    expect(title).toBe('Ruoli');
+    expect(app().textContent).toContain('Nessun ruolo');
+
+    click('[data-role="new"]');
+    type(app().querySelector<HTMLInputElement>('[data-role-field="name"]')!, 'Tech Lead');
+    type(app().querySelector<HTMLTextAreaElement>('[data-role-field="text"]')!, '\nSei il Tech Lead.\n<b>');
+    click('[data-role="save"]');
+    await settle();
+    expect(roleFiles.get('Tech Lead')).toBe('\nSei il Tech Lead.\n<b>');
+    expect(app().querySelector('[data-role-field]')).toBeNull();
+    const names = () => [...app().querySelectorAll('[data-role="edit"]')].map((b) => (b as HTMLElement).dataset.name);
+    expect(names()).toEqual(['Tech Lead']);
+
+    // modifica: il testo letto da settings_role, a capo iniziale e markup compresi
+    click('[data-role="edit"][data-name="Tech Lead"]');
+    await settle();
+    const text = app().querySelector<HTMLTextAreaElement>('[data-role-field="text"]')!;
+    expect(text.value).toBe('\nSei il Tech Lead.\n<b>');
+    expect(app().querySelector('[data-role-field="name"]')).toBeNull();
+    type(text, 'Nuovo testo');
+    click('[data-role="save"]');
+    await settle();
+    expect(roleFiles.get('Tech Lead')).toBe('Nuovo testo');
+
+    // nome non valido o già usato: non si salva
+    const before = roleCalls.length;
+    for (const bad of ['../x', '.nascosto', 'tech lead']) {
+      click('[data-role="new"]');
+      type(app().querySelector<HTMLInputElement>('[data-role-field="name"]')!, bad);
+      click('[data-role="save"]');
+      await settle();
+      expect(app().querySelector('.notice--error')!.textContent, bad).toContain('Ruolo non salvato');
+      click('[data-role="cancel"]');
+    }
+    expect(roleCalls.length).toBe(before);
+
+    // eliminazione: la chiede la pagina, conferma e file li gestisce l'app
+    click('[data-role="delete"][data-name="Tech Lead"]');
+    await settle();
+    expect(roleCalls.at(-1)).toEqual({ action: 'delete', name: 'Tech Lead', text: null });
+    await open();
+    expect(names()).toEqual([]);
+    click('[data-tab="general"]');
   });
 });
