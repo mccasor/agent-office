@@ -37,16 +37,22 @@ const RESCAN_MS = 60_000;
 
 /**
  * Scoperta delle sessioni di altre cartelle di projects (cartella codificata assente, path abbreviati,
- * Claude avviato in una cartella superiore): una sessione è selezionata alla prima riga con `cwd`
- * nella cartella monitorata (`scanCwd`).
+ * Claude avviato in una cartella superiore): una sessione è selezionata per cartella di avvio (`scanCwd`, #115),
+ * cioè se la prima riga con `cwd` è nella cartella monitorata, o in una superiore e poi passa in quella monitorata.
  */
 export function createForeignDiscovery(opts: ForeignDiscoveryOptions): ForeignDiscovery {
   const { projectsRoot, projectDir, discoveryWindowMs, now } = opts;
   const projectName = basename(projectDir);
-  /** sessioni con almeno una riga `cwd` nella cartella monitorata */
+  /** sessioni attribuite alla cartella monitorata */
   const foreignSessions = new Set<string>();
-  /** transcript già scansionati senza match: offset da cui riprendere e mtime all'ultimo controllo */
-  const candidates = new Map<string, { offset: number; mtime: number; queue: Promise<void> }>();
+  /**
+   * transcript già scansionati senza match: offset da cui riprendere, mtime all'ultimo controllo, cartella di avvio
+   * superiore già vista (`started`), avviati altrove (`rejected`, non più valutati), byte iniziali saltati (`skipped`)
+   */
+  const candidates = new Map<
+    string,
+    { offset: number; mtime: number; queue: Promise<void>; started: boolean; rejected: boolean; skipped: boolean }
+  >();
   let discovery: FSWatcher | null = null;
   let running = false;
   let lastRescan = -Infinity;
@@ -67,30 +73,36 @@ export function createForeignDiscovery(opts: ForeignDiscoveryOptions): ForeignDi
   };
 
   /**
-   * Scansione incrementale (solo byte nuovi) fino al primo `cwd` nella cartella monitorata.
+   * Scansione incrementale (solo byte nuovi) fino all'attribuzione della sessione (`scanCwd`).
    * `known`: stat già fatto da chokidar (scansione iniziale), evita di ripeterlo su migliaia di transcript vecchi.
    */
   const evaluate = (abs: string, initial: boolean, known?: Stats): Promise<void> => {
     if (foreignSessions.has(basename(abs, '.jsonl'))) return Promise.resolve();
     let c = candidates.get(abs);
-    if (!c) candidates.set(abs, (c = { offset: 0, mtime: 0, queue: Promise.resolve() }));
+    if (!c) candidates.set(abs, (c = { offset: 0, mtime: 0, queue: Promise.resolve(), started: false, rejected: false, skipped: false }));
     const cand = c;
+    if (cand.rejected) return Promise.resolve();
     cand.queue = cand.queue.then(async () => {
       if (!running || foreignSessions.has(basename(abs, '.jsonl'))) return;
       try {
         const st = known ?? (await stat(abs));
         cand.mtime = st.mtimeMs;
         if (initial && st.mtimeMs < now() - discoveryWindowMs) {
-          // sessione vecchia: conta solo se riprende, quindi si valutano soltanto i byte nuovi
+          // sessione vecchia: conta solo se riprende; allora si rilegge dall'inizio per la cartella di avvio
           cand.offset = st.size;
+          cand.skipped = true;
           return;
         }
-        if (st.size < cand.offset) cand.offset = 0;
+        if (cand.skipped && st.size > cand.offset) {
+          cand.skipped = false;
+          cand.offset = 0;
+        }
+        if (st.size < cand.offset) Object.assign(cand, { offset: 0, started: false });
       } catch {
         return;
       }
-      const { match, offset } = await scanCwd(abs, opts.cwd, cand.offset);
-      cand.offset = offset;
+      const { match, offset, started, rejected } = await scanCwd(abs, opts.cwd, cand.offset, undefined, cand.started);
+      Object.assign(cand, { offset, started, rejected });
       if (!match || !running) return;
       candidates.delete(abs);
       foreignSessions.add(basename(abs, '.jsonl'));
@@ -122,7 +134,7 @@ export function createForeignDiscovery(opts: ForeignDiscoveryOptions): ForeignDi
       // il watcher se riprendono, e la scansione completa li ricontrolla al più ogni minuto
       const full = now() - lastRescan >= RESCAN_MS;
       for (const [abs, c] of candidates) {
-        if (!full && c.mtime < now() - discoveryWindowMs) continue;
+        if (c.rejected || (!full && c.mtime < now() - discoveryWindowMs)) continue;
         checks.push(stat(abs).then((st) => (st.size > c.offset ? evaluate(abs, false) : undefined), () => {}));
       }
       // transcript mai segnalati dal watcher (scansione completa al più ogni minuto)

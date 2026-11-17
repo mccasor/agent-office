@@ -294,6 +294,20 @@ describe('createTranscriptWatcher – sessioni in altre cartelle di projects (#2
     expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
   });
 
+  it('avviata in un’altra cartella e passata una volta in quella monitorata: non inclusa (#115)', async () => {
+    await writeForeign(`${FOREIGN}.jsonl`, transcript(['/altrove', CWD, '/altrove']));
+    const w = await startWatcher();
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+  });
+
+  it('file vecchio avviato altrove che riprende passando nel cwd monitorato: non incluso (#115)', async () => {
+    const file = await writeForeign(`${FOREIGN}.jsonl`, transcript(['/altrove']), T0 - 7 * 24 * 3_600_000);
+    const w = await startWatcher();
+    await appendFile(file, row(CWD));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+  });
+
   it('file vecchi non letti all’avvio; diventano pertinenti se riprendono con il cwd monitorato', async () => {
     const file = await writeForeign(`${FOREIGN}.jsonl`, transcript([CWD]), T0 - 7 * 24 * 3_600_000);
     const w = await startWatcher();
