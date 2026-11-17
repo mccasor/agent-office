@@ -1,0 +1,6 @@
+{
+  "identifier": "panel",
+  "description": "Pannello della menu bar (panel.html): solo i comandi panel_*. Solo pagine locali, nessun accesso remote.",
+  "windows": ["panel"],
+  "permissions": ["allow-panel-state", "allow-panel-action", "allow-panel-resize"]
+}

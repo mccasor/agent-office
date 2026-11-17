@@ -17,7 +17,8 @@
   "app": {
     "windows": [],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src ipc: http://ipc.localhost http://127.0.0.1:4318; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+      "dangerousDisableAssetCspModification": ["style-src"]
     },
     "macOSPrivateApi": true,
     "withGlobalTauri": true
