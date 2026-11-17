@@ -9,6 +9,12 @@
 //! `RunEvent::Exit`): niente PR_SET_PDEATHSIG su macOS, quindi si segnala tutto il gruppo di processi (il figlio del
 //! PTY è capo di sessione e di gruppo) con SIGHUP e, se non basta, SIGKILL.
 //!
+//! Ciclo di vita (#120): chiudere la finestra la nasconde finché il processo è vivo (la pagina resta, con lo scrollback
+//! di xterm solo in memoria) e la riapre l'ufficio con `window.open('http://127.0.0.1:<porta>/?terminal=<uuid>')`
+//! (cards.rs, `reveal`). "Termina istanza" nella pagina (`pty_kill`) chiede conferma e chiude la finestra davvero; a
+//! processo uscito la finestra si chiude davvero (e se era nascosta si chiude da sola). Uscendo dall'app con istanze
+//! ancora in esecuzione si chiede conferma (`must_confirm_quit`, `ask_quit`).
+//!
 //! "Nuova istanza" (#119, pannello e menu del tray su Linux): cartella scelta con il selettore nativo, modello e
 //! modalità dei permessi facoltativi (solo valori di un elenco fisso, mai testo libero), poi `claude --session-id
 //! <uuid nuovo>` in una finestra `terminal-<uuid>` sua (più istanze insieme). Ogni processo avviato sta nel registro
@@ -30,7 +36,9 @@ use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde_json::{json, Value};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
+use crate::i18n::{t, tf};
 use crate::launched::{Launched, Registry};
 
 /// etichetta della finestra di un terminale: il prefisso e il session id dell'istanza
@@ -54,6 +62,11 @@ pub struct Session {
 }
 
 impl Session {
+    /// Il processo non è ancora uscito.
+    fn running(&self) -> bool {
+        !self.exited.load(Ordering::SeqCst)
+    }
+
     pub fn write(&mut self, data: &[u8]) -> Result<(), String> {
         self.writer.write_all(data).and_then(|_| self.writer.flush()).map_err(|e| e.to_string())
     }
@@ -284,7 +297,7 @@ fn allowed(value: Option<&str>, list: &[&str]) -> Result<Option<String>, String>
     match value.filter(|v| !v.is_empty()) {
         None => Ok(None),
         Some(v) if list.contains(&v) => Ok(Some(v.to_string())),
-        Some(v) => Err(crate::i18n::tf("error.launchOption", &[("value", v)])),
+        Some(v) => Err(tf("error.launchOption", &[("value", v)])),
     }
 }
 
@@ -307,7 +320,7 @@ impl LaunchOptions {
 /// CLI. Pura.
 pub fn claude_args(session_id: &str, options: &LaunchOptions) -> Result<Vec<String>, String> {
     if !is_uuid(session_id) {
-        return Err(crate::i18n::tf("error.launchOption", &[("value", session_id)]));
+        return Err(tf("error.launchOption", &[("value", session_id)]));
     }
     let mut args = vec!["--session-id".to_string(), session_id.to_string()];
     if let Some(model) = allowed(options.model.as_deref(), MODELS)? {
@@ -354,10 +367,7 @@ pub fn launch(app: &AppHandle, cwd: PathBuf, options: &LaunchOptions) -> Result<
 fn open(app: &AppHandle, cwd: PathBuf, session_id: &str, options: &LaunchOptions) -> Result<(), String> {
     let args = claude_args(session_id, options)?;
     let label = label_for(session_id);
-    if let Some(window) = app.get_webview_window(&label) {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
+    if reveal(app, session_id) {
         return Ok(());
     }
     // assoluta: va nel registro, e il server la confronta con quella del transcript
@@ -365,7 +375,9 @@ fn open(app: &AppHandle, cwd: PathBuf, session_id: &str, options: &LaunchOptions
     let title = format!("Claude · {}", cwd.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
     let entry = Entry { cwd, session_id: session_id.to_string(), args, session: None };
     app.state::<Terminals>().0.lock().unwrap().insert(label.clone(), entry);
-    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("terminal.html".into()))
+    // `lang`: lingua dei testi della pagina, già risolta (come lo splash)
+    let page = format!("terminal.html?lang={}", crate::i18n::current().code());
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App(page.into()))
         .title(title)
         .inner_size(900.0, 600.0)
         .min_inner_size(400.0, 240.0)
@@ -390,6 +402,67 @@ pub fn open_from_env(app: &AppHandle) {
     let cwd = if dir.is_dir() { dir } else { crate::system::home().unwrap_or_else(|| PathBuf::from("/")) };
     let session_id = std::env::var("AGENT_OFFICE_TERMINAL_SESSION").ok().filter(|s| is_uuid(s)).unwrap_or_else(new_session_id);
     let _ = open(app, cwd, &session_id, &LaunchOptions::default());
+}
+
+/// Mostra (anche se nascosta o ridotta) e porta in primo piano la finestra dell'istanza `session_id`, se esiste.
+pub fn reveal(app: &AppHandle, session_id: &str) -> bool {
+    let label = label_for(session_id);
+    if !app.state::<Terminals>().0.lock().unwrap().contains_key(&label) {
+        return false;
+    }
+    let Some(window) = app.get_webview_window(&label) else { return false };
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+    true
+}
+
+/// Il processo della finestra `label` è ancora in esecuzione.
+pub fn is_running(app: &AppHandle, label: &str) -> bool {
+    app.state::<Terminals>().0.lock().unwrap().get(label).and_then(|e| e.session.as_ref()).is_some_and(Session::running)
+}
+
+/// Istanze ancora in esecuzione.
+pub fn running_count(app: &AppHandle) -> usize {
+    app.state::<Terminals>().0.lock().unwrap().values().filter(|e| e.session.as_ref().is_some_and(Session::running)).count()
+}
+
+/// uscita dall'app già confermata: la prossima richiesta d'uscita passa
+static QUIT_CONFIRMED: AtomicBool = AtomicBool::new(false);
+/// dialog di conferma dell'uscita aperto: non se ne apre un secondo
+static QUIT_ASKING: AtomicBool = AtomicBool::new(false);
+
+/// All'uscita dall'app (`RunEvent::ExitRequested`, codice `code`) si chiede conferma solo se ci sono `running` istanze
+/// in esecuzione e non è già stata data; il riavvio di Tauri non si può fermare. Pura.
+pub fn must_confirm_quit(running: usize, confirmed: bool, code: Option<i32>) -> bool {
+    running > 0 && !confirmed && code != Some(tauri::RESTART_EXIT_CODE)
+}
+
+/// Dialog nativo: quante istanze sono ancora in esecuzione; confermando l'app esce (e `kill_all` le chiude).
+pub fn ask_quit(app: &AppHandle, running: usize) {
+    if QUIT_ASKING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let n = running.to_string();
+    let text = if running == 1 { t("terminal.quitRunning.one") } else { tf("terminal.quitRunning.other", &[("n", &n)]) };
+    let app2 = app.clone();
+    app.dialog()
+        .message(text)
+        .title("Agent Office")
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(t("terminal.quit"), t("terminal.cancel")))
+        .show(move |ok| {
+            QUIT_ASKING.store(false, Ordering::SeqCst);
+            if ok {
+                QUIT_CONFIRMED.store(true, Ordering::SeqCst);
+                app2.exit(0);
+            }
+        });
+}
+
+/// Uscita dall'app già confermata (o niente da confermare).
+pub fn quit_confirmed() -> bool {
+    QUIT_CONFIRMED.load(Ordering::SeqCst)
 }
 
 /// La finestra è chiusa: il suo processo termina.
@@ -427,6 +500,7 @@ pub fn pty_start(window: WebviewWindow, app: AppHandle, cols: u16, rows: u16, ou
     // il pid si sa solo dopo l'avvio: all'uscita il processo si toglie dal registro
     let pid_cell = Arc::new(OnceLock::<u32>::new());
     let (exit_pid, exit_app, exit_id) = (pid_cell.clone(), app.clone(), entry.session_id.clone());
+    let exit_label = label.clone();
     let session = spawn(
         command(&claude, &entry.args, &entry.cwd, Some(&path)),
         cols,
@@ -439,6 +513,12 @@ pub fn pty_start(window: WebviewWindow, app: AppHandle, cols: u16, rows: u16, ou
                 exit_app.state::<Registry>().remove(&exit_id, *pid);
             }
             let _ = output.send(InvokeResponseBody::Json(json!({ "exit": code }).to_string()));
+            // uscito con la finestra nascosta: nessuno la vedrebbe più, si chiude davvero
+            if let Some(window) = exit_app.get_webview_window(&exit_label) {
+                if window.is_visible().is_ok_and(|v| !v) {
+                    let _ = window.destroy();
+                }
+            }
         },
     )?;
     if let Some(pid) = session.pid {
@@ -475,12 +555,26 @@ pub fn pty_resize(window: WebviewWindow, app: AppHandle, cols: u16, rows: u16) -
     map.get(window.label()).and_then(|e| e.session.as_ref()).ok_or("terminal not running")?.resize(cols, rows)
 }
 
+/// "Termina istanza" (#120): con il processo vivo chiede conferma (dialog nativo sulla finestra), poi chiude la
+/// finestra davvero, e la sua chiusura (`forget`) termina il gruppo di processi; a processo uscito la chiude e basta.
 #[tauri::command]
 pub fn pty_kill(window: WebviewWindow, app: AppHandle) -> Result<(), String> {
     only_terminal(&window)?;
-    if let Some(entry) = app.state::<Terminals>().0.lock().unwrap().get_mut(window.label()) {
-        entry.session = None;
+    if !is_running(&app, window.label()) {
+        return window.destroy().map_err(|e| e.to_string());
     }
+    let target = window.clone();
+    app.dialog()
+        .message(t("terminal.confirmTerminate"))
+        .title(t("terminal.terminate"))
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(t("terminal.terminate"), t("terminal.cancel")))
+        .parent(&window)
+        .show(move |ok| {
+            if ok {
+                let _ = target.destroy();
+            }
+        });
     Ok(())
 }
 
@@ -573,6 +667,31 @@ mod tests {
         drop(s);
         assert!(exit.recv_timeout(Duration::from_secs(5)).is_ok());
         assert!(start.elapsed() >= GRACE - Duration::from_millis(100));
+    }
+
+    #[test]
+    fn conferma_dell_uscita() {
+        // nessuna istanza in esecuzione: si esce subito
+        assert!(!must_confirm_quit(0, false, Some(0)));
+        assert!(!must_confirm_quit(0, false, None));
+        // istanze vive: si chiede, da qualunque parte arrivi l'uscita (pannello, tray, Cmd-Q, ultima finestra)
+        assert!(must_confirm_quit(1, false, Some(0)));
+        assert!(must_confirm_quit(3, false, None));
+        // già confermata: si esce
+        assert!(!must_confirm_quit(3, true, Some(0)));
+        // il riavvio non si può fermare
+        assert!(!must_confirm_quit(2, false, Some(tauri::RESTART_EXIT_CODE)));
+    }
+
+    #[test]
+    fn processo_vivo_finche_non_esce() {
+        let (s, out, exit) = run("echo pronto; read riga", 80, 24);
+        read_until(&out, "pronto");
+        assert!(s.running());
+        let mut s = s;
+        s.write(b"\r").unwrap();
+        assert!(exit.recv_timeout(Duration::from_secs(5)).is_ok());
+        assert!(!s.running());
     }
 
     #[test]

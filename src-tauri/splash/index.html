@@ -32,7 +32,8 @@
     async function check() {
       try {
         await fetch(url + '/api/status', { mode: 'no-cors', cache: 'no-store' });
-        location.replace(url + '/?view=' + view);
+        // `app=1`: la pagina sa di essere nell'app (inApp in src/web/hud/fit.ts)
+        location.replace(url + '/?view=' + view + '&app=1');
       } catch {
         if (++tries === 20) document.getElementById('msg').textContent = T('splash.noServer');
         setTimeout(check, 500);

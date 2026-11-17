@@ -84,6 +84,16 @@ export const it = {
   'window.settings': 'Impostazioni',
   /** titolo del selettore della cartella di "Nuova istanza" (#119) */
   'window.newInstanceFolder': 'Cartella della nuova istanza',
+  /** #120: finestra del terminale di un'istanza lanciata dall'app (terminal.html) e conferma d'uscita dell'app */
+  'terminal.terminate': 'Termina istanza',
+  'terminal.close': 'Chiudi',
+  'terminal.cancel': 'Annulla',
+  'terminal.confirmTerminate': 'Terminare questa istanza di Claude? Si chiudono anche i comandi che ha avviato.',
+  'terminal.exited': 'processo terminato',
+  'terminal.exitedCode': 'processo terminato ({code})',
+  'terminal.quitRunning.one': '{n} istanza di Claude è ancora in esecuzione: uscendo verrà terminata.',
+  'terminal.quitRunning.other': '{n} istanze di Claude sono ancora in esecuzione: uscendo verranno terminate.',
+  'terminal.quit': 'Esci',
   'splash.starting': 'Avvio del server…',
   'splash.noServer': 'Il server non risponde: serve Node ≥ 22 installato.',
   'panel.updateAvailable': 'Aggiornamento disponibile',

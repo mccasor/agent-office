@@ -1,7 +1,8 @@
 //! Schede staccabili (#92): nella WebView di Tauri `window.open` non apre nulla, quindi le richieste di nuova finestra
 //! dell'ufficio (e delle schede stesse) si intercettano qui. Si accettano solo le schede del server locale
 //! (`http://127.0.0.1:<porta>/?card=agent|session&id=...`) e per ognuna si apre una finestra Tauri dedicata, riusata
-//! se è già aperta; la pagina delle offerte su Ko-fi si apre nel browser di sistema; tutto il resto si nega. Nessun
+//! se è già aperta; `?terminal=<uuid>` (#120) mostra la finestra del terminale di un'istanza lanciata dall'app, se
+//! esiste; la pagina delle offerte su Ko-fi si apre nel browser di sistema; tutto il resto si nega. Nessun
 //! comando né permesso esposto alla pagina remota.
 //!
 //! La finestra prende l'altezza del contenuto: WKWebView ignora `window.resizeTo`/`resizeBy`, quindi la pagina (che
@@ -47,12 +48,21 @@ pub fn is_card(label: &str) -> bool {
     label.starts_with(LABEL_PREFIX)
 }
 
+/// `url` è la radice del server locale sulla porta `port` (http, 127.0.0.1, percorso `/`, senza credenziali né
+/// frammento). Pura.
+fn is_local_root(url: &Url, port: u16) -> bool {
+    url.scheme() == "http"
+        && url.host_str() == Some("127.0.0.1")
+        && url.port() == Some(port)
+        && url.path() == "/"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.fragment().is_none()
+}
+
 /// Scheda chiesta da `url`, solo se è una scheda del server locale sulla porta `port` con i parametri attesi. Pura.
 pub fn card_for(url: &Url, port: u16) -> Option<Card> {
-    if url.scheme() != "http" || url.host_str() != Some("127.0.0.1") || url.port() != Some(port) || url.path() != "/" {
-        return None;
-    }
-    if !url.username().is_empty() || url.password().is_some() || url.fragment().is_some() {
+    if !is_local_root(url, port) {
         return None;
     }
     let (mut kind, mut id) = (None, None);
@@ -72,6 +82,17 @@ pub fn card_for(url: &Url, port: u16) -> Option<Card> {
         url: format!("http://127.0.0.1:{port}/?card={kind}&id={}&app=1", id.replace(':', "%3A")),
         size,
     })
+}
+
+/// Terminale di un'istanza lanciata dall'app (#120) chiesto da `url`: esattamente
+/// `http://127.0.0.1:<port>/?terminal=<uuid>`, nient'altro (né altri parametri né codifiche). Ritorna il session id.
+/// La finestra non carica mai questo URL: serve solo a dire quale terminale mostrare. Pura.
+pub fn terminal_for(url: &Url, port: u16) -> Option<String> {
+    if !is_local_root(url, port) {
+        return None;
+    }
+    let id = url.query()?.strip_prefix("terminal=")?;
+    crate::pty::is_uuid(id).then(|| id.to_string())
 }
 
 /// Titolo della pagina della scheda diviso in nome e altezza desiderata (se valida). Pura.
@@ -117,6 +138,12 @@ pub fn on_new_window(app: AppHandle, port: u16) -> impl Fn(Url, NewWindowFeature
             let handle = app.clone();
             // dopo il callback di WebKit: creare la finestra al suo interno può bloccare il ciclo degli eventi
             let _ = app.run_on_main_thread(move || open(&handle, card, port));
+        } else if let Some(session_id) = terminal_for(&url, port) {
+            // #120: solo se l'istanza è dell'app e la sua finestra esiste; nessuna finestra carica questo URL
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || {
+                crate::pty::reveal(&handle, &session_id);
+            });
         } else if is_donate(&url) {
             // in un thread: open_url aspetta il comando, e qui siamo nel callback di WebKit
             std::thread::spawn(|| crate::system::open_url(DONATE_URL));
@@ -177,6 +204,50 @@ mod tests {
         assert!(!is_card("office"));
         // l'ordine dei parametri non conta; l'URL è ricostruito, l'etichetta resta la stessa
         assert_eq!(card("http://127.0.0.1:4318/?id=s1&card=session"), Some(s));
+    }
+
+    const ID: &str = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+    fn terminal(url: &str) -> Option<String> {
+        terminal_for(&url.parse().unwrap(), 4318)
+    }
+
+    #[test]
+    fn terminale_di_un_istanza() {
+        assert_eq!(terminal(&format!("http://127.0.0.1:4318/?terminal={ID}")).as_deref(), Some(ID));
+        // senza la barra il percorso è comunque `/`
+        assert_eq!(terminal(&format!("http://127.0.0.1:4318?terminal={ID}")).as_deref(), Some(ID));
+        // non è una scheda
+        assert_eq!(card(&format!("http://127.0.0.1:4318/?terminal={ID}")), None);
+    }
+
+    #[test]
+    fn terminale_rifiutato() {
+        for url in [
+            format!("https://127.0.0.1:4318/?terminal={ID}"),
+            format!("http://localhost:4318/?terminal={ID}"),
+            format!("http://127.0.0.1:4317/?terminal={ID}"),
+            format!("http://127.0.0.1/?terminal={ID}"),
+            format!("http://evil.example:4318/?terminal={ID}"),
+            format!("http://127.0.0.1:4318/terminal?terminal={ID}"),
+            format!("http://127.0.0.1:4318/?terminal={ID}&app=1"),
+            format!("http://127.0.0.1:4318/?app=1&terminal={ID}"),
+            format!("http://127.0.0.1:4318/?terminal={ID}&terminal={ID}"),
+            format!("http://127.0.0.1:4318/?terminal={ID}#x"),
+            format!("http://u:p@127.0.0.1:4318/?terminal={ID}"),
+            format!("http://127.0.0.1:4318/?Terminal={ID}"),
+            format!("http://127.0.0.1:4318/?terminal={}", ID.replace('-', "%2D")),
+            format!("http://127.0.0.1:4318/?terminal={ID}%00"),
+            format!("http://127.0.0.1:4318/?terminal= {ID}"),
+            format!("http://127.0.0.1:4318/?terminal={}", &ID[1..]),
+            "http://127.0.0.1:4318/?terminal=".into(),
+            "http://127.0.0.1:4318/?terminal".into(),
+            "http://127.0.0.1:4318/?terminal=../../etc".into(),
+            "http://127.0.0.1:4318/".into(),
+            "file:///etc/passwd".into(),
+        ] {
+            assert_eq!(terminal(&url), None, "{url}");
+        }
     }
 
     #[test]

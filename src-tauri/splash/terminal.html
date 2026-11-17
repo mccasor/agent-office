@@ -11,15 +11,29 @@
   <style>
     :root { color-scheme: dark; }
     html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
-    #term { position: absolute; inset: 6px 0 0 8px; }
+    #term { position: absolute; inset: 32px 0 0 8px; }
+    /* #120: barra con "Termina istanza" (chiudere la finestra la nasconde soltanto) */
+    #bar { position: absolute; inset: 0 0 auto 0; height: 26px; display: flex; justify-content: flex-end; align-items: center; padding: 0 8px; border-bottom: 1px solid #2c2c2c; }
+    #bar button { font: 12px -apple-system, system-ui, sans-serif; color: #ccc; background: #2a2a2a; border: 1px solid #3a3a3a; border-radius: 5px; padding: 2px 10px; cursor: pointer; }
+    #bar button:hover { background: #333; color: #fff; }
   </style>
 </head>
 <body>
+  <div id="bar"><button id="end" type="button"></button></div>
   <div id="term"></div>
+  <!-- testi nelle tre lingue, generati da src/shared/i18n -->
+  <script src="i18n.js"></script>
   <script src="vendor/xterm/xterm.js"></script>
   <script src="vendor/xterm/addon-fit.js"></script>
   <script>
     const { invoke, Channel } = window.__TAURI__.core;
+    // lingua dell'app, già risolta: `lang` nell'URL (pty.rs)
+    const T = agentOfficeTexts(new URLSearchParams(location.search).get('lang'));
+    document.documentElement.lang = T.locale;
+    // "Termina istanza" (#120): conferma e chiusura le fa l'app (pty_kill); a processo uscito chiude e basta
+    const end = document.getElementById('end');
+    end.textContent = T('terminal.terminate');
+    end.addEventListener('click', () => invoke('pty_kill').catch(() => {}));
     const term = new Terminal({
       fontFamily: 'Menlo, "DejaVu Sans Mono", "Ubuntu Mono", monospace',
       fontSize: 13,
@@ -40,7 +54,9 @@
       if (msg instanceof ArrayBuffer) term.write(new Uint8Array(msg));
       else if (msg && 'exit' in msg) {
         running = false;
-        term.write(`\r\n\x1b[2m[processo terminato${msg.exit == null ? '' : ` (${msg.exit})`}]\x1b[0m\r\n`);
+        const text = msg.exit == null ? T('terminal.exited') : T('terminal.exitedCode', { code: msg.exit });
+        term.write(`\r\n\x1b[2m[${text}]\x1b[0m\r\n`);
+        end.textContent = T('terminal.close');
       }
     };
     term.onData((data) => running && invoke('pty_write', { data }).catch(() => {}));
