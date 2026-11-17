@@ -32,6 +32,7 @@ mod cards;
 mod config;
 mod i18n;
 mod instance;
+mod launched;
 mod notify;
 mod panel;
 mod pty;
@@ -382,6 +383,23 @@ fn set_notice(app: &AppHandle, text: String) {
     let _ = ui.wake.lock().unwrap().send(());
 }
 
+/// "Nuova istanza" (#119): cartella dal selettore nativo (dialog usato solo da Rust, nessun permesso alle pagine), poi
+/// `claude` nel terminale integrato. Annullare non fa niente; un errore va negli avvisi del pannello.
+fn new_instance(app: &AppHandle, options: pty::LaunchOptions) {
+    use tauri_plugin_dialog::DialogExt;
+    let mut dialog = app.dialog().file().set_title(i18n::t("window.newInstanceFolder"));
+    if let Some(home) = system::home() {
+        dialog = dialog.set_directory(home);
+    }
+    let app = app.clone();
+    dialog.pick_folder(move |folder| {
+        let Some(cwd) = folder.and_then(|f| f.into_path().ok()) else { return };
+        if let Err(e) = pty::launch(&app, cwd, &options) {
+            set_notice(&app, e);
+        }
+    });
+}
+
 /// Mostra le notifiche per il passaggio da uno snapshot al successivo.
 fn send_notifications(app: &AppHandle, prev: &Overview, next: &Overview) {
     let prefs = *app.state::<Ui>().prefs.lock().unwrap();
@@ -490,6 +508,8 @@ fn panel_state(app: AppHandle) -> Value {
         "locale": i18n::current().code(),
         // interruttori così come sono nel file: i default li applica la pagina (settings-catalog.js)
         "show": config::read().remove("show").unwrap_or(Value::Null),
+        // scelte di "Nuova istanza" (#119): solo questi valori sono accettati da panel_action
+        "launch": { "models": pty::MODELS, "permissionModes": pty::PERMISSION_MODES },
     })
 }
 
@@ -514,6 +534,14 @@ fn panel_action(app: AppHandle, action: String, arg: Option<String>) {
             hide();
             settings::open(&app);
         }
+        // arg: `{"model": …, "permissionMode": …}`, validati prima di chiedere la cartella
+        "new-instance" => match pty::LaunchOptions::parse(arg.as_deref()) {
+            Ok(options) => {
+                hide();
+                new_instance(&app, options);
+            }
+            Err(e) => set_notice(&app, e),
+        },
         "update" => on_updates_click(&app),
         "close" => hide(),
         "quit" => app.exit(0),
@@ -616,6 +644,8 @@ fn main() {
     instance::take_over();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        // selettore della cartella di "Nuova istanza", usato solo da Rust: nessuna capability lo concede alle pagine
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             panel_state,
             panel_action,
@@ -631,6 +661,8 @@ fn main() {
         ])
         .manage(Server(Mutex::new(Supervisor::default())))
         .manage(pty::Terminals::default())
+        // istanze lanciate dall'app (#119): quelle di un avvio precedente ancora vive restano, le altre si tolgono
+        .manage(launched::Registry::open(launched::Registry::default_path(), launched::alive))
         .setup(|app| {
             // solo menu bar: niente icona nel Dock
             #[cfg(target_os = "macos")]
@@ -656,7 +688,7 @@ fn main() {
                 wake: Mutex::new(wake),
             });
             panel::create(&handle)?;
-            // spike del terminale integrato (#118): AGENT_OFFICE_TERMINAL=<cartella>
+            // istanza nel terminale integrato senza interfaccia (#118, #119): AGENT_OFFICE_TERMINAL=<cartella>
             pty::open_from_env(&handle);
             // prima apertura dopo un aggiornamento dal pannello: esito nel pannello e in una notifica
             if let Some(text) = updates::take_updated_from().and_then(|from| updates::updated_message(&from, &version(&handle))) {
@@ -894,10 +926,13 @@ mod tests {
     /// Node nell'ufficio, le schede) né nomina l'ufficio o le schede.
     #[test]
     fn capability_per_finestra_senza_remote() {
+        // i terminali sono uno per istanza (#119): `terminal-<uuid>`, con un glob
+        let terminals = format!("{}*", pty::TERMINAL_PREFIX);
+        assert!(pty::is_terminal(&pty::label_for(&pty::new_session_id())));
         let caps = [
             (panel::PANEL_ID, "panel_", include_str!("../capabilities/panel.json")),
             (settings::SETTINGS_ID, "settings_", include_str!("../capabilities/settings.json")),
-            (pty::TERMINAL_ID, "pty_", include_str!("../capabilities/terminal.json")),
+            (terminals.as_str(), "pty_", include_str!("../capabilities/terminal.json")),
         ];
         let mut granted = Vec::new();
         for (label, prefix, text) in caps {

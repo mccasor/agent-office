@@ -9,8 +9,11 @@
 //! `RunEvent::Exit`): niente PR_SET_PDEATHSIG su macOS, quindi si segnala tutto il gruppo di processi (il figlio del
 //! PTY è capo di sessione e di gruppo) con SIGHUP e, se non basta, SIGKILL.
 //!
-//! Solo per lo spike la finestra si apre con la variabile d'ambiente `AGENT_OFFICE_TERMINAL=<cartella>` (e, se c'è,
-//! `AGENT_OFFICE_TERMINAL_SESSION=<uuid>` per `--session-id`): la UX vera è #119.
+//! "Nuova istanza" (#119, pannello e menu del tray su Linux): cartella scelta con il selettore nativo, modello e
+//! modalità dei permessi facoltativi (solo valori di un elenco fisso, mai testo libero), poi `claude --session-id
+//! <uuid nuovo>` in una finestra `terminal-<uuid>` sua (più istanze insieme). Ogni processo avviato sta nel registro
+//! `~/.agent-office/launched.json` (launched.rs) finché non esce. Per provare senza interfaccia resta
+//! `AGENT_OFFICE_TERMINAL=<cartella>` all'avvio (e, se c'è, `AGENT_OFFICE_TERMINAL_SESSION=<uuid>`), che passa di qui.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -19,17 +22,23 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
-use serde_json::json;
+use serde_json::{json, Value};
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
-/// etichetta della finestra del terminale; per ora una sola (#120 ne aprirà una per istanza, con un suffisso)
-pub const TERMINAL_ID: &str = "terminal";
+use crate::launched::{Launched, Registry};
+
+/// etichetta della finestra di un terminale: il prefisso e il session id dell'istanza
+pub const TERMINAL_PREFIX: &str = "terminal-";
+/// modelli ammessi per `--model` (alias della CLI); senza scelta il flag non si passa e vale il default della CLI
+pub const MODELS: &[&str] = &["opus", "sonnet", "haiku", "fable"];
+/// modalità ammesse per `--permission-mode` (le scelte di `claude --help`); senza scelta vale il default della CLI
+pub const PERMISSION_MODES: &[&str] = &["acceptEdits", "auto", "bypassPermissions", "manual", "dontAsk", "plan"];
 /// tempo concesso al processo per chiudersi dopo SIGHUP prima di SIGKILL
 const GRACE: Duration = Duration::from_millis(1500);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -254,7 +263,8 @@ pub fn command(program: &Path, args: &[String], cwd: &Path, path: Option<&OsStri
 /// Cosa avviare nella finestra (lo decide Rust all'apertura, non la pagina) e il processo, se avviato.
 struct Entry {
     cwd: PathBuf,
-    session_id: Option<String>,
+    session_id: String,
+    args: Vec<String>,
     session: Option<Session>,
 }
 
@@ -262,11 +272,69 @@ struct Entry {
 #[derive(Default)]
 pub struct Terminals(Mutex<HashMap<String, Entry>>);
 
-pub fn is_terminal(label: &str) -> bool {
-    label == TERMINAL_ID
+/// Opzioni di una nuova istanza; None = flag omesso (default della CLI).
+#[derive(Clone, Default, PartialEq, Eq, Debug)]
+pub struct LaunchOptions {
+    pub model: Option<String>,
+    pub permission_mode: Option<String>,
 }
 
-/// I comandi `pty_*` rispondono solo alla finestra del terminale (come only_settings in settings.rs).
+/// `value` se è nell'elenco `list`; vuoto o assente → None. Mai testo libero verso la CLI. Pura.
+fn allowed(value: Option<&str>, list: &[&str]) -> Result<Option<String>, String> {
+    match value.filter(|v| !v.is_empty()) {
+        None => Ok(None),
+        Some(v) if list.contains(&v) => Ok(Some(v.to_string())),
+        Some(v) => Err(crate::i18n::tf("error.launchOption", &[("value", v)])),
+    }
+}
+
+impl LaunchOptions {
+    /// Opzioni dal pannello: `{"model": "sonnet" | null, "permissionMode": "plan" | null}` (assente o vuoto →
+    /// default), validate contro gli elenchi. Pura.
+    pub fn parse(arg: Option<&str>) -> Result<LaunchOptions, String> {
+        let value: Value = match arg {
+            Some(text) => serde_json::from_str(text).map_err(|e| e.to_string())?,
+            None => Value::Null,
+        };
+        Ok(LaunchOptions {
+            model: allowed(value["model"].as_str(), MODELS)?,
+            permission_mode: allowed(value["permissionMode"].as_str(), PERMISSION_MODES)?,
+        })
+    }
+}
+
+/// Argomenti di `claude` per l'istanza `session_id` con `options`, rivalidate qui: nessun altro valore arriva alla
+/// CLI. Pura.
+pub fn claude_args(session_id: &str, options: &LaunchOptions) -> Result<Vec<String>, String> {
+    if !is_uuid(session_id) {
+        return Err(crate::i18n::tf("error.launchOption", &[("value", session_id)]));
+    }
+    let mut args = vec!["--session-id".to_string(), session_id.to_string()];
+    if let Some(model) = allowed(options.model.as_deref(), MODELS)? {
+        args.extend(["--model".to_string(), model]);
+    }
+    if let Some(mode) = allowed(options.permission_mode.as_deref(), PERMISSION_MODES)? {
+        args.extend(["--permission-mode".to_string(), mode]);
+    }
+    Ok(args)
+}
+
+/// Session id nuovo (uuid v4) per `--session-id`.
+pub fn new_session_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Etichetta della finestra dell'istanza `session_id`. Pura.
+pub fn label_for(session_id: &str) -> String {
+    format!("{TERMINAL_PREFIX}{session_id}")
+}
+
+/// Finestra di un terminale: `terminal-<uuid>`. Pura.
+pub fn is_terminal(label: &str) -> bool {
+    label.strip_prefix(TERMINAL_PREFIX).is_some_and(is_uuid)
+}
+
+/// I comandi `pty_*` rispondono solo alle finestre dei terminali (come only_settings in settings.rs).
 fn only_terminal(window: &WebviewWindow) -> Result<(), String> {
     if is_terminal(window.label()) {
         Ok(())
@@ -275,33 +343,53 @@ fn only_terminal(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
-/// Apre la finestra del terminale con `claude` in `cwd` (o la riporta in primo piano se è già aperta).
-pub fn open(app: &AppHandle, cwd: PathBuf, session_id: Option<String>) {
-    if let Some(window) = app.get_webview_window(TERMINAL_ID) {
+/// Nuova istanza: `claude` con un session id nuovo e `options` in `cwd`, nella sua finestra. Ritorna il session id.
+pub fn launch(app: &AppHandle, cwd: PathBuf, options: &LaunchOptions) -> Result<String, String> {
+    let session_id = new_session_id();
+    open(app, cwd, &session_id, options)?;
+    Ok(session_id)
+}
+
+/// Apre la finestra dell'istanza `session_id` con `claude` in `cwd` (o la riporta in primo piano se è già aperta).
+fn open(app: &AppHandle, cwd: PathBuf, session_id: &str, options: &LaunchOptions) -> Result<(), String> {
+    let args = claude_args(session_id, options)?;
+    let label = label_for(session_id);
+    if let Some(window) = app.get_webview_window(&label) {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
-        return;
+        return Ok(());
     }
-    let session_id = session_id.filter(|s| is_uuid(s));
+    // assoluta: va nel registro, e il server la confronta con quella del transcript
+    let cwd = std::fs::canonicalize(&cwd).unwrap_or(cwd);
     let title = format!("Claude · {}", cwd.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
-    app.state::<Terminals>().0.lock().unwrap().insert(TERMINAL_ID.into(), Entry { cwd, session_id, session: None });
-    let window = WebviewWindowBuilder::new(app, TERMINAL_ID, WebviewUrl::App("terminal.html".into()))
+    let entry = Entry { cwd, session_id: session_id.to_string(), args, session: None };
+    app.state::<Terminals>().0.lock().unwrap().insert(label.clone(), entry);
+    let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("terminal.html".into()))
         .title(title)
         .inner_size(900.0, 600.0)
         .min_inner_size(400.0, 240.0)
         .center()
         .build();
-    if let Ok(window) = window {
-        let _ = window.set_focus();
+    match window {
+        Ok(window) => {
+            let _ = window.set_focus();
+            Ok(())
+        }
+        Err(e) => {
+            app.state::<Terminals>().0.lock().unwrap().remove(&label);
+            Err(e.to_string())
+        }
     }
 }
 
-/// Solo per lo spike: `AGENT_OFFICE_TERMINAL=<cartella>` all'avvio apre il terminale lì.
+/// Per provare senza interfaccia: `AGENT_OFFICE_TERMINAL=<cartella>` all'avvio apre lì un'istanza, con
+/// `AGENT_OFFICE_TERMINAL_SESSION=<uuid>` come session id se valido (altrimenti uno nuovo).
 pub fn open_from_env(app: &AppHandle) {
     let Some(dir) = std::env::var_os("AGENT_OFFICE_TERMINAL").map(PathBuf::from) else { return };
     let cwd = if dir.is_dir() { dir } else { crate::system::home().unwrap_or_else(|| PathBuf::from("/")) };
-    open(app, cwd, std::env::var("AGENT_OFFICE_TERMINAL_SESSION").ok());
+    let session_id = std::env::var("AGENT_OFFICE_TERMINAL_SESSION").ok().filter(|s| is_uuid(s)).unwrap_or_else(new_session_id);
+    let _ = open(app, cwd, &session_id, &LaunchOptions::default());
 }
 
 /// La finestra è chiusa: il suo processo termina.
@@ -320,6 +408,7 @@ pub fn kill_all(app: &AppHandle) {
     }
     // il drop delle sessioni ora non ha più niente da fare
     drop(entries);
+    app.state::<Registry>().clear();
 }
 
 /// Avvia `claude` per la finestra (una ricarica della pagina lo riavvia). L'output arriva su `output` come byte
@@ -334,21 +423,40 @@ pub fn pty_start(window: WebviewWindow, app: AppHandle, cols: u16, rows: u16, ou
     let mut map = terminals.0.lock().unwrap();
     let entry = map.get_mut(&label).ok_or("terminal not configured")?;
     entry.session = None;
-    let args: Vec<String> = entry.session_id.iter().flat_map(|id| ["--session-id".to_string(), id.clone()]).collect();
     let out = output.clone();
+    // il pid si sa solo dopo l'avvio: all'uscita il processo si toglie dal registro
+    let pid_cell = Arc::new(OnceLock::<u32>::new());
+    let (exit_pid, exit_app, exit_id) = (pid_cell.clone(), app.clone(), entry.session_id.clone());
     let session = spawn(
-        command(&claude, &args, &entry.cwd, Some(&path)),
+        command(&claude, &entry.args, &entry.cwd, Some(&path)),
         cols,
         rows,
         move |bytes| {
             let _ = out.send(InvokeResponseBody::Raw(bytes.to_vec()));
         },
         move |code| {
+            if let Some(pid) = exit_pid.get() {
+                exit_app.state::<Registry>().remove(&exit_id, *pid);
+            }
             let _ = output.send(InvokeResponseBody::Json(json!({ "exit": code }).to_string()));
         },
     )?;
+    if let Some(pid) = session.pid {
+        let _ = pid_cell.set(pid);
+        let registry = app.state::<Registry>();
+        let cwd = entry.cwd.to_string_lossy().into_owned();
+        registry.add(Launched { session_id: entry.session_id.clone(), pid, cwd, launched_at: now_ms() });
+        // uscito prima che il pid fosse noto: on_exit non l'ha potuto togliere
+        if session.exited.load(Ordering::SeqCst) {
+            registry.remove(&entry.session_id, pid);
+        }
+    }
     entry.session = Some(session);
     Ok(())
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 
 #[tauri::command]
@@ -487,6 +595,60 @@ mod tests {
         assert!(!is_uuid("0f8fad5b-d9cb-469f-a165-70867728950"));
         assert!(!is_uuid("0f8fad5b-d9cb-469f-a165-70867728950e; rm -rf"));
         assert!(!is_uuid(""));
+    }
+
+    const ID: &str = "0f8fad5b-d9cb-469f-a165-70867728950e";
+
+    fn options(model: Option<&str>, mode: Option<&str>) -> LaunchOptions {
+        LaunchOptions { model: model.map(Into::into), permission_mode: mode.map(Into::into) }
+    }
+
+    #[test]
+    fn argomenti_di_claude() {
+        assert_eq!(claude_args(ID, &LaunchOptions::default()).unwrap(), ["--session-id", ID]);
+        assert_eq!(claude_args(ID, &options(Some("sonnet"), None)).unwrap(), ["--session-id", ID, "--model", "sonnet"]);
+        assert_eq!(
+            claude_args(ID, &options(Some("opus"), Some("plan"))).unwrap(),
+            ["--session-id", ID, "--model", "opus", "--permission-mode", "plan"]
+        );
+        // vuoto = default della CLI, flag omesso
+        assert_eq!(claude_args(ID, &options(Some(""), Some(""))).unwrap(), ["--session-id", ID]);
+    }
+
+    #[test]
+    fn argomenti_rifiutati() {
+        assert!(claude_args("non-uuid", &LaunchOptions::default()).is_err());
+        assert!(claude_args(ID, &options(Some("sonnet --dangerously-skip-permissions"), None)).is_err());
+        assert!(claude_args(ID, &options(Some("gpt-4"), None)).is_err());
+        assert!(claude_args(ID, &options(None, Some("yolo"))).is_err());
+        assert!(claude_args(ID, &options(None, Some("PLAN"))).is_err());
+    }
+
+    #[test]
+    fn opzioni_dal_pannello() {
+        assert_eq!(LaunchOptions::parse(None).unwrap(), LaunchOptions::default());
+        assert_eq!(LaunchOptions::parse(Some(r#"{"model":null,"permissionMode":""}"#)).unwrap(), LaunchOptions::default());
+        assert_eq!(
+            LaunchOptions::parse(Some(r#"{"model":"haiku","permissionMode":"acceptEdits"}"#)).unwrap(),
+            options(Some("haiku"), Some("acceptEdits"))
+        );
+        assert!(LaunchOptions::parse(Some(r#"{"model":"--help"}"#)).is_err());
+        assert!(LaunchOptions::parse(Some(r#"{"permissionMode":"bypass"}"#)).is_err());
+        assert!(LaunchOptions::parse(Some("non json")).is_err());
+    }
+
+    #[test]
+    fn session_id_nuovo_e_finestra() {
+        let (a, b) = (new_session_id(), new_session_id());
+        assert!(is_uuid(&a) && a != b);
+        // versione 4
+        assert_eq!(a.as_bytes()[14], b'4');
+        assert_eq!(label_for(&a), format!("terminal-{a}"));
+        assert!(is_terminal(&label_for(&a)));
+        assert!(!is_terminal("terminal"));
+        assert!(!is_terminal("terminal-x"));
+        assert!(!is_terminal("panel"));
+        assert!(!is_terminal(&format!("card-{a}")));
     }
 
     /// Claude Code vero nel PTY (se installato): stampa la versione.
