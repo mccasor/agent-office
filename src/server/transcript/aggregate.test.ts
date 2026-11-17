@@ -202,6 +202,14 @@ describe('aggregate', () => {
     expect(snap.sessions[0]?.cost).toBeCloseTo(expected + subExpected, 10);
     expect(snap.sessions[0]?.ownTokens).toMatchObject(tokens(4000, 6000));
   });
+
+  it('finestra 1M dal modello dichiarato [1m] anche con 50k usati (#113)', () => {
+    const acc = createAccumulator();
+    acc.ingest(JSON.stringify({ type: 'attachment', attachment: { type: 'model', identity: { modelId: 'claude-opus-4-6[1m]' } } }));
+    acc.ingest(JSON.stringify({ type: 'assistant', message: { id: 'm1', model: 'claude-opus-4-6', content: [], usage: { input_tokens: 50_000, output_tokens: 1 } } }));
+    const snap = aggregate([{ parsed: { kind: 'session', sessionId: S }, state: acc.state, mtime: T }], noMetas, T, OPTS);
+    expect(snap.sessions[0]?.context).toEqual({ used: 50_000, window: 1_000_000 });
+  });
 });
 
 describe('Claude stesso e subagenti separati', () => {

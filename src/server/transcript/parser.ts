@@ -492,6 +492,8 @@ export function createAccumulator(): Accumulator {
         preTokens: num(meta.preTokens),
         postTokens: num(meta.postTokens),
       };
+      // il contesto è cambiato ora, non al prossimo messaggio dell'assistente (#113); senza il dato, da ricalcolare
+      state.contextUsed = typeof meta.postTokens === 'number' && Number.isFinite(meta.postTokens) ? meta.postTokens : null;
     }
   };
 
