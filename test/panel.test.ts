@@ -25,13 +25,18 @@ const snapshot = {
 
 
 let state: Record<string, unknown> = {};
+/** chiamate a invoke diverse da panel_state */
+const calls: { cmd: string; args: unknown }[] = [];
 
 /** stato passato dall'app; la pagina si carica una volta, poi rilegge lo stato con agentPanelRefresh come nell'app */
 async function show(over: Record<string, boolean> = {}, snap: unknown = snapshot, locale = 'it'): Promise<HTMLElement> {
-  state = { version: '0.6.3', snapshot: snap, serverError: null, update: { kind: 'unknown' }, notice: null, show: over, locale };
+  state = {
+    version: '0.6.3', snapshot: snap, serverError: null, update: { kind: 'unknown' }, notice: null, show: over, locale,
+    launch: { models: ['opus', 'sonnet'], permissionModes: ['plan', 'acceptEdits'] },
+  };
   const w = window as unknown as Record<string, unknown> & { agentPanelRefresh?: () => Promise<void> };
   if (!w.agentPanelRefresh) {
-    w.__TAURI__ = { core: { invoke: async (cmd: string) => (cmd === 'panel_state' ? state : undefined) } };
+    w.__TAURI__ = { core: { invoke: async (cmd: string, args?: unknown) => (cmd === 'panel_state' ? state : void calls.push({ cmd, args })) } };
     document.body.innerHTML = body;
     new Function(splash('settings-catalog.js'))();
     new Function(splash('i18n.js'))();
@@ -75,18 +80,18 @@ describe('pannello della menu bar: lingua (#93)', () => {
   const waiting = { ...snapshot, sessions: [{ ...snapshot.sessions[0], waiting: true, waitingKind: 'permission', dot: 'waiting' }] };
 
   it('cambia al volo con la lingua dell\'app, senza ricaricare la pagina', async () => {
-    expect(labels(await show())).toEqual(['Apri ufficio', 'Impostazioni…', 'Esci da Agent Office']);
+    expect(labels(await show())).toEqual(['Apri ufficio', 'Nuova istanza…', 'Impostazioni…', 'Esci da Agent Office']);
     let root = await show({}, snapshot, 'en');
-    expect(labels(root)).toEqual(['Open Office', 'Settings…', 'Quit Agent Office']);
+    expect(labels(root)).toEqual(['Open Office', 'New Instance…', 'Settings…', 'Quit Agent Office']);
     expect(document.documentElement.lang).toBe('en');
     expect(root.querySelector('.status__title')!.textContent).toBe('Claude is working');
     expect(root.querySelector('.status__sub')!.textContent).toBe('1 agent working');
     expect(root.querySelector('.section')!.textContent).toBe('Open Instances');
     root = await show({}, snapshot, 'es');
-    expect(labels(root)).toEqual(['Abrir oficina', 'Ajustes…', 'Salir de Agent Office']);
+    expect(labels(root)).toEqual(['Abrir oficina', 'Nueva instancia…', 'Ajustes…', 'Salir de Agent Office']);
     expect(root.querySelector('.status__title')!.textContent).toBe('Claude está trabajando');
     expect(root.querySelector('.pill')!.getAttribute('title')).toBe('Contexto usado');
-    expect(labels(await show())).toEqual(['Apri ufficio', 'Impostazioni…', 'Esci da Agent Office']);
+    expect(labels(await show())).toEqual(['Apri ufficio', 'Nuova istanza…', 'Impostazioni…', 'Esci da Agent Office']);
   });
 
   it('attese, plurali e server fermo in inglese e spagnolo', async () => {
@@ -103,5 +108,21 @@ describe('pannello della menu bar: lingua (#93)', () => {
     // lingua sconosciuta (app più nuova): italiano
     root = await show({}, null, 'fr');
     expect(root.querySelector('.status__title')!.textContent).toBe('Server non raggiungibile');
+  });
+});
+
+describe('pannello della menu bar: nuova istanza (#119)', () => {
+  it('modello e permessi solo dagli elenchi dell\'app, vuoto = default della CLI', async () => {
+    let root = await show();
+    expect(root.querySelector('.launch')).toBeNull();
+    (root.querySelector('[data-action="new-toggle"]') as HTMLElement).click();
+    root = document.getElementById('root')!;
+    const selects = [...root.querySelectorAll<HTMLSelectElement>('.launch select')];
+    expect(selects.map((s) => [...s.options].map((o) => o.value))).toEqual([['', 'opus', 'sonnet'], ['', 'plan', 'acceptEdits']]);
+    selects[0]!.value = 'sonnet';
+    selects[0]!.dispatchEvent(new Event('change', { bubbles: true }));
+    calls.length = 0;
+    (root.querySelector('[data-action="new-instance"]') as HTMLElement).click();
+    expect(calls).toEqual([{ cmd: 'panel_action', args: { action: 'new-instance', arg: JSON.stringify({ model: 'sonnet', permissionMode: null }) } }]);
   });
 });
