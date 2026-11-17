@@ -41,7 +41,8 @@ describe('hookCommand', () => {
   });
 
   it('eseguito da sh: lancia il file se esiste, altrimenti esce senza errori', () => {
-    const run = (cmd: string) => execFileSync('/bin/sh', ['-c', cmd], { input: '{}' }).toString();
+    // niente stdin: echo non lo legge e, se esce prima della scrittura, execFileSync fallisce con EPIPE (test instabile)
+    const run = (cmd: string) => execFileSync('/bin/sh', ['-c', cmd], { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
     expect(run(hookCommand('/bin/echo', '/bin/sh'))).toBe('/bin/sh\n');
     expect(run(hookCommand('/bin/echo', '/non/esiste/hook.mjs'))).toBe('');
   });
