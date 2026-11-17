@@ -67,8 +67,7 @@ pub fn layout(window: &WebviewWindow, height: f64, title: &str) {
 }
 
 fn claude_settings_file() -> Option<PathBuf> {
-    let home = std::env::var_os("CLAUDE_CONFIG_DIR").map(PathBuf::from).or_else(|| Some(crate::system::home()?.join(".claude")))?;
-    Some(home.join("settings.json"))
+    Some(crate::system::claude_home()?.join("settings.json"))
 }
 
 /// Hook di agent-office nelle impostazioni globali di Claude Code: "installed", "outdated" (manca qualche evento),

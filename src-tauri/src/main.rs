@@ -36,6 +36,7 @@ mod launched;
 mod notify;
 mod panel;
 mod pty;
+mod resume;
 mod server;
 mod settings;
 mod system;

@@ -94,6 +94,11 @@ export const it = {
   'terminal.quitRunning.one': '{n} istanza di Claude è ancora in esecuzione: uscendo verrà terminata.',
   'terminal.quitRunning.other': '{n} istanze di Claude sono ancora in esecuzione: uscendo verranno terminate.',
   'terminal.quit': 'Esci',
+  /** #121: "Riprendi" di una sessione nel terminale integrato (dialog nativi dell'app) */
+  'resume.notFound': 'Impossibile riprendere la sessione: transcript non trovato o cartella del progetto inesistente.',
+  'resume.runningElsewhere': 'Questa sessione è ancora aperta in un altro terminale. Riprenderla in due processi non è sicuro: vuoi aprirne una copia (fork) con un nuovo session id?',
+  'resume.fork': 'Apri una copia',
+  'resume.cancel': 'Annulla',
   'splash.starting': 'Avvio del server…',
   'splash.noServer': 'Il server non risponde: serve Node ≥ 22 installato.',
   'panel.updateAvailable': 'Aggiornamento disponibile',
