@@ -6,13 +6,15 @@ import { DEFAULT_DISPLAY } from '../../shared/settings.js';
 import type { Snapshot } from '../../shared/types.js';
 import { startServer, type OfficeServer } from './index.js';
 
+const TOKEN = 'a'.repeat(64);
+
 const snap = (generatedAt: number): Snapshot => ({ status: 'idle', sessions: [], agents: [], generatedAt });
 
 /** Richiesta raw (path non normalizzato, Host arbitrario): fetch non permette né l'uno né l'altro. */
 function raw(
   url: string,
   path: string,
-  opts: { method?: string; host?: string } = {},
+  opts: { method?: string; host?: string; headers?: Record<string, string>; body?: string } = {},
 ): Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }> {
   const { port } = new URL(url);
   return new Promise((resolve, reject) => {
@@ -22,7 +24,7 @@ function raw(
         port: Number(port),
         path,
         method: opts.method ?? 'GET',
-        headers: { host: opts.host ?? `127.0.0.1:${port}` },
+        headers: { host: opts.host ?? `127.0.0.1:${port}`, ...opts.headers },
       },
       (res) => {
         let body = '';
@@ -32,7 +34,7 @@ function raw(
       },
     );
     req.on('error', reject);
-    req.end();
+    req.end(opts.body);
   });
 }
 
@@ -73,7 +75,7 @@ describe('startServer', () => {
     await writeFile(join(webDir, 'assets', 'app.js'), 'console.log(1);');
     await writeFile(join(webDir, 'assets', 'style.css'), 'body{}');
     await writeFile(join(root, 'secret.txt'), 'TOP SECRET');
-    server = await startServer({ port: 0, webDir, initial: snap(1) });
+    server = await startServer({ port: 0, webDir, initial: snap(1), token: TOKEN });
   });
 
   afterEach(async () => {
@@ -225,10 +227,82 @@ describe('startServer', () => {
     expect(res.body).not.toContain('TOP SECRET');
   });
 
-  it.each(['POST', 'PUT', 'DELETE', 'PATCH'])('%s → 405', async (method) => {
-    const res = await raw(server.url, '/api/snapshot', { method });
-    expect(res.status).toBe(405);
-    expect(res.headers.allow).toBe('GET, HEAD');
+  describe('metodi di scrittura (#116)', () => {
+    const origin = () => server.url;
+    const ok = () => ({ origin: origin(), 'content-type': 'application/json', 'x-agent-office-token': TOKEN });
+    const noCors = (headers: Record<string, unknown>) =>
+      expect(Object.keys(headers).filter((k) => k.startsWith('access-control-'))).toEqual([]);
+
+    it.each(['POST', 'PUT', 'DELETE', 'PATCH'])('%s con Origin, token e JSON validi: guardia superata, rotta inesistente → 405', async (method) => {
+      const res = await raw(server.url, '/api/snapshot', { method, headers: ok(), body: '{}' });
+      expect(res.status).toBe(405);
+      expect(res.headers.allow).toBe('GET, HEAD');
+      noCors(res.headers);
+    });
+
+    it('accetta anche Origin http://localhost:<port>', async () => {
+      const { port } = new URL(server.url);
+      const res = await raw(server.url, '/api/snapshot', { method: 'POST', headers: { ...ok(), origin: `http://localhost:${port}` } });
+      expect(res.status).toBe(405);
+    });
+
+    it.each(['POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'])('%s senza Origin → 403', async (method) => {
+      const { origin: _o, ...headers } = ok();
+      const res = await raw(server.url, '/api/snapshot', { method, headers });
+      expect(res.status).toBe(403);
+      noCors(res.headers);
+    });
+
+    it.each(['http://evil.example', 'null', 'http://127.0.0.1:1', 'https://127.0.0.1', 'http://127.0.0.1.evil.example'])(
+      'Origin estraneo %s → 403 (anche con token valido)',
+      async (bad) => {
+        const res = await raw(server.url, '/api/snapshot', { method: 'POST', headers: { ...ok(), origin: bad } });
+        expect(res.status).toBe(403);
+        noCors(res.headers);
+      },
+    );
+
+    it('preflight OPTIONS da Origin estraneo: 403 senza header CORS', async () => {
+      const res = await raw(server.url, '/api/snapshot', {
+        method: 'OPTIONS',
+        headers: { origin: 'http://evil.example', 'access-control-request-method': 'POST', 'access-control-request-headers': 'x-agent-office-token' },
+      });
+      expect(res.status).toBe(403);
+      noCors(res.headers);
+    });
+
+    it.each(['text/plain', 'text/plain; charset=utf-8', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x', 'TEXT/PLAIN'])(
+      'richiesta "semplice" (%s) → 415 anche con Origin e token validi',
+      async (type) => {
+        const res = await raw(server.url, '/api/snapshot', { method: 'POST', headers: { ...ok(), 'content-type': type }, body: 'x' });
+        expect(res.status).toBe(415);
+      },
+    );
+
+    it('token mancante → 401', async () => {
+      const { 'x-agent-office-token': _t, ...headers } = ok();
+      const res = await raw(server.url, '/api/snapshot', { method: 'POST', headers });
+      expect(res.status).toBe(401);
+      expect(res.body).not.toContain(TOKEN);
+    });
+
+    it.each(['sbagliato', 'a'.repeat(63), 'a'.repeat(65), 'b'.repeat(64)])('token errato (%s) → 401', async (bad) => {
+      const res = await raw(server.url, '/api/snapshot', { method: 'POST', headers: { ...ok(), 'x-agent-office-token': bad } });
+      expect(res.status).toBe(401);
+      expect(res.body).not.toContain(TOKEN);
+    });
+
+    it('senza token passato il server ne genera uno: nessun token indovinabile supera la guardia', async () => {
+      const other = await startServer({ port: 0, webDir, initial: snap(1) });
+      try {
+        for (const guess of ['', 'undefined', 'null', TOKEN]) {
+          const res = await raw(other.url, '/x', { method: 'POST', headers: { origin: other.url, 'x-agent-office-token': guess } });
+          expect(res.status).toBe(401);
+        }
+      } finally {
+        await other.close();
+      }
+    });
   });
 
   it('HEAD funziona senza body', async () => {
@@ -311,7 +385,7 @@ describe('GET /api/agents/<id>/status (#104)', () => {
       expect(await res.json()).toEqual({ kind: 'silent', checkedAt: 5, tool: null, waiting: null, background: 0, lastOutputAt: null, claude: 'idle' });
       expect((await fetch(`${server.url}/api/agents/zz/status`)).status).toBe(404);
       expect((await raw(server.url, '/api/agents/..%2Fx/status')).status).toBe(404);
-      expect((await raw(server.url, '/api/agents/a1/status', { method: 'POST' })).status).toBe(405);
+      expect((await raw(server.url, '/api/agents/a1/status', { method: 'POST' })).status).toBe(403);
       expect(asked).toEqual(['a1', 'zz']);
       expect((await fetch(`${without.url}/api/agents/a1/status`)).status).toBe(404);
     } finally {
@@ -354,7 +428,7 @@ describe('GET /api/git (#109)', () => {
       expect((await fetch(`${server.url}/api/git?session=s1&day=2026-10-2`)).status).toBe(400);
       expect((await fetch(`${server.url}/api/git?session=..%2Fx`)).status).toBe(400);
       expect((await fetch(`${server.url}/api/git?session=${'a'.repeat(129)}`)).status).toBe(400);
-      expect((await raw(server.url, '/api/git?session=s1', { method: 'POST' })).status).toBe(405);
+      expect((await raw(server.url, '/api/git?session=s1', { method: 'POST' })).status).toBe(403);
       expect(asked).toEqual([['s1', null], ['s1', '2026-10-20'], ['zz', null]]);
       expect((await fetch(`${without.url}/api/git?session=s1`)).status).toBe(404);
     } finally {

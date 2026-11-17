@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { extname, join, resolve, sep } from 'node:path';
 import { DEFAULT_DISPLAY, type DisplaySettings } from '../../shared/settings.js';
 import type { AgentVerdict, GitDayReport, HistoryReport, Snapshot } from '../../shared/types.js';
+import { checkWrite, launchToken } from './guard.js';
 
 export interface OfficeServer {
   url: string;
@@ -66,7 +67,8 @@ function send(res: ServerResponse, status: number, body: string, headers: Record
  * GET /api/events (SSE: eventi `snapshot` e `config`), GET /api/history (storico della giornata, se c'è `history`),
  * GET /api/agents/<id>/status ("Controlla stato" di un subagente, se c'è `agentStatus`),
  * GET /api/git?session=<id>&day=YYYY-MM-DD (commit del giorno di un'istanza, se c'è `git`), statici da webDir.
- * Nessuna scrittura: config.json lo scrive l'app della menu bar.
+ * Nessuna scrittura: config.json lo scrive l'app della menu bar. Ogni altro metodo passa prima da checkWrite
+ * (Origin, tipo del corpo, token di avvio: #116), poi 405 finché non esistono rotte di scrittura.
  */
 export async function startServer(opts: {
   port: number;
@@ -79,7 +81,11 @@ export async function startServer(opts: {
   agentStatus?: (agentId: string) => Promise<AgentVerdict | null>;
   /** commit del giorno di una sessione (#109, null = oggi), calcolati a richiesta; null se la sessione non c'è */
   git?: (sessionId: string, day: string | null) => Promise<GitDayReport | null>;
+  /** token di questo avvio, richiesto dalle rotte di scrittura (#116); se manca se ne genera uno casuale */
+  token?: string;
 }): Promise<OfficeServer> {
+  const token = opts.token || launchToken({});
+  let port = 0;
   let current = opts.initial;
   // serializzato una volta per pubblicazione e condiviso da SSE e /api/snapshot; la versione fa da ETag
   let currentJson = JSON.stringify(current);
@@ -168,6 +174,12 @@ export async function startServer(opts: {
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
+      const denied = checkWrite(req, port, token);
+      if (denied) {
+        send(res, denied, denied === 403 ? 'Forbidden' : denied === 401 ? 'Unauthorized' : 'Unsupported Media Type');
+        return;
+      }
+      // qui, in futuro, le rotte di scrittura
       send(res, 405, 'Method Not Allowed', { Allow: 'GET, HEAD' });
       return;
     }
@@ -287,7 +299,7 @@ export async function startServer(opts: {
     });
   });
 
-  const port = (server.address() as AddressInfo).port;
+  port = (server.address() as AddressInfo).port;
   allowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
 
   const heartbeat = setInterval(() => {

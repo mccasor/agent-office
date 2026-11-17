@@ -22,6 +22,7 @@ import { agentVerdict, endedCount, lastWrite } from './server/state/verdict.js';
 import { createSessionProcesses } from './server/sessions/index.js';
 import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
+import { launchToken } from './server/http/guard.js';
 import { createThrottle } from './server/throttle.js';
 import { createHistory } from './server/history/index.js';
 import { resolveLocale, setLocale, t } from './shared/i18n/index.js';
@@ -98,6 +99,8 @@ function openBrowser(url: string): void {
 }
 
 async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | undefined): Promise<RunningOffice> {
+  // per primo: tolto dall'ambiente prima che parta qualunque processo figlio (#116)
+  const token = launchToken();
   const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
   const transcript = createTranscriptWatcher({
     cwd: opts.cwd,
@@ -171,7 +174,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   const first = snapshot();
   const server = await startServer({
     port: opts.port, webDir: WEB_DIR, initial: first, settings: displaySettings(config), history: (day) => history.report(day),
-    agentStatus: checkAgent, git: gitDay,
+    agentStatus: checkAgent, git: gitDay, token,
   });
 
   /** ultimo snapshot pubblicato, serializzato senza generatedAt: il confronto "è cambiato?" */
