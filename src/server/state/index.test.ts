@@ -232,7 +232,7 @@ describe('buildSnapshot: sessioni', () => {
       launched: [{ sessionId: L, pid: 4242, cwd: '/w/progetto', launchedAt: NOW - 1_000 }],
     });
     const snap = buildSnapshot({ transcript, hookEvents: [], processes: new Map(), now: NOW });
-    expect(snap.sessions).toEqual([expect.objectContaining({ id: L, active: true, dot: 'idle', project: 'progetto', waiting: false })]);
+    expect(snap.sessions).toEqual([expect.objectContaining({ id: L, active: true, dot: 'idle', project: 'progetto', waiting: false, launched: true })]);
     expect(snap.status).toBe('idle');
     // il prompt arriva dall'hook prima che il transcript esista
     const prompted = buildSnapshot({ transcript, hookEvents: [hook('UserPromptSubmit', NOW - 100, { sessionId: L, agentId: null })], now: NOW });

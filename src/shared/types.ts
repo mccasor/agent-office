@@ -206,6 +206,8 @@ export interface SessionState {
   toolErrors?: ToolErrors | null;
   /** processo di Claude Code della sessione (#104), da ~/.claude/sessions; assente nei client vecchi */
   process?: SessionProcess;
+  /** lanciata dall'app nel terminale integrato (#120), da launched.json: la pagina nell'app può aprirne il terminale; assente = no */
+  launched?: boolean;
 }
 
 /**

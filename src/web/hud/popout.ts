@@ -59,6 +59,18 @@ export function requestedTab(raw: string | null, now = Date.now()): InstanceTab 
   }
 }
 
+/**
+ * Finestra del terminale di un'istanza lanciata dall'app (#120): la pagina chiede l'URL e l'app, che intercetta
+ * `window.open`, mostra o porta in primo piano la sua finestra. La pagina non legge mai il contenuto del terminale.
+ */
+export function terminalUrl(sessionId: string, origin = globalThis.location.origin): string {
+  return `${origin}/?terminal=${encodeURIComponent(sessionId)}`;
+}
+
+export function openTerminalWindow(sessionId: string): void {
+  window.open(terminalUrl(sessionId));
+}
+
 /** Apre (o porta in primo piano) la finestra della scheda; nell'app della menu bar la crea Tauri. L'altezza è una
  *  stima: la pagina della scheda si porta poi a misura del contenuto (fit.ts). Con `tab` la finestra di un'istanza
  *  si apre su quella scheda (#109). */
