@@ -119,6 +119,17 @@
 
     .empty { padding: 4px 10px 8px; color: var(--muted); }
     .footer { padding: 2px 10px 4px; font-size: 11px; color: var(--muted); }
+
+    /* "Nuova istanza" (#119): modello e permessi (default della CLI se non scelti), poi il selettore della cartella */
+    .launch { display: grid; gap: 6px; margin: 0 10px 6px 37px; }
+    .launch label { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .launch label span { flex: none; width: 72px; }
+    .launch select { flex: 1; min-width: 0; font: inherit; font-size: 12px; color: var(--fg); }
+    .launch__start {
+      justify-self: start; padding: 4px 11px; border-radius: 6px;
+      background: var(--accent); color: #fff; font-weight: 600; font-size: 12px;
+    }
+    .launch__start:hover { filter: brightness(0.94); }
   </style>
 </head>
 <body>
@@ -133,6 +144,7 @@
     // icone semplici a tratto, nello spirito di SF Symbols
     const ICONS = {
       office: '<path d="M3 20.5h18M5 20.5V5.5a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v15M15 9.5h3a1 1 0 0 1 1 1v10M8 8h4M8 11.5h4M8 15h4"/>',
+      plus: '<path d="M4.5 6a1.5 1.5 0 0 1 1.5-1.5h12A1.5 1.5 0 0 1 19.5 6v12a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18zM12 8.5v7M8.5 12h7"/>',
       gear: '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7z"/><path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l2-1.6-2-3.4-2.4.9a7.5 7.5 0 0 0-2.6-1.5L14 2.5h-4l-.4 2.4A7.5 7.5 0 0 0 7 6.4l-2.4-.9-2 3.4 2 1.6a7.6 7.6 0 0 0 0 3l-2 1.6 2 3.4 2.4-.9a7.5 7.5 0 0 0 2.6 1.5l.4 2.4h4l.4-2.4a7.5 7.5 0 0 0 2.6-1.5l2.4.9 2-3.4z"/>',
       quit: '<path d="M14 4.5h4a1.5 1.5 0 0 1 1.5 1.5v12a1.5 1.5 0 0 1-1.5 1.5h-4M10 16l4-4-4-4M14 12H4.5"/>',
     };
@@ -181,6 +193,8 @@
     const show = (key) => (typeof state.show?.[key] === 'boolean' ? state.show[key] : ITEMS.get(key) ?? true);
 
     let state = null;
+    /** "Nuova istanza" (#119): sezione aperta e scelte fatte (sopravvivono ai ridisegni) */
+    const launch = { open: false, model: '', permissionMode: '' };
     /** ultimo contenuto mostrato: se non cambia, niente DOM da rifare né ridimensionamento */
     let shown = '';
 
@@ -227,6 +241,16 @@
         <span class="status__title">${title}</span><span class="status__sub${subClass}">${sub}</span></div></div>`;
 
       html += `<button class="row" data-action="open-office">${icon('office')}<span class="row__label">${T('panel.openOffice')}</span></button>`;
+      html += `<button class="row" data-action="new-toggle" aria-expanded="${launch.open}">${icon('plus')}<span class="row__label">${T('panel.newInstance')}</span></button>`;
+      if (launch.open) {
+        // solo i valori che l'app accetta (panel_state.launch); vuoto = default della CLI, flag omesso
+        const select = (key, label, values) => `<label><span>${T(label)}</span><select data-launch="${key}">
+          <option value="">${T('panel.newDefault')}</option>
+          ${(values || []).map((v) => `<option value="${esc(v)}"${launch[key] === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
+        html += `<div class="launch">${select('model', 'panel.newModel', state.launch?.models)}
+          ${select('permissionMode', 'panel.newPermissions', state.launch?.permissionModes)}
+          <button class="launch__start" data-action="new-instance">${T('panel.newStart')}</button></div>`;
+      }
       if (state.notice) html += `<div class="notice">${esc(state.notice)}</div>`;
 
       // istanze e agenti
@@ -283,7 +307,21 @@
     document.addEventListener('click', (e) => {
       const el = e.target.closest('[data-action]');
       if (!el || el.disabled) return;
-      invoke('panel_action', { action: el.dataset.action, arg: el.dataset.arg || null }).then(refresh);
+      if (el.dataset.action === 'new-toggle') {
+        launch.open = !launch.open;
+        render();
+        return;
+      }
+      let arg = el.dataset.arg || null;
+      if (el.dataset.action === 'new-instance') {
+        arg = JSON.stringify({ model: launch.model || null, permissionMode: launch.permissionMode || null });
+        launch.open = false;
+      }
+      invoke('panel_action', { action: el.dataset.action, arg }).then(refresh);
+    });
+    document.addEventListener('change', (e) => {
+      const key = e.target.dataset?.launch;
+      if (key) launch[key] = e.target.value;
     });
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') invoke('panel_action', { action: 'close', arg: null });

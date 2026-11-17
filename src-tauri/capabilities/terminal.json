@@ -1,6 +1,6 @@
 {
   "identifier": "terminal",
-  "description": "Finestra del terminale integrato (terminal.html, #118): solo i comandi pty_*. Solo pagine locali, nessun accesso remote.",
-  "windows": ["terminal"],
+  "description": "Finestre del terminale integrato (terminal.html, #118), una per istanza lanciata (terminal-<uuid>, #119): solo i comandi pty_*. Solo pagine locali, nessun accesso remote.",
+  "windows": ["terminal-*"],
   "permissions": ["allow-pty-start", "allow-pty-write", "allow-pty-resize", "allow-pty-kill"]
 }

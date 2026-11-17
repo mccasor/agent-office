@@ -5,6 +5,7 @@
     "tray.idle": "Claude è inattivo",
     "tray.offline": "Server non raggiungibile",
     "tray.instanceWaiting": "{place} · aspetta un tuo input",
+    "tray.newInstance": "Nuova istanza…",
     "tray.openOffice": "Apri ufficio",
     "tray.settings": "Impostazioni…",
     "tray.quit": "Esci da Agent Office",
@@ -33,6 +34,7 @@
     "server.portBusy": "La porta {port} è occupata da un altro programma",
     "server.spawnFailed": "Avvio del server non riuscito: {e}",
     "window.settings": "Impostazioni",
+    "window.newInstanceFolder": "Cartella della nuova istanza",
     "notify.alertStale": "{name} è senza attività da {d}",
     "notify.alertLoop": "{name} ripete {tool} {n} volte di fila",
     "notify.min": "{m} min",
@@ -44,6 +46,7 @@
     "error.noHome": "cartella home sconosciuta",
     "error.settingsOnly": "comando riservato alla finestra Impostazioni",
     "error.unknownAction": "azione sconosciuta: {action}",
+    "error.launchOption": "valore non ammesso per la nuova istanza: {value}",
     "office.locked": "Impossibile modificare l'ufficio: gli agenti sono al lavoro"
   },
   "en": {
@@ -52,6 +55,7 @@
     "tray.idle": "Claude is idle",
     "tray.offline": "Server unreachable",
     "tray.instanceWaiting": "{place} · waiting for your input",
+    "tray.newInstance": "New Instance…",
     "tray.openOffice": "Open Office",
     "tray.settings": "Settings…",
     "tray.quit": "Quit Agent Office",
@@ -80,6 +84,7 @@
     "server.portBusy": "Port {port} is in use by another app",
     "server.spawnFailed": "Couldn’t start the server: {e}",
     "window.settings": "Settings",
+    "window.newInstanceFolder": "Folder for the New Instance",
     "notify.alertStale": "{name} has been idle for {d}",
     "notify.alertLoop": "{name} repeated {tool} {n} times in a row",
     "notify.min": "{m}m",
@@ -91,6 +96,7 @@
     "error.noHome": "unknown home folder",
     "error.settingsOnly": "command reserved for the Settings window",
     "error.unknownAction": "unknown action: {action}",
+    "error.launchOption": "value not allowed for the new instance: {value}",
     "office.locked": "The office can't be changed: agents are at work"
   },
   "es": {
@@ -99,6 +105,7 @@
     "tray.idle": "Claude está inactivo",
     "tray.offline": "Servidor no disponible",
     "tray.instanceWaiting": "{place} · esperando tu respuesta",
+    "tray.newInstance": "Nueva instancia…",
     "tray.openOffice": "Abrir oficina",
     "tray.settings": "Ajustes…",
     "tray.quit": "Salir de Agent Office",
@@ -127,6 +134,7 @@
     "server.portBusy": "Otra app está usando el puerto {port}",
     "server.spawnFailed": "No se ha podido iniciar el servidor: {e}",
     "window.settings": "Ajustes",
+    "window.newInstanceFolder": "Carpeta de la nueva instancia",
     "notify.alertStale": "{name} lleva {d} sin actividad",
     "notify.alertLoop": "{name} repite {tool} {n} veces seguidas",
     "notify.min": "{m} min",
@@ -138,6 +146,7 @@
     "error.noHome": "carpeta de inicio desconocida",
     "error.settingsOnly": "comando reservado a la ventana Ajustes",
     "error.unknownAction": "acción desconocida: {action}",
+    "error.launchOption": "valor no permitido para la nueva instancia: {value}",
     "office.locked": "No se puede modificar la oficina: los agentes están trabajando"
   }
 }

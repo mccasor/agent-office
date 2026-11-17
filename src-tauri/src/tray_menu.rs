@@ -1,7 +1,7 @@
 //! Menu nativo del tray su Linux (#107). Lì l'icona passa da AppIndicator, che mostra solo un menu e non manda i clic:
 //! il pannello di macOS (panel.rs) non si aprirebbe mai. Il menu ne riprende l'essenziale: lo stato (non cliccabile),
-//! le istanze aperte (aprono la lista su quella sessione), "Apri ufficio", "Impostazioni…", l'aggiornamento se ce n'è
-//! uno e "Esci". Si ricostruisce solo quando cambia una voce (stato, istanze, aggiornamento, lingua).
+//! le istanze aperte (aprono la lista su quella sessione), "Nuova istanza…" (#119: cartella, poi `claude` con modello e
+//! permessi di default della CLI), "Apri ufficio", "Impostazioni…", l'aggiornamento se ce n'è uno e "Esci". Si ricostruisce solo quando cambia una voce (stato, istanze, aggiornamento, lingua).
 
 use crate::i18n::{t, tf};
 use crate::notify::SessionFacts;
@@ -34,6 +34,7 @@ pub fn entries(status: String, sessions: &[SessionFacts], update: &UpdateState, 
         }
     }
     list.push(Entry::Separator);
+    list.push(item("new-instance", t("tray.newInstance"), true));
     list.push(item("open-office", t("tray.openOffice"), true));
     list.push(item("settings", t("tray.settings"), true));
     // solo con un aggiornamento trovato (o in corso, o da riprovare): le ricerche stanno nelle Impostazioni
@@ -87,6 +88,7 @@ pub fn on_event(app: &tauri::AppHandle, event: tauri::menu::MenuEvent) {
         return;
     }
     match id {
+        "new-instance" => crate::new_instance(app, Default::default()),
         "open-office" => crate::show_office(app, "pixel", None),
         "settings" => crate::settings::open(app),
         "update" => crate::on_updates_click(app),
@@ -117,7 +119,7 @@ mod tests {
     #[test]
     fn voci_senza_istanze_ne_aggiornamenti() {
         let list = with_locale(Locale::It, || entries("Claude è inattivo".into(), &[], &UpdateState::UpToDate, "0.7.5"));
-        assert_eq!(labels(&list), ["Claude è inattivo", "-", "Apri ufficio", "Impostazioni…", "-", "Esci da Agent Office"]);
+        assert_eq!(labels(&list), ["Claude è inattivo", "-", "Nuova istanza…", "Apri ufficio", "Impostazioni…", "-", "Esci da Agent Office"]);
         // lo stato non è cliccabile
         assert_eq!(list[0], Entry::Item { id: "status".into(), label: "Claude è inattivo".into(), enabled: false });
     }
@@ -135,6 +137,7 @@ mod tests {
                 "agent-office · main · waiting for your input",
                 "olimpo-ui",
                 "-",
+                "New Instance…",
                 "Open Office",
                 "Settings…",
                 "Update to Version 0.8.0",

@@ -52,6 +52,8 @@ export const it = {
   'tray.offline': 'Server non raggiungibile',
   /** menu nativo del tray su Linux (#107), dove non arrivano i clic per aprire il pannello */
   'tray.instanceWaiting': '{place} · aspetta un tuo input',
+  /** #119: sceglie una cartella e ci avvia `claude` nel terminale integrato */
+  'tray.newInstance': 'Nuova istanza…',
   'tray.openOffice': 'Apri ufficio',
   'tray.settings': 'Impostazioni…',
   'tray.quit': 'Esci da Agent Office',
@@ -80,6 +82,8 @@ export const it = {
   'server.portBusy': 'La porta {port} è occupata da un altro programma',
   'server.spawnFailed': 'Avvio del server non riuscito: {e}',
   'window.settings': 'Impostazioni',
+  /** titolo del selettore della cartella di "Nuova istanza" (#119) */
+  'window.newInstanceFolder': 'Cartella della nuova istanza',
   'splash.starting': 'Avvio del server…',
   'splash.noServer': 'Il server non risponde: serve Node ≥ 22 installato.',
   'panel.updateAvailable': 'Aggiornamento disponibile',
@@ -94,6 +98,12 @@ export const it = {
   'panel.agentsWorking.one': '{n} agente al lavoro',
   'panel.agentsWorking.other': '{n} agenti al lavoro',
   'panel.openOffice': 'Apri ufficio',
+  /** "Nuova istanza" (#119): modello e permessi facoltativi, poi la cartella */
+  'panel.newInstance': 'Nuova istanza…',
+  'panel.newModel': 'Modello',
+  'panel.newPermissions': 'Permessi',
+  'panel.newDefault': 'Predefinito',
+  'panel.newStart': 'Scegli la cartella e avvia…',
   'panel.contextUsed': 'Contesto usato',
   'panel.settings': 'Impostazioni…',
   'panel.quit': 'Esci da Agent Office',
@@ -110,6 +120,7 @@ export const it = {
   'error.noHome': 'cartella home sconosciuta',
   'error.settingsOnly': 'comando riservato alla finestra Impostazioni',
   'error.unknownAction': 'azione sconosciuta: {action}',
+  'error.launchOption': 'valore non ammesso per la nuova istanza: {value}',
   /** riga di comando (src/cli.ts): lingua di config.json, altrimenti quella del terminale */
   'cli.usage': 'Uso: agent-office [--port N] [--no-open] [--cwd DIR | --all] | install-hooks [--global] | uninstall-hooks [--global]',
   'cli.help': '  --port N     porta del server (predefinita {port})\n  --no-open    non apre il browser\n  --cwd DIR    cartella da monitorare (predefinita quella corrente)\n  --all        tutte le sessioni attive, di qualunque cartella\n  --global     hook nelle impostazioni globali di Claude Code\n  --help       mostra questo aiuto',
