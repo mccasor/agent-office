@@ -1,5 +1,5 @@
-import { mkdir, open, stat } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { mkdir, open, readdir, stat } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import type { FSWatcher } from 'chokidar';
 import type { HookEvent, Watcher } from '../../shared/types.js';
 import { eventsFilePath, parseEventLine, type HookPathsOptions } from './events.js';
@@ -9,6 +9,11 @@ export const MAX_EVENTS = 2000;
 export const INITIAL_TAIL_BYTES = 512 * 1024;
 /** nell'unione di più file contano solo gli eventi recenti: servono per le sessioni attive */
 export const MERGE_WINDOW_MS = 2 * 60 * 60_000;
+/**
+ * Rete di sicurezza (#114): le notifiche di FSEvents/chokidar possono andare perse. Ogni HOOK_RESYNC_MS si
+ * ricontrolla la dimensione dei file eventi (una stat: la lettura parte solo se il file è cresciuto).
+ */
+export const HOOK_RESYNC_MS = 5_000;
 
 export interface EventsTail {
   /** legge le righe aggiunte dall'ultima lettura; true se sono arrivati eventi nuovi */
@@ -100,6 +105,7 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
   const listeners = new Set<(v: HookEvent[]) => void>();
   let tail: EventsTail | null = null;
   let fsw: FSWatcher | null = null;
+  let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   const read = async () => {
@@ -122,9 +128,13 @@ export function createHookEventsWatcher(opts: ({ cwd: string } | { file: string 
       await new Promise<void>((resolve) => fsw!.once('ready', () => resolve()));
       // eventuali append avvenuti prima che il watcher fosse pronto
       await read();
+      timer = setInterval(() => void read(), HOOK_RESYNC_MS);
+      timer.unref();
     },
     async stop() {
       running = false;
+      if (timer) clearInterval(timer);
+      timer = null;
       const w = fsw;
       fsw = null;
       await w?.close();
@@ -151,6 +161,7 @@ export function createAllHookEventsWatcher(opts: HookPathsOptions & { now?: () =
   const listeners = new Set<(v: HookEvent[]) => void>();
   let events: HookEvent[] = [];
   let fsw: FSWatcher | null = null;
+  let timer: NodeJS.Timeout | null = null;
   let running = false;
 
   const merge = async () => {
@@ -170,6 +181,12 @@ export function createAllHookEventsWatcher(opts: HookPathsOptions & { now?: () =
     if (await (await tail).read()) await merge();
   };
 
+  /** notifiche perse (#114): si rileggono i file della cartella, anche quelli nuovi; read() legge solo se cresciuti */
+  const resync = async () => {
+    const names = await readdir(dir).catch(() => [] as string[]);
+    if (running) await Promise.all(names.map((name) => read(join(dir, name))));
+  };
+
   return {
     async start() {
       if (running) return;
@@ -185,9 +202,13 @@ export function createAllHookEventsWatcher(opts: HookPathsOptions & { now?: () =
       await Promise.all(initial);
       fsw.removeAllListeners('add');
       fsw.on('add', (file) => void read(file));
+      timer = setInterval(() => void resync(), HOOK_RESYNC_MS);
+      timer.unref();
     },
     async stop() {
       running = false;
+      if (timer) clearInterval(timer);
+      timer = null;
       const w = fsw;
       fsw = null;
       await w?.close();
