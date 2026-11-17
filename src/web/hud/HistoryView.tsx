@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import type { AgentState, FinishedAgent, HistoryReport } from '../../shared/types';
+import type { AgentState, FinishedAgent, HistoryEvent, HistoryReport } from '../../shared/types';
 import { t } from '../../shared/i18n';
+import { useOfficeStore } from '../store';
+import { inApp } from './fit';
 import { formatCost, formatDuration } from './format';
 import { clockTime, eventDuration, eventLabel, eventOutcome, TYPES_COLUMNS, waitsCount, waitsSummary } from './historyLabels';
-import { OutcomeTag } from './panels';
+import { OutcomeTag, TerminalButton } from './panels';
+import { canResume, openResumeWindow } from './popout';
 import { useNow } from './useNow';
 import './hud.css';
 import './history.css';
@@ -62,6 +65,11 @@ function Waits({ waits }: { waits: HistoryReport['waits'] }) {
 
 /** Cronologia degli eventi, dal più recente: ora, evento (con l'esito se interrotto o fallito), agente, progetto, tool, durata. */
 function Timeline({ events }: { events: HistoryReport['events'] }) {
+  const sessions = useOfficeStore((s) => s.snapshot?.sessions);
+  const app = inApp(location.search);
+  // istanza chiusa (#121): nell'app si riprende nel terminale, se non è già in un suo terminale
+  const resumable = (e: HistoryEvent) =>
+    app && e.kind === 'session-close' && canResume(e.sessionId) && !sessions?.some((s) => s.id === e.sessionId && s.launched);
   return (
     <section className="history-card" aria-label={t('history.timeline')}>
       <h2>{t('history.timeline')}</h2>
@@ -83,6 +91,12 @@ function Timeline({ events }: { events: HistoryReport['events'] }) {
                       .map((part) => ` · ${part}`)
                       .join('')}
                   </span>
+                  {resumable(e) && (
+                    <TerminalButton
+                      label={t('popout.resume', { project: e.project ?? e.sessionId.slice(0, 8) })}
+                      onClick={() => openResumeWindow(e.sessionId)}
+                    />
+                  )}
                 </span>
               </li>
             );

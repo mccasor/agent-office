@@ -1,6 +1,31 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest';
-import { cardFromSearch, cardUrl, cardWindowName, openCardWindow, requestedTab, requestTab, tabFromSearch, tabKey } from './popout';
+import {
+  canResume, cardFromSearch, cardUrl, cardWindowName, openCardWindow, openResumeWindow, requestedTab, requestTab, resumeUrl, tabFromSearch, tabKey,
+} from './popout';
+
+describe('riprendi nel terminale (#121)', () => {
+  const ID = '3b3e3333-3333-4333-8333-33333333abcd';
+
+  it('URL della ripresa: ?resume=<id>, sullo stesso server', () => {
+    expect(resumeUrl(ID, 'http://127.0.0.1:4318')).toBe(`http://127.0.0.1:4318/?resume=${ID}`);
+  });
+
+  it('si riprendono solo gli id uuid in minuscolo', () => {
+    expect(canResume(ID)).toBe(true);
+    expect(canResume(ID.toUpperCase())).toBe(false);
+    expect(canResume('s1')).toBe(false);
+    expect(canResume(`boss:${ID}`)).toBe(false);
+    expect(canResume(`${ID}x`)).toBe(false);
+  });
+
+  it('openResumeWindow apre l’URL della ripresa', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    openResumeWindow(ID);
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/?resume=${ID}`);
+    open.mockRestore();
+  });
+});
 
 describe('schede staccabili (#92)', () => {
   it('scheda chiesta dall\'URL', () => {

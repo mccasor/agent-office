@@ -380,6 +380,7 @@ export const it = {
   'popout.session': 'Apri {project} in una finestra',
   'popout.card': 'Apri la scheda in una finestra',
   'popout.terminal': 'Apri il terminale di {project}',
+  'popout.resume': 'Riprendi {project} nel terminale',
   'card.aria': 'Scheda di {name}',
   'card.close': 'Chiudi la scheda',
   'card.closeHint': 'Chiudi (Esc)',

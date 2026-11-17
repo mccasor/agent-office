@@ -356,6 +356,7 @@ export const es: Texts = {
   'popout.session': 'Abrir {project} en una ventana',
   'popout.card': 'Abrir la ficha en una ventana',
   'popout.terminal': 'Abrir el terminal de {project}',
+  'popout.resume': 'Reanudar {project} en el terminal',
   'card.aria': 'Ficha de {name}',
   'card.close': 'Cerrar la ficha',
   'card.closeHint': 'Cerrar (Esc)',

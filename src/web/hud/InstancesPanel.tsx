@@ -8,7 +8,7 @@ import {
   agentName, agentTask, alertShort, doneGroupLabel, projectName, SESSION_STATUS_LABEL, stateCounts, statusText, turnText,
 } from './labels';
 import { inApp } from './fit';
-import { openTerminalWindow } from './popout';
+import { canResume, openResumeWindow, openTerminalWindow } from './popout';
 import { AlertMark, ContextMeter, GitSection, PopOutButton, RoleChip, SessionAlert, StatusDot, TerminalButton } from './panels';
 import { useNow } from './useNow';
 import './hud.css';
@@ -106,6 +106,10 @@ export function InstanceBody({ session: s, boss, agents, selected, onSelect, onP
         {/* solo nell'app e per le istanze lanciate da lì (#120): nel browser non c'è nessun terminale da aprire */}
         {s.launched && inApp(location.search) && (
           <TerminalButton label={t('popout.terminal', { project: projectName(s) })} onClick={() => openTerminalWindow(s.id)} />
+        )}
+        {/* processo di sicuro terminato e non nel terminale dell'app (#121): l'app la riprende con `claude --resume` */}
+        {!s.launched && s.process === 'gone' && canResume(s.id) && inApp(location.search) && (
+          <TerminalButton label={t('popout.resume', { project: projectName(s) })} onClick={() => openResumeWindow(s.id)} />
         )}
         {onPopOut && <PopOutButton label={t('popout.session', { project: projectName(s) })} onClick={() => onPopOut(s.id)} />}
       </div>
