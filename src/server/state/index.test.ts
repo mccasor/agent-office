@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentState, AgentStatus, HookEvent, RepoState, TranscriptSession } from '../../shared/types.js';
 import { nicknameOf } from '../../shared/nickname.js';
+import { aggregate } from '../transcript/aggregate.js';
 import { branchIssue, buildSnapshot, DONE_LINGER_MS, ENTERING_MS, IDLE_MS, LOUNGE_WAIT_MS } from './index.js';
 
 const NOW = 1_000_000;
@@ -219,6 +220,23 @@ describe('buildSnapshot: sessioni', () => {
       now: NOW,
     });
     expect(snap.sessions.map((s) => [s.id, s.active])).toEqual(expected);
+  });
+
+  it('lanciata dall’app senza transcript (#119): stanza con il pallino grigio, poi al lavoro al primo prompt', () => {
+    const L = '33333333-3333-4333-8333-333333333333';
+    const transcript = aggregate([], new Map(), NOW, {
+      activeWindowMs: 600_000,
+      idleAfterMs: IDLE_MS,
+      doneGraceMs: 3_000,
+      onlyActive: true,
+      launched: [{ sessionId: L, pid: 4242, cwd: '/w/progetto', launchedAt: NOW - 1_000 }],
+    });
+    const snap = buildSnapshot({ transcript, hookEvents: [], processes: new Map(), now: NOW });
+    expect(snap.sessions).toEqual([expect.objectContaining({ id: L, active: true, dot: 'idle', project: 'progetto', waiting: false })]);
+    expect(snap.status).toBe('idle');
+    // il prompt arriva dall'hook prima che il transcript esista
+    const prompted = buildSnapshot({ transcript, hookEvents: [hook('UserPromptSubmit', NOW - 100, { sessionId: L, agentId: null })], now: NOW });
+    expect(prompted.sessions[0]).toMatchObject({ id: L, dot: 'working' });
   });
 });
 

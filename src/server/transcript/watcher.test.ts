@@ -316,6 +316,58 @@ describe('createTranscriptWatcher – sessioni in altre cartelle di projects (#2
   });
 });
 
+describe('createTranscriptWatcher – sessioni lanciate dall’app (#119)', () => {
+  const L = '33333333-3333-4333-8333-333333333333';
+  const SUB = `${CWD}/pacchetto`;
+  const entry = (cwd = SUB) => ({ sessionId: L, pid: 4242, cwd, launchedAt: clock - 500 });
+  const ids = (w: ReturnType<typeof createTranscriptWatcher>) => w.current().sessions.map((s) => s.id).sort();
+
+  it('senza transcript: subito nello snapshot se la cwd è nella cartella monitorata, non altrimenti', async () => {
+    let launched = [entry()];
+    const w = await startWatcher({ launched: () => launched });
+    expect(ids(w)).toEqual([SESSION, L].sort());
+    expect(w.current().sessions.find((s) => s.id === L)).toMatchObject({ status: 'idle', active: true, cwd: SUB });
+    launched = [entry('/altrove')];
+    expect(ids(w)).toEqual([SESSION]);
+    // voce rimossa e nessun transcript: sparita
+    launched = [];
+    expect(ids(w)).toEqual([SESSION]);
+  });
+
+  it('il transcript creato dopo (cartella codificata della sua cwd, anche senza righe cwd): stessa sessione, nessun duplicato', async () => {
+    const launched = [entry()];
+    const w = await startWatcher({ launched: () => launched });
+    const dir = join(home, 'projects', SUB.replace(/[^a-zA-Z0-9]/g, '-'));
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${L}.jsonl`), '{"type":"ai-title","aiTitle":"Lanciata"}\n');
+    await vi.waitFor(() => expect(w.current().sessions.find((s) => s.id === L)?.title).toBe('Lanciata'), { timeout: 5000, interval: 20 });
+    expect(ids(w)).toEqual([SESSION, L].sort());
+  });
+
+  it('cartella di projects diversa da quella codificata (path abbreviato): trovato per <sessionId>.jsonl', async () => {
+    const launched = [entry()];
+    const w = await startWatcher({ launched: () => launched });
+    const dir = join(home, 'projects', '-tmp-agent-office-fixture-pacc-abc123');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${L}.jsonl`), '{"type":"ai-title","aiTitle":"Lanciata"}\n');
+    // la ricerca in tutte le cartelle avviene con la rilettura completa (al più ogni minuto)
+    clock += 61_000;
+    await vi.waitFor(() => expect(w.current().sessions.find((s) => s.id === L)?.title).toBe('Lanciata'), { timeout: 5000, interval: 20 });
+    expect(ids(w)).toEqual([SESSION, L].sort());
+  });
+
+  it('modalità all: presente qualunque sia la cwd; poi il transcript la sostituisce', async () => {
+    const launched = [entry('/altrove/progetto')];
+    const w = await startWatcher({ cwd: '/qualunque', all: true, launched: () => launched });
+    expect(ids(w)).toEqual([SESSION, L].sort());
+    const dir = join(home, 'projects', '-altrove-progetto');
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, `${L}.jsonl`), '{"type":"ai-title","aiTitle":"Lanciata"}\n');
+    await vi.waitFor(() => expect(w.current().sessions.find((s) => s.id === L)?.title).toBe('Lanciata'), { timeout: 5000, interval: 20 });
+    expect(ids(w)).toEqual([SESSION, L].sort());
+  });
+});
+
 describe('createTranscriptWatcher – modalità all (menu bar)', () => {
   it('trova le sessioni attive di qualunque cartella, ignora i transcript vecchi', async () => {
     const other = join(home, 'projects', '-altro-progetto');

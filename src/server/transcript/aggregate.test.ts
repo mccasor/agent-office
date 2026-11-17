@@ -273,3 +273,44 @@ describe('Claude stesso e subagenti separati', () => {
     expect(by.get('a5')).not.toHaveProperty('outcome');
   });
 });
+
+describe('aggregate: sessioni lanciate dall’app (#119)', () => {
+  const L = '33333333-3333-4333-8333-333333333333';
+  const launched = { sessionId: L, pid: 4242, cwd: '/w/progetto', launchedAt: T - 2000 };
+
+  it('senza transcript: presente subito, attiva e in attesa del primo prompt (idle)', () => {
+    const snap = aggregate([], noMetas, T, { ...OPTS, launched: [launched] });
+    expect(snap.sessions).toEqual([
+      expect.objectContaining({
+        id: L,
+        title: null,
+        model: null,
+        cwd: '/w/progetto',
+        startedAt: T - 2000,
+        updatedAt: T - 2000,
+        active: true,
+        status: 'idle',
+        waiting: false,
+        tool: null,
+        issues: [],
+      }),
+    ]);
+    expect(snap.sessions[0]?.tokensUsed.total).toBe(0);
+  });
+
+  it('resta anche in modalità all (solo attive), pure se lanciata da più della finestra di attività', () => {
+    const old = { ...launched, launchedAt: T - 60 * 60_000 };
+    const snap = aggregate([], noMetas, T, { ...OPTS, onlyActive: true, launched: [old] });
+    expect(snap.sessions.map((s) => [s.id, s.active, s.status])).toEqual([[L, true, 'idle']]);
+  });
+
+  it('con il transcript: una sola sessione, quella del transcript', () => {
+    const snap = aggregate([session({ title: 'Primo prompt', cwd: '/w/progetto' }, T - 500, L)], noMetas, T, { ...OPTS, launched: [launched] });
+    expect(snap.sessions).toHaveLength(1);
+    expect(snap.sessions[0]).toMatchObject({ id: L, title: 'Primo prompt' });
+  });
+
+  it('voce rimossa e nessun transcript: sparita', () => {
+    expect(aggregate([], noMetas, T, { ...OPTS, launched: [] }).sessions).toEqual([]);
+  });
+});
