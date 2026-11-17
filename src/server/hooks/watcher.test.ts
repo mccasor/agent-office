@@ -1,10 +1,11 @@
 import { appendFile, mkdtemp, readFile, rm, truncate, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { EventEmitter } from 'node:events';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HookEvent, Watcher } from '../../shared/types.js';
 import { createAllHookEventsWatcher, createHookEventsWatcher, eventsFilePath } from './index.js';
-import { createEventsTail, INITIAL_TAIL_BYTES, MERGE_WINDOW_MS } from './watcher.js';
+import { createEventsTail, HOOK_RESYNC_MS, INITIAL_TAIL_BYTES, MERGE_WINDOW_MS } from './watcher.js';
 
 const ev = (i: number): HookEvent => ({
   event: 'PreToolUse',
@@ -187,6 +188,65 @@ describe('createHookEventsWatcher: file lungo', () => {
     } finally {
       await w.stop();
       await rm(dataDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resync periodico (#114): notifica di chokidar persa', () => {
+  let dataDir: string;
+
+  beforeEach(async () => {
+    dataDir = await mkdtemp(join(tmpdir(), 'agent-office-resync-'));
+    // chokidar finto: pronto subito, non notifica mai nulla (come FSEvents che perde gli eventi)
+    vi.doMock('chokidar', () => ({
+      watch: () => {
+        const em = new EventEmitter() as EventEmitter & { close(): Promise<void> };
+        em.close = async () => {};
+        setImmediate(() => em.emit('ready'));
+        return em;
+      },
+    }));
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    vi.doUnmock('chokidar');
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  it('createHookEventsWatcher: append senza evento -> letto entro HOOK_RESYNC_MS', async () => {
+    const w = createHookEventsWatcher({ cwd: '/proj', dataDir });
+    try {
+      await w.start();
+      await appendFile(eventsFilePath('/proj', { dataDir }), line(1));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(w.current()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(HOOK_RESYNC_MS);
+      await waitFor(() => w.current().length === 1);
+      expect(w.current()).toEqual([ev(1)]);
+    } finally {
+      await w.stop();
+    }
+  });
+
+  it('createAllHookEventsWatcher: append e file nuovo senza evento -> letti entro HOOK_RESYNC_MS', async () => {
+    const a = eventsFilePath('/a', { dataDir });
+    const b = eventsFilePath('/b', { dataDir });
+    await mkdir(dirname(a), { recursive: true });
+    await writeFile(a, line(1));
+    const w = createAllHookEventsWatcher({ dataDir, now: () => 0 });
+    try {
+      await w.start();
+      await appendFile(a, line(3));
+      await writeFile(b, line(2));
+      await new Promise((r) => setTimeout(r, 100));
+      expect(w.current()).toEqual([]);
+      await vi.advanceTimersByTimeAsync(HOOK_RESYNC_MS);
+      await waitFor(() => w.current().length === 3);
+      expect(w.current().map((e) => e.timestamp)).toEqual([1, 2, 3]);
+    } finally {
+      await w.stop();
     }
   });
 });
