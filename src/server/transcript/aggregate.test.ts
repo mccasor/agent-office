@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { estimateCost } from '../../shared/pricing.js';
 import { aggregate, pruneMetas, type AgentMeta, type AggregateFile, type AggregateOptions } from './aggregate.js';
 import { createAccumulator, type FileSummary } from './parser.js';
 
@@ -174,6 +175,32 @@ describe('aggregate', () => {
     const snap = aggregate([{ parsed: { kind: 'session', sessionId: S }, state: acc.state, mtime: T }], noMetas, T, OPTS);
     expect(JSON.stringify(snap)).not.toContain('segreto');
     expect(snap.sessions[0]?.issues).toEqual([5]);
+  });
+
+  it('costo per modello (#112): dopo un /model i token precedenti restano al prezzo del loro modello', () => {
+    const msg = (id: string, model: string, input: number, output: number) =>
+      JSON.stringify({ type: 'assistant', message: { id, model, content: [{ type: 'text', text: 'x' }], usage: { input_tokens: input, output_tokens: output } } });
+    const acc = createAccumulator();
+    acc.ingest(msg('m1', 'claude-opus-4-5', 1000, 2000));
+    acc.ingest(msg('m2', 'claude-haiku-4-5', 3000, 4000));
+    const expected = estimateCost('claude-opus-4-5', tokens(1000, 2000))! + estimateCost('claude-haiku-4-5', tokens(3000, 4000))!;
+    const sub = createAccumulator();
+    sub.ingest(msg('a', 'claude-opus-4-5', 10, 20));
+    sub.ingest(msg('b', 'claude-haiku-4-5', 30, 40));
+    const subExpected = estimateCost('claude-opus-4-5', tokens(10, 20))! + estimateCost('claude-haiku-4-5', tokens(30, 40))!;
+    const snap = aggregate(
+      [
+        { parsed: { kind: 'session', sessionId: S }, state: acc.state, mtime: T },
+        { parsed: { kind: 'agent', sessionId: S, agentId: 'a1' }, state: sub.state, mtime: T },
+      ],
+      noMetas,
+      T,
+      OPTS,
+    );
+    expect(snap.sessions[0]?.ownCost).toBeCloseTo(expected, 10);
+    expect(snap.agents[0]?.cost).toBeCloseTo(subExpected, 10);
+    expect(snap.sessions[0]?.cost).toBeCloseTo(expected + subExpected, 10);
+    expect(snap.sessions[0]?.ownTokens).toMatchObject(tokens(4000, 6000));
   });
 });
 

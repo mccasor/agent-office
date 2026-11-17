@@ -147,6 +147,25 @@ describe('createAccumulator', () => {
     expect(acc.state.finished).toBe(false);
   });
 
+  it('token per modello: dopo un /model ogni messaggio resta del suo modello (#112)', () => {
+    const acc = createAccumulator();
+    const msg = (id: string, model: string, usage: [number, number, number, number]) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { id, model, content: [{ type: 'text', text: 'x' }], usage: { input_tokens: usage[0], output_tokens: usage[1], cache_read_input_tokens: usage[2], cache_creation_input_tokens: usage[3] } },
+      });
+    acc.ingest(msg('m1', 'claude-opus-4-5', [2, 8, 100, 10]));
+    acc.ingest(msg('m1', 'claude-opus-4-5', [2, 300, 100, 10]));
+    acc.ingest(msg('m2', 'claude-haiku-4-5', [1, 5, 200, 20]));
+    expect(acc.state.model).toBe('claude-haiku-4-5');
+    expect(Object.fromEntries(acc.state.tokensByModel)).toEqual({
+      'claude-opus-4-5': { input: 2, output: 300, cacheRead: 100, cacheCreation: 10, cacheCreation1h: 0, total: 412 },
+      'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 200, cacheCreation: 20, cacheCreation1h: 0, total: 226 },
+    });
+    // i totali restano quelli di sempre
+    expect(acc.state.tokens).toEqual({ input: 3, output: 305, cacheRead: 300, cacheCreation: 30, cacheCreation1h: 0, total: 638 });
+  });
+
   it('le righe di metadati non cambiano lo stato di finished', () => {
     const acc = createAccumulator();
     acc.ingest(assistant('m1', [0, 0, 0, 0], [{ type: 'text', text: 'done' }]));
