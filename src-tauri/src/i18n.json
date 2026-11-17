@@ -48,6 +48,9 @@
     "resume.runningElsewhere": "Questa sessione è ancora aperta in un altro terminale. Riprenderla in due processi non è sicuro: vuoi aprirne una copia (fork) con un nuovo session id?",
     "resume.fork": "Apri una copia",
     "resume.cancel": "Annulla",
+    "roles.confirmDelete": "Eliminare il ruolo «{name}»? Il file viene cancellato.",
+    "roles.delete": "Elimina",
+    "roles.cancel": "Annulla",
     "notify.alertStale": "{name} è senza attività da {d}",
     "notify.alertLoop": "{name} ripete {tool} {n} volte di fila",
     "notify.min": "{m} min",
@@ -60,6 +63,9 @@
     "error.settingsOnly": "comando riservato alla finestra Impostazioni",
     "error.unknownAction": "azione sconosciuta: {action}",
     "error.launchOption": "valore non ammesso per la nuova istanza: {value}",
+    "error.roleName": "nome di ruolo non valido: {name}",
+    "error.roleMissing": "ruolo non trovato: {name}",
+    "error.roleTooLong": "testo del ruolo troppo lungo (al massimo {kb} KB)",
     "office.locked": "Impossibile modificare l'ufficio: gli agenti sono al lavoro"
   },
   "en": {
@@ -111,6 +117,9 @@
     "resume.runningElsewhere": "This session is still open in another terminal. Resuming it in two processes is not safe: open a copy (fork) with a new session id instead?",
     "resume.fork": "Open a Copy",
     "resume.cancel": "Cancel",
+    "roles.confirmDelete": "Delete the role “{name}”? Its file will be removed.",
+    "roles.delete": "Delete",
+    "roles.cancel": "Cancel",
     "notify.alertStale": "{name} has been idle for {d}",
     "notify.alertLoop": "{name} repeated {tool} {n} times in a row",
     "notify.min": "{m}m",
@@ -123,6 +132,9 @@
     "error.settingsOnly": "command reserved for the Settings window",
     "error.unknownAction": "unknown action: {action}",
     "error.launchOption": "value not allowed for the new instance: {value}",
+    "error.roleName": "invalid role name: {name}",
+    "error.roleMissing": "role not found: {name}",
+    "error.roleTooLong": "role text too long (at most {kb} KB)",
     "office.locked": "The office can't be changed: agents are at work"
   },
   "es": {
@@ -174,6 +186,9 @@
     "resume.runningElsewhere": "Esta sesión sigue abierta en otro terminal. Reanudarla en dos procesos no es seguro: ¿abrir una copia (fork) con un nuevo session id?",
     "resume.fork": "Abrir una copia",
     "resume.cancel": "Cancelar",
+    "roles.confirmDelete": "¿Eliminar el rol «{name}»? Se borrará su archivo.",
+    "roles.delete": "Eliminar",
+    "roles.cancel": "Cancelar",
     "notify.alertStale": "{name} lleva {d} sin actividad",
     "notify.alertLoop": "{name} repite {tool} {n} veces seguidas",
     "notify.min": "{m} min",
@@ -186,6 +201,9 @@
     "error.settingsOnly": "comando reservado a la ventana Ajustes",
     "error.unknownAction": "acción desconocida: {action}",
     "error.launchOption": "valor no permitido para la nueva instancia: {value}",
+    "error.roleName": "nombre de rol no válido: {name}",
+    "error.roleMissing": "rol no encontrado: {name}",
+    "error.roleTooLong": "texto del rol demasiado largo (como máximo {kb} KB)",
     "office.locked": "No se puede modificar la oficina: los agentes están trabajando"
   }
 }

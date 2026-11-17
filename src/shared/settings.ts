@@ -11,7 +11,7 @@ import { isLocale, resolveLocale, type Locale } from './i18n/index.js';
 import { DEFAULT_OFFICE_ROOMS, OFFICE_LIMITS, resolveOffice, ROOM_TYPES, ROOM_VARIANTS, HOBBY_ROOM_TYPES, type OfficeRoom } from './office.js';
 
 /** schede della finestra Impostazioni, nell'ordine della barra; i nomi sono i testi `tab.<id>` (src/shared/i18n) */
-export const SETTINGS_TABS = [{ id: 'general' }, { id: 'claude' }, { id: 'agents' }, { id: 'git' }, { id: 'instances' }, { id: 'office' }] as const;
+export const SETTINGS_TABS = [{ id: 'general' }, { id: 'claude' }, { id: 'agents' }, { id: 'git' }, { id: 'instances' }, { id: 'office' }, { id: 'roles' }] as const;
 
 export type SettingsTab = (typeof SETTINGS_TABS)[number]['id'];
 
@@ -23,7 +23,7 @@ export const SETTING_PLACES: readonly SettingPlace[] = ['office', 'instances', '
 /** Voce del catalogo: il nome è il testo `setting.<key>` (src/shared/i18n), i posti i testi `place.<posto>`. */
 export interface SettingItem {
   key: string;
-  tab: Exclude<SettingsTab, 'general' | 'office'>;
+  tab: Exclude<SettingsTab, 'general' | 'office' | 'roles'>;
   /** dove si vede: l'interruttore lo dice sotto l'etichetta */
   places: readonly SettingPlace[];
   default: boolean;

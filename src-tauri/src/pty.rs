@@ -24,6 +24,9 @@
 //! "Riprendi" (#121, resume.rs): `claude --resume <id>` nella cartella della sessione, finestra e registro con lo
 //! stesso session id; se la sessione è ancora aperta altrove, su conferma una copia (`--fork-session`) con un session
 //! id nuovo passato con `--session-id`.
+//!
+//! Ruolo (#122, roles.rs): facoltativo, scelto per nome tra i file di `~/.agent-office/roles`; si passa con
+//! `--append-system-prompt-file <file>` e si ricorda per session id, così "Riprendi" lo ripassa.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -294,6 +297,8 @@ pub struct Terminals(Mutex<HashMap<String, Entry>>);
 pub struct LaunchOptions {
     pub model: Option<String>,
     pub permission_mode: Option<String>,
+    /// nome di un ruolo (roles.rs), non il suo testo né un percorso
+    pub role: Option<String>,
 }
 
 /// `value` se è nell'elenco `list`; vuoto o assente → None. Mai testo libero verso la CLI. Pura.
@@ -306,8 +311,9 @@ fn allowed(value: Option<&str>, list: &[&str]) -> Result<Option<String>, String>
 }
 
 impl LaunchOptions {
-    /// Opzioni dal pannello: `{"model": "sonnet" | null, "permissionMode": "plan" | null}` (assente o vuoto →
-    /// default), validate contro gli elenchi. Pura.
+    /// Opzioni dal pannello: `{"model": "sonnet" | null, "permissionMode": "plan" | null, "role": "<nome>" | null}`
+    /// (assente o vuoto → default), validate contro gli elenchi; del ruolo qui si controlla il nome, che il file ci sia
+    /// lo vede `launch`. Pura.
     pub fn parse(arg: Option<&str>) -> Result<LaunchOptions, String> {
         let value: Value = match arg {
             Some(text) => serde_json::from_str(text).map_err(|e| e.to_string())?,
@@ -316,13 +322,25 @@ impl LaunchOptions {
         Ok(LaunchOptions {
             model: allowed(value["model"].as_str(), MODELS)?,
             permission_mode: allowed(value["permissionMode"].as_str(), PERMISSION_MODES)?,
+            role: match value["role"].as_str().filter(|r| !r.is_empty()) {
+                None => None,
+                Some(r) if crate::roles::valid_name(r) => Some(r.to_string()),
+                Some(r) => return Err(tf("error.launchOption", &[("value", r)])),
+            },
         })
     }
 }
 
-/// Argomenti di `claude` per l'istanza `session_id` con `options`, rivalidate qui: nessun altro valore arriva alla
-/// CLI. Pura.
-pub fn claude_args(session_id: &str, options: &LaunchOptions) -> Result<Vec<String>, String> {
+/// `--append-system-prompt-file <file>` del ruolo (un file assoluto, già risolto da roles::file), se c'è. Pura.
+fn role_args(role_file: Option<&Path>) -> Result<Vec<String>, String> {
+    let Some(file) = role_file else { return Ok(vec![]) };
+    let file = file.to_str().filter(|_| file.is_absolute()).ok_or_else(|| tf("error.launchOption", &[("value", &file.to_string_lossy())]))?;
+    Ok(vec!["--append-system-prompt-file".to_string(), file.to_string()])
+}
+
+/// Argomenti di `claude` per l'istanza `session_id` con `options` (rivalidate qui: nessun altro valore arriva alla
+/// CLI) e il file del ruolo, se c'è. Pura.
+pub fn claude_args(session_id: &str, options: &LaunchOptions, role_file: Option<&Path>) -> Result<Vec<String>, String> {
     if !is_uuid(session_id) {
         return Err(tf("error.launchOption", &[("value", session_id)]));
     }
@@ -333,13 +351,15 @@ pub fn claude_args(session_id: &str, options: &LaunchOptions) -> Result<Vec<Stri
     if let Some(mode) = allowed(options.permission_mode.as_deref(), PERMISSION_MODES)? {
         args.extend(["--permission-mode".to_string(), mode]);
     }
+    args.extend(role_args(role_file)?);
     Ok(args)
 }
 
 /// Argomenti di `claude` per riprendere la sessione `session_id` (#121): `--resume <id>`; con `fork` (session id
 /// nuovo, per la sessione ancora aperta altrove) anche `--fork-session --session-id <fork>`, così il session id della
-/// copia è noto prima dell'avvio (finestra, registro). Modello e permessi restano i default della CLI. Pura.
-pub fn resume_args(session_id: &str, fork: Option<&str>) -> Result<Vec<String>, String> {
+/// copia è noto prima dell'avvio (finestra, registro). Modello e permessi restano i default della CLI; il ruolo
+/// ricordato per la sessione (#122) si ripassa, se il suo file c'è ancora. Pura.
+pub fn resume_args(session_id: &str, fork: Option<&str>, role_file: Option<&Path>) -> Result<Vec<String>, String> {
     if let Some(bad) = std::iter::once(session_id).chain(fork).find(|id| !is_uuid(id)) {
         return Err(tf("error.launchOption", &[("value", bad)]));
     }
@@ -347,6 +367,7 @@ pub fn resume_args(session_id: &str, fork: Option<&str>) -> Result<Vec<String>, 
     if let Some(fork) = fork {
         args.extend(["--fork-session".to_string(), "--session-id".to_string(), fork.to_string()]);
     }
+    args.extend(role_args(role_file)?);
     Ok(args)
 }
 
@@ -374,10 +395,15 @@ fn only_terminal(window: &WebviewWindow) -> Result<(), String> {
     }
 }
 
-/// Nuova istanza: `claude` con un session id nuovo e `options` in `cwd`, nella sua finestra. Ritorna il session id.
+/// Nuova istanza: `claude` con un session id nuovo e `options` in `cwd`, nella sua finestra. Il ruolo scelto deve
+/// essere uno dei file presenti; si ricorda per la sessione. Ritorna il session id.
 pub fn launch(app: &AppHandle, cwd: PathBuf, options: &LaunchOptions) -> Result<String, String> {
     let session_id = new_session_id();
-    open(app, cwd, &session_id, claude_args(&session_id, options)?)?;
+    let role_file = options.role.as_deref().map(crate::roles::file).transpose()?;
+    open(app, cwd, &session_id, claude_args(&session_id, options, role_file.as_deref())?)?;
+    if let Some(role) = &options.role {
+        crate::roles::remember(&session_id, role);
+    }
     Ok(session_id)
 }
 
@@ -385,10 +411,14 @@ pub fn launch(app: &AppHandle, cwd: PathBuf, options: &LaunchOptions) -> Result<
 /// nuovo (finestra e registro sono di quella). Ritorna il session id dell'istanza.
 pub fn resume(app: &AppHandle, cwd: PathBuf, session_id: &str, fork: bool) -> Result<String, String> {
     let fork_id = fork.then(new_session_id);
-    let args = resume_args(session_id, fork_id.as_deref())?;
-    let id = fork_id.unwrap_or_else(|| session_id.to_string());
-    open(app, cwd, &id, args)?;
-    Ok(id)
+    let role = crate::roles::recall(session_id);
+    let args = resume_args(session_id, fork_id.as_deref(), role.as_ref().map(|(_, file)| file.as_path()))?;
+    open(app, cwd, &fork_id.clone().unwrap_or_else(|| session_id.to_string()), args)?;
+    // la copia ha lo stesso ruolo, ricordato col suo session id
+    if let (Some(fork_id), Some((role, _))) = (&fork_id, &role) {
+        crate::roles::remember(fork_id, role);
+    }
+    Ok(fork_id.unwrap_or_else(|| session_id.to_string()))
 }
 
 /// Apre la finestra dell'istanza `session_id` con `claude` e gli argomenti `args` (già validati) in `cwd`, o la
@@ -429,7 +459,7 @@ pub fn open_from_env(app: &AppHandle) {
     let Some(dir) = std::env::var_os("AGENT_OFFICE_TERMINAL").map(PathBuf::from) else { return };
     let cwd = if dir.is_dir() { dir } else { crate::system::home().unwrap_or_else(|| PathBuf::from("/")) };
     let session_id = std::env::var("AGENT_OFFICE_TERMINAL_SESSION").ok().filter(|s| is_uuid(s)).unwrap_or_else(new_session_id);
-    if let Ok(args) = claude_args(&session_id, &LaunchOptions::default()) {
+    if let Ok(args) = claude_args(&session_id, &LaunchOptions::default(), None) {
         let _ = open(app, cwd, &session_id, args);
     }
 }
@@ -749,40 +779,40 @@ mod tests {
     const ID: &str = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
     fn options(model: Option<&str>, mode: Option<&str>) -> LaunchOptions {
-        LaunchOptions { model: model.map(Into::into), permission_mode: mode.map(Into::into) }
+        LaunchOptions { model: model.map(Into::into), permission_mode: mode.map(Into::into), role: None }
     }
 
     #[test]
     fn argomenti_di_claude() {
-        assert_eq!(claude_args(ID, &LaunchOptions::default()).unwrap(), ["--session-id", ID]);
-        assert_eq!(claude_args(ID, &options(Some("sonnet"), None)).unwrap(), ["--session-id", ID, "--model", "sonnet"]);
+        assert_eq!(claude_args(ID, &LaunchOptions::default(), None).unwrap(), ["--session-id", ID]);
+        assert_eq!(claude_args(ID, &options(Some("sonnet"), None), None).unwrap(), ["--session-id", ID, "--model", "sonnet"]);
         assert_eq!(
-            claude_args(ID, &options(Some("opus"), Some("plan"))).unwrap(),
+            claude_args(ID, &options(Some("opus"), Some("plan")), None).unwrap(),
             ["--session-id", ID, "--model", "opus", "--permission-mode", "plan"]
         );
         // vuoto = default della CLI, flag omesso
-        assert_eq!(claude_args(ID, &options(Some(""), Some(""))).unwrap(), ["--session-id", ID]);
+        assert_eq!(claude_args(ID, &options(Some(""), Some("")), None).unwrap(), ["--session-id", ID]);
     }
 
     #[test]
     fn argomenti_rifiutati() {
-        assert!(claude_args("non-uuid", &LaunchOptions::default()).is_err());
-        assert!(claude_args(ID, &options(Some("sonnet --dangerously-skip-permissions"), None)).is_err());
-        assert!(claude_args(ID, &options(Some("gpt-4"), None)).is_err());
-        assert!(claude_args(ID, &options(None, Some("yolo"))).is_err());
-        assert!(claude_args(ID, &options(None, Some("PLAN"))).is_err());
+        assert!(claude_args("non-uuid", &LaunchOptions::default(), None).is_err());
+        assert!(claude_args(ID, &options(Some("sonnet --dangerously-skip-permissions"), None), None).is_err());
+        assert!(claude_args(ID, &options(Some("gpt-4"), None), None).is_err());
+        assert!(claude_args(ID, &options(None, Some("yolo")), None).is_err());
+        assert!(claude_args(ID, &options(None, Some("PLAN")), None).is_err());
     }
 
     #[test]
     fn argomenti_per_riprendere() {
         const FORK: &str = "6ba7b810-9dad-41d1-80b4-00c04fd430c8";
-        assert_eq!(resume_args(ID, None).unwrap(), ["--resume", ID]);
-        assert_eq!(resume_args(ID, Some(FORK)).unwrap(), ["--resume", ID, "--fork-session", "--session-id", FORK]);
+        assert_eq!(resume_args(ID, None, None).unwrap(), ["--resume", ID]);
+        assert_eq!(resume_args(ID, Some(FORK), None).unwrap(), ["--resume", ID, "--fork-session", "--session-id", FORK]);
         // solo uuid, mai testo libero
-        assert!(resume_args("non-uuid", None).is_err());
-        assert!(resume_args(&format!("{ID} --dangerously-skip-permissions"), None).is_err());
-        assert!(resume_args(ID, Some("--help")).is_err());
-        assert!(resume_args(ID, Some("")).is_err());
+        assert!(resume_args("non-uuid", None, None).is_err());
+        assert!(resume_args(&format!("{ID} --dangerously-skip-permissions"), None, None).is_err());
+        assert!(resume_args(ID, Some("--help"), None).is_err());
+        assert!(resume_args(ID, Some(""), None).is_err());
     }
 
     #[test]
@@ -796,6 +826,33 @@ mod tests {
         assert!(LaunchOptions::parse(Some(r#"{"model":"--help"}"#)).is_err());
         assert!(LaunchOptions::parse(Some(r#"{"permissionMode":"bypass"}"#)).is_err());
         assert!(LaunchOptions::parse(Some("non json")).is_err());
+        // ruolo (#122): solo un nome valido, mai un percorso
+        assert_eq!(LaunchOptions::parse(Some(r#"{"role":"Tech Lead"}"#)).unwrap().role.as_deref(), Some("Tech Lead"));
+        assert_eq!(LaunchOptions::parse(Some(r#"{"role":""}"#)).unwrap().role, None);
+        for bad in [r#"{"role":"../x"}"#, r#"{"role":"/etc/passwd"}"#, r#"{"role":".nascosto"}"#, r#"{"role":"a/b"}"#] {
+            assert!(LaunchOptions::parse(Some(bad)).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn argomenti_con_il_ruolo() {
+        const FORK: &str = "6ba7b810-9dad-41d1-80b4-00c04fd430c8";
+        let file = Path::new("/home/a/.agent-office/roles/Tech Lead.md");
+        let flag = ["--append-system-prompt-file", "/home/a/.agent-office/roles/Tech Lead.md"];
+        assert_eq!(claude_args(ID, &LaunchOptions::default(), Some(file)).unwrap(), [&["--session-id", ID][..], &flag].concat());
+        assert_eq!(
+            claude_args(ID, &options(Some("opus"), None), Some(file)).unwrap(),
+            [&["--session-id", ID, "--model", "opus"][..], &flag].concat()
+        );
+        // resume col ruolo ricordato, anche per la copia
+        assert_eq!(resume_args(ID, None, Some(file)).unwrap(), [&["--resume", ID][..], &flag].concat());
+        assert_eq!(
+            resume_args(ID, Some(FORK), Some(file)).unwrap(),
+            [&["--resume", ID, "--fork-session", "--session-id", FORK][..], &flag].concat()
+        );
+        // solo percorsi assoluti
+        assert!(claude_args(ID, &LaunchOptions::default(), Some(Path::new("roles/x.md"))).is_err());
+        assert!(resume_args(ID, None, Some(Path::new("x.md"))).is_err());
     }
 
     #[test]

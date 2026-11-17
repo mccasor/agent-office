@@ -108,6 +108,16 @@
     .button--primary { background: var(--accent); border-color: transparent; color: #fff; }
     select { padding: 2px 6px; border-radius: 6px; border: 1px solid var(--button-border); background: var(--button); }
 
+    /* ruoli (#122): nome e testo si scrivono, quindi si selezionano */
+    .field {
+      font: inherit; color: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--button-border);
+      background: var(--button); user-select: text; -webkit-user-select: text; cursor: text;
+    }
+    .field:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    input.field { width: 220px; }
+    .row--editor { padding: 8px 12px; }
+    textarea.field { width: 100%; height: 180px; resize: vertical; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
     .notice { margin: 0 2px; font-size: 12px; color: var(--muted); }
     .notice--error { color: var(--danger); }
     .notice--warn { color: var(--warn); }
@@ -153,9 +163,10 @@
       git: '<circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7.5v9M18 10c0 4-6 3.5-11 7"/>',
       instances: '<rect x="3.5" y="4.5" width="17" height="6" rx="1.5"/><rect x="3.5" y="13.5" width="17" height="6" rx="1.5"/><path d="M7 7.5h6M7 16.5h6"/>',
       office: '<rect x="4.5" y="3.5" width="15" height="17" rx="1.5"/><path d="M8.5 7.5h2M13.5 7.5h2M8.5 11.5h2M13.5 11.5h2M10.5 20.5v-4h3v4"/>',
+      roles: '<rect x="3.5" y="5" width="17" height="14" rx="2"/><circle cx="9" cy="11" r="2.2"/><path d="M5.8 16.5a3.4 3.4 0 0 1 6.4 0M14 10h3.5M14 13.5h3.5"/>',
     };
     /** colore del quadrato dell'icona di ogni sezione, come nelle Impostazioni di Sistema */
-    const ICON_COLORS = { general: '#8e8e93', claude: '#d97757', agents: '#007aff', git: '#f05133', instances: '#34c759', office: '#5856d6' };
+    const ICON_COLORS = { general: '#8e8e93', claude: '#d97757', agents: '#007aff', git: '#f05133', instances: '#34c759', office: '#5856d6', roles: '#ff9500' };
     const icon = (name) =>
       `<span class="tab__icon" style="background:${ICON_COLORS[name] ?? '#8e8e93'}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg></span>`;
     const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -338,6 +349,69 @@
       if (validRooms(rooms)) save('office.rooms', rooms);
     }
 
+    // ruoli delle istanze (#122): nomi da settings_state.roles; il testo passa solo per settings_role (lettura e
+    // salvataggio), mai altrove. Stesse regole del nome di roles.rs, che le ricontrolla.
+    const ROLE_NAME = /^[A-Za-z0-9][A-Za-z0-9 _.-]{0,63}$/;
+    const validRoleName = (name) => ROLE_NAME.test(name) && !name.includes('..');
+    /** ruolo aperto nell'editor: { name, text, isNew }, aggiornato a ogni tasto (evento input) */
+    let roleEditor = null;
+    const roleNames = () => (Array.isArray(state.roles) ? state.roles : []);
+
+    function roles() {
+      const names = roleNames();
+      const list = names.length
+        ? names.map((n) => row(esc(n), '', `<span class="row__actions"><button class="button" data-role="edit" data-name="${esc(n)}">${esc(T('settings.roleEdit'))}</button><button class="button" data-role="delete" data-name="${esc(n)}">${esc(T('settings.roleDelete'))}</button></span>`))
+        : [row(`<span class="row__sub">${esc(T('settings.rolesEmpty'))}</span>`, '', '')];
+      list.push(row('', '', `<button class="button" data-role="new" ${roleEditor ? 'disabled' : ''}>${esc(T('settings.roleNew'))}</button>`));
+      let editor = '';
+      if (roleEditor) {
+        const e = roleEditor;
+        const title = e.isNew ? T('settings.roleNewTitle') : T('settings.roleEditTitle', { name: e.name });
+        const name = e.isNew
+          ? row(esc(T('settings.roleName')), esc(T('settings.roleNameHint')), `<input class="field" data-role-field="name" maxlength="64" spellcheck="false" aria-label="${esc(T('settings.roleName'))}" value="${esc(e.name)}">`)
+          : '';
+        // a capo dopo <textarea>: il parser ne toglie uno, così un a capo iniziale del testo resta
+        const text = `<div class="row row--editor"><textarea class="field" data-role-field="text" spellcheck="false" aria-label="${esc(T('settings.roleText'))}" placeholder="${esc(T('settings.rolePlaceholder'))}">\n${esc(e.text)}</textarea></div>`;
+        const buttons = row('', '', `<span class="row__actions"><button class="button" data-role="cancel">${esc(T('settings.roleCancel'))}</button><button class="button button--primary" data-role="save">${esc(T('settings.roleSave'))}</button></span>`);
+        editor = group(esc(title), [name, text, buttons]);
+      }
+      return group(esc(T('settings.roles')), list, esc(T('settings.rolesNote'))) + editor;
+    }
+
+    /** Azioni sui ruoli: l'eliminazione la conferma l'app con un dialog nativo, poi fa rileggere la pagina. */
+    async function editRole(action, name) {
+      saveError = null;
+      if (action === 'new') roleEditor = { name: '', text: '', isNew: true };
+      else if (action === 'cancel') roleEditor = null;
+      else if (action === 'edit') {
+        try {
+          roleEditor = { name, text: await invoke('settings_role', { action: 'read', name, text: null }), isNew: false };
+        } catch (e) {
+          saveError = String(e);
+        }
+      } else if (action === 'delete') {
+        invoke('settings_role', { action: 'delete', name, text: null }).catch((e) => {
+          saveError = String(e);
+          render();
+        });
+        return;
+      } else if (action === 'save' && roleEditor) {
+        const role = { ...roleEditor, name: roleEditor.name.trim() };
+        if (!validRoleName(role.name)) saveError = T('settings.roleError', { e: T('settings.roleNameHint') });
+        else if (role.isNew && roleNames().some((n) => n.toLowerCase() === role.name.toLowerCase())) saveError = T('settings.roleError', { e: T('settings.roleExists') });
+        else {
+          try {
+            await invoke('settings_role', { action: 'save', name: role.name, text: role.text });
+            roleEditor = null;
+          } catch (e) {
+            saveError = T('settings.roleError', { e });
+          }
+          return refresh();
+        }
+      }
+      render();
+    }
+
     function render() {
       if (!state) return;
       const current = CATALOG.tabs.find((t) => t.id === tab);
@@ -349,7 +423,7 @@
         <main class="pane" role="tabpanel" aria-label="${esc(title)}">
           <h1 class="pane__title">${esc(title)}</h1>
           <div class="content">
-            ${tab === 'general' ? general() : tab === 'office' ? office() : items(tab)}
+            ${tab === 'general' ? general() : tab === 'office' ? office() : tab === 'roles' ? roles() : items(tab)}
             ${notice ? `<p class="notice${saveError ? ' notice--error' : ''}" role="status">${esc(notice)}</p>` : ''}
           </div>
         </main>`;
@@ -360,9 +434,18 @@
       // stessa sezione: si resta allo stesso punto dello scorrimento
       const scroll = app.querySelector('.pane')?.scrollTop ?? 0;
       const sameTab = app.dataset.tab === tab;
+      // un campo del ruolo in scrittura resta col cursore dov'era (il testo è già in roleEditor)
+      const field = document.activeElement?.dataset?.roleField;
+      const caret = field ? [document.activeElement.selectionStart, document.activeElement.selectionEnd, document.activeElement.scrollTop] : null;
       app.innerHTML = html;
       app.dataset.tab = tab;
       if (sameTab) app.querySelector('.pane').scrollTop = scroll;
+      const again = field && app.querySelector(`[data-role-field="${field}"]`);
+      if (again) {
+        again.focus();
+        again.setSelectionRange(caret[0], caret[1]);
+        again.scrollTop = caret[2];
+      }
       // dimensione fissa: quanto serve a Generali (o alla barra laterale) senza scorrere, uguale per ogni sezione;
       // Generali si misura in una copia nascosta, tolta subito
       const measure = document.createElement('div');
@@ -381,6 +464,8 @@
     async function refresh() {
       try {
         state = await invoke('settings_state');
+        // ruolo eliminato mentre era aperto: l'editor si chiude
+        if (roleEditor && !roleEditor.isNew && !roleNames().includes(roleEditor.name)) roleEditor = null;
         if (state.locale !== T.locale) {
           T = agentOfficeTexts(state.locale);
           document.documentElement.lang = T.locale;
@@ -418,9 +503,12 @@
     }
 
     document.addEventListener('click', (e) => {
-      const el = e.target.closest('[data-tab], [data-key], [data-action], [data-office]');
+      const el = e.target.closest('[data-tab], [data-key], [data-action], [data-office], [data-role]');
       if (!el || el.disabled || el.tagName === 'SELECT') return;
-      if (el.dataset.office) editOffice(el.dataset.office, Number(el.dataset.index));
+      // un clic su un pulsante non toglie il fuoco al campo del ruolo (WebKit): qui sì, il cursore non ci torna dopo
+      if (document.activeElement?.dataset?.roleField) document.activeElement.blur();
+      if (el.dataset.role) editRole(el.dataset.role, el.dataset.name);
+      else if (el.dataset.office) editOffice(el.dataset.office, Number(el.dataset.index));
       else if (el.dataset.tab) selectTab(el.dataset.tab);
       else if (el.dataset.key) save(el.dataset.key, el.getAttribute('aria-checked') !== 'true');
       else invoke('settings_action', { action: el.dataset.action }).then(refresh, refresh);
@@ -437,6 +525,10 @@
         e.target.blur();
         save(key, e.target.value);
       }
+    });
+    document.addEventListener('input', (e) => {
+      const field = e.target.dataset?.roleField;
+      if (field && roleEditor) roleEditor[field] = e.target.value;
     });
     document.addEventListener('keydown', (e) => {
       // ⌘W chiude (l'app non ha la barra dei menu che lo farebbe); ⌘1…⌘6 cambiano scheda

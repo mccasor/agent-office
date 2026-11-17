@@ -84,7 +84,7 @@ export const PAGE_PREFIXES = [
   'setting.', 'splash.', 'office.', 'terminal.',
 ] as const;
 /** Testi usati dall'app della menu bar in Rust (icona, notifiche, aggiornamenti, hook, server, errori dei comandi). */
-export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.', 'error.', 'office.locked', 'terminal.', 'resume.'] as const;
+export const APP_PREFIXES = ['tray.', 'notify.', 'update.', 'hooks.', 'server.', 'window.', 'error.', 'office.locked', 'terminal.', 'resume.', 'roles.'] as const;
 
 /** Testi delle chiavi con uno dei prefissi, per lingua. Pura. */
 export function pick(prefixes: readonly string[]): Record<Locale, Record<string, string>> {

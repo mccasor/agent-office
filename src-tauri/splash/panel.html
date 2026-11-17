@@ -194,7 +194,7 @@
 
     let state = null;
     /** "Nuova istanza" (#119): sezione aperta e scelte fatte (sopravvivono ai ridisegni) */
-    const launch = { open: false, model: '', permissionMode: '' };
+    const launch = { open: false, model: '', permissionMode: '', role: '' };
     /** ultimo contenuto mostrato: se non cambia, niente DOM da rifare né ridimensionamento */
     let shown = '';
 
@@ -244,11 +244,12 @@
       html += `<button class="row" data-action="new-toggle" aria-expanded="${launch.open}">${icon('plus')}<span class="row__label">${T('panel.newInstance')}</span></button>`;
       if (launch.open) {
         // solo i valori che l'app accetta (panel_state.launch); vuoto = default della CLI, flag omesso
-        const select = (key, label, values) => `<label><span>${T(label)}</span><select data-launch="${key}">
-          <option value="">${T('panel.newDefault')}</option>
+        const select = (key, label, values, none = 'panel.newDefault') => `<label><span>${T(label)}</span><select data-launch="${key}">
+          <option value="">${T(none)}</option>
           ${(values || []).map((v) => `<option value="${esc(v)}"${launch[key] === v ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>`;
         html += `<div class="launch">${select('model', 'panel.newModel', state.launch?.models)}
           ${select('permissionMode', 'panel.newPermissions', state.launch?.permissionModes)}
+          ${select('role', 'panel.newRole', state.launch?.roles, 'panel.newRoleNone')}
           <button class="launch__start" data-action="new-instance">${T('panel.newStart')}</button></div>`;
       }
       if (state.notice) html += `<div class="notice">${esc(state.notice)}</div>`;
@@ -314,7 +315,8 @@
       }
       let arg = el.dataset.arg || null;
       if (el.dataset.action === 'new-instance') {
-        arg = JSON.stringify({ model: launch.model || null, permissionMode: launch.permissionMode || null });
+        // ruolo (#122): solo il nome di uno dei ruoli dell'app; il file lo risolve Rust
+        arg = JSON.stringify({ model: launch.model || null, permissionMode: launch.permissionMode || null, role: state.launch?.roles?.includes(launch.role) ? launch.role : null });
         launch.open = false;
       }
       invoke('panel_action', { action: el.dataset.action, arg }).then(refresh);
