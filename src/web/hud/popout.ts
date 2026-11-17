@@ -71,6 +71,24 @@ export function openTerminalWindow(sessionId: string): void {
   window.open(terminalUrl(sessionId));
 }
 
+/** id di sessione che l'app sa riprendere (`claude --resume`): un uuid in minuscolo, come i nomi dei transcript */
+const SESSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** La sessione si può riprendere nel terminale dell'app (#121)? Solo gli id uuid. Pura. */
+export const canResume = (sessionId: string): boolean => SESSION_UUID.test(sessionId);
+
+/**
+ * Riprende una sessione nel terminale integrato (#121): la pagina chiede l'URL e l'app, che intercetta `window.open`,
+ * trova la cartella dal transcript e, se il processo della sessione è ancora vivo, propone `--fork-session`.
+ */
+export function resumeUrl(sessionId: string, origin = globalThis.location.origin): string {
+  return `${origin}/?resume=${encodeURIComponent(sessionId)}`;
+}
+
+export function openResumeWindow(sessionId: string): void {
+  window.open(resumeUrl(sessionId));
+}
+
 /** Apre (o porta in primo piano) la finestra della scheda; nell'app della menu bar la crea Tauri. L'altezza è una
  *  stima: la pagina della scheda si porta poi a misura del contenuto (fit.ts). Con `tab` la finestra di un'istanza
  *  si apre su quella scheda (#109). */

@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HistoryReport, SessionState } from '../../shared/types';
-import { toView } from '../store';
+import { toView, useOfficeStore } from '../store';
 import { eventDuration, eventLabel } from './historyLabels';
 import { finishedAsAgent, HistoryReportView, HistoryView } from './HistoryView';
 import { ListView } from './ListView';
@@ -79,6 +79,40 @@ describe('HistoryView', () => {
 
     render(<HistoryView load={() => Promise.reject(new Error('no'))} />);
     expect(await screen.findByText('Storico non disponibile')).toBeTruthy();
+  });
+});
+
+describe('HistoryReportView: riprendi nel terminale (#121)', () => {
+  const ID = '33333333-3333-4333-8333-333333333333';
+  const closed = (sessionId: string): HistoryReport['events'][number] => ({ at: at(11, 0), kind: 'session-close', sessionId, project: 'agent-office' });
+  const resume = () => screen.queryByRole('button', { name: /Riprendi/ });
+  const go = (search: string) => window.history.replaceState(null, '', `/${search}`);
+  afterEach(() => {
+    go('');
+    useOfficeStore.setState({ snapshot: null });
+    vi.restoreAllMocks();
+  });
+
+  it('nell’app, istanza chiusa con id uuid: il clic chiede all’app di riprenderla', () => {
+    go('?view=history&app=1');
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<HistoryReportView report={report({ events: [closed(ID)] })} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Riprendi agent-office nel terminale' }));
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/?resume=${ID}`);
+  });
+
+  it('nessun pulsante nel browser, per id non uuid, per eventi che non chiudono un’istanza o per chi è già nel terminale dell’app', () => {
+    go('?view=history');
+    const { unmount } = render(<HistoryReportView report={report({ events: [closed(ID)] })} />);
+    expect(resume()).toBeNull();
+    unmount();
+    go('?app=1');
+    const again = render(<HistoryReportView report={report({ events: [closed('s1'), { ...closed(ID), kind: 'session-open' }] })} />);
+    expect(resume()).toBeNull();
+    again.unmount();
+    useOfficeStore.setState({ snapshot: { status: 'idle', sessions: [{ id: ID, launched: true } as SessionState], agents: [], generatedAt: 0 } });
+    render(<HistoryReportView report={report({ events: [closed(ID)] })} />);
+    expect(resume()).toBeNull();
   });
 });
 

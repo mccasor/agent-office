@@ -200,3 +200,38 @@ describe('InstancesPanel: apri il terminale (#120)', () => {
     expect(terminal()).toBeNull();
   });
 });
+
+describe('InstancesPanel: riprendi nel terminale (#121)', () => {
+  const L = '33333333-3333-4333-8333-333333333333';
+  const resume = () => screen.queryByRole('button', { name: /Riprendi/ });
+  const at = (search: string) => window.history.replaceState(null, '', `/${search}`);
+  afterEach(() => {
+    at('');
+    vi.restoreAllMocks();
+  });
+
+  it('nell’app, processo terminato e non lanciata dall’app: il clic chiede all’app di riprenderla', () => {
+    at('?view=pixel&app=1');
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<InstancesPanel sessions={[session({ id: L, process: 'gone' })]} agents={[]} bosses={[]} onSelect={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Riprendi agent-office nel terminale' }));
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/?resume=${L}`);
+  });
+
+  it('nessun pulsante nel browser, con il processo vivo o sconosciuto, per le lanciate dall’app o gli id non uuid', () => {
+    const cases: [string, Partial<SessionState>][] = [
+      ['?view=pixel', { id: L, process: 'gone' }],
+      ['?app=1', { id: L, process: 'alive' }],
+      ['?app=1', { id: L, process: 'unknown' }],
+      ['?app=1', { id: L }],
+      ['?app=1', { id: L, process: 'gone', launched: true }],
+      ['?app=1', { id: 's1', process: 'gone' }],
+    ];
+    for (const [search, over] of cases) {
+      at(search);
+      const { unmount } = render(<InstancesPanel sessions={[session(over)]} agents={[]} bosses={[]} onSelect={() => {}} />);
+      expect(resume()).toBeNull();
+      unmount();
+    }
+  });
+});
