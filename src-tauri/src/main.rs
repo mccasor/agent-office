@@ -889,4 +889,50 @@ mod tests {
         assert_eq!(truncate("abc", 5), "abc");
         assert_eq!(truncate("abcdefgh", 5), "abcd…");
     }
+
+    /// Capability (#117): ogni finestra locale ha solo i suoi comandi; nessuna vale per origini remote (il server
+    /// Node nell'ufficio, le schede) né nomina l'ufficio o le schede.
+    #[test]
+    fn capability_per_finestra_senza_remote() {
+        let caps = [
+            (panel::PANEL_ID, "panel_", include_str!("../capabilities/panel.json")),
+            (settings::SETTINGS_ID, "settings_", include_str!("../capabilities/settings.json")),
+            (pty::TERMINAL_ID, "pty_", include_str!("../capabilities/terminal.json")),
+        ];
+        let mut granted = Vec::new();
+        for (label, prefix, text) in caps {
+            let cap: Value = serde_json::from_str(text).unwrap();
+            assert!(cap.get("remote").is_none(), "{label}: niente remote");
+            assert!(cap.get("webviews").is_none());
+            assert_eq!(cap["windows"], json!([label]));
+            for perm in cap["permissions"].as_array().unwrap() {
+                let perm = perm.as_str().unwrap();
+                let command = perm.strip_prefix("allow-").unwrap().replace('-', "_");
+                assert!(command.starts_with(prefix), "{label}: {perm} non è suo");
+                granted.push(command);
+            }
+        }
+        // tutti i comandi di invoke_handler (e di build.rs), ciascuno concesso a una sola finestra
+        granted.sort();
+        assert_eq!(
+            granted,
+            [
+                "panel_action", "panel_resize", "panel_state", "pty_kill", "pty_resize", "pty_start", "pty_write",
+                "settings_action", "settings_layout", "settings_set", "settings_state",
+            ]
+        );
+    }
+
+    /// CSP esplicita (#117): niente eval né script inline non firmati; IPC e server locale raggiungibili.
+    #[test]
+    fn csp_esplicita() {
+        let conf: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"].as_str().unwrap();
+        let directive = |name: &str| csp.split(';').map(str::trim).find(|d| d.split(' ').next() == Some(name)).unwrap_or("");
+        assert_eq!(directive("default-src"), "default-src 'self'");
+        assert_eq!(directive("script-src"), "script-src 'self'");
+        assert!(directive("connect-src").contains("ipc: http://ipc.localhost"));
+        assert!(directive("connect-src").contains(&format!("http://127.0.0.1:{PORT}")));
+        assert!(!csp.contains("unsafe-eval") && !csp.contains('*'));
+    }
 }
