@@ -56,7 +56,8 @@ describe('createTranscriptWatcher – lettura iniziale delle fixture', () => {
         title: 'Fixture session',
         model: 'claude-opus-4-5',
         effort: 'high',
-        context: { used: 20 + 1200 + 100, window: 200_000 },
+        // ultima riga del transcript: compattazione, il contesto è quello dopo (postTokens, #113)
+        context: { used: 12_000, window: 200_000 },
         tokensUsed: { input: 49, output: 235, cacheRead: 6350, cacheCreation: 850, cacheCreation1h: 0, total: 7484 },
         startedAt: ts('2026-01-01T10:00:00.000Z'),
         updatedAt: T0,
@@ -248,7 +249,7 @@ describe('createTranscriptWatcher – finestra 1M dichiarata (#20)', () => {
     );
     await touchAll(home, T0);
     const w = await startWatcher();
-    expect(w.current().sessions[0]?.context).toEqual({ used: 1320, window: 1_000_000 });
+    expect(w.current().sessions[0]?.context).toEqual({ used: 12_000, window: 1_000_000 });
   });
 });
 

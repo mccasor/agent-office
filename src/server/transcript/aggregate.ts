@@ -49,6 +49,18 @@ export function outcomeOf(s: Pick<FileSummary, 'stop'>, end: TaskEnd | undefined
   return s.stop === 'interrupted' || end === 'killed' ? 'interrupted' : 'ok';
 }
 
+/** Costo di un file: somma per modello (#112); senza il dettaglio per modello, tutto al modello corrente. */
+function fileCost(s: Pick<FileSummary, 'model' | 'declaredModel' | 'tokens' | 'tokensByModel'>): number | null {
+  const fallback = s.model ?? s.declaredModel;
+  if (s.tokensByModel.size === 0) return estimateCost(fallback, s.tokens);
+  let cost: number | null = null;
+  for (const [model, tokens] of s.tokensByModel) {
+    const c = estimateCost(model || fallback, tokens);
+    if (c !== null) cost = (cost ?? 0) + c;
+  }
+  return cost;
+}
+
 const mergeIssues = (a: number[], b: number[]): number[] => [...new Set([...a, ...b])].slice(0, 3);
 
 function agentStatus(s: FileSummary, updatedAt: number, t: number, opts: AggregateOptions, end?: TaskEnd): AgentStatus {
@@ -94,7 +106,7 @@ export function aggregate(
     g.files.push(f);
     g.tokens = addTokens(g.tokens, s.tokens);
     // costo per file: la sessione e i suoi subagenti possono usare modelli diversi
-    const cost = estimateCost(s.model ?? s.declaredModel, s.tokens);
+    const cost = fileCost(s);
     if (cost !== null) g.cost = (g.cost ?? 0) + cost;
     if (p.kind !== 'agent') continue;
 
@@ -119,7 +131,7 @@ export function aggregate(
       startedAt: s.firstAt ?? f.mtime,
       updatedAt,
       tool: status === 'done' ? null : s.tool,
-      cost: estimateCost(s.model ?? s.declaredModel, s.tokens),
+      cost: fileCost(s),
       effort: s.effort,
       // esito, errori e ripetizioni solo se ci sono: lo snapshot resta snello
       ...(status === 'done' ? { outcome: outcomeOf(s, end) } : {}),
@@ -160,7 +172,7 @@ export function aggregate(
       cost: g.cost,
       // Claude stesso, senza i subagenti
       ownTokens: { ...s.tokens },
-      ownCost: estimateCost(s.model ?? s.declaredModel, s.tokens),
+      ownCost: fileCost(s),
       turnStartedAt: s.lastPromptAt,
       lastTurnMs: s.lastTurnMs,
       compactions: s.compactions,

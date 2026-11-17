@@ -12,6 +12,11 @@ export interface FileSummary {
   declaredModel: string | null;
   effort: string | null;
   tokens: TokenUsage;
+  /**
+   * gli stessi token divisi per modello del messaggio (#112), per il costo dopo un /model; chiave '' se il modello
+   * non è ancora noto
+   */
+  tokensByModel: Map<string, TokenUsage>;
   /** input + cache dell'ultima richiesta */
   contextUsed: number | null;
   firstAt: number | null;
@@ -222,6 +227,7 @@ export function createAccumulator(): Accumulator {
     declaredModel: null,
     effort: null,
     tokens: { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0, total: 0 },
+    tokensByModel: new Map(),
     contextUsed: null,
     firstAt: null,
     lastAt: null,
@@ -280,7 +286,7 @@ export function createAccumulator(): Accumulator {
    * (thinking, text, tool_use) dello stesso messaggio ripetendo l'usage, a volte con output_tokens
    * crescente: si sottrae il precedente e si somma l'ultimo.
    */
-  const counted = new Map<string, Usage4>();
+  const counted = new Map<string, [usage: Usage4, model: string]>();
   const filePaths = new Set<string>();
   let todos: TodoProgress | null = null;
   let tasks: Map<string, string> | null = null;
@@ -328,14 +334,19 @@ export function createAccumulator(): Accumulator {
     }
   };
 
-  const addUsage = (u: Usage4, sign: 1 | -1) => {
-    const t = state.tokens;
+  const addTo = (t: TokenUsage, u: Usage4, sign: 1 | -1) => {
     t.input += sign * u[0];
     t.output += sign * u[1];
     t.cacheRead += sign * u[2];
     t.cacheCreation += sign * u[3];
     t.cacheCreation1h = (t.cacheCreation1h ?? 0) + sign * u[4];
     t.total = t.input + t.output + t.cacheRead + t.cacheCreation;
+  };
+  const addUsage = (u: Usage4, sign: 1 | -1, model: string) => {
+    addTo(state.tokens, u, sign);
+    let byModel = state.tokensByModel.get(model);
+    if (!byModel) state.tokensByModel.set(model, (byModel = { input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cacheCreation1h: 0, total: 0 }));
+    addTo(byModel, u, sign);
   };
 
   const updateProgress = () => {
@@ -421,10 +432,11 @@ export function createAccumulator(): Accumulator {
     if (usage) {
       const id = str(msg.id);
       const previous = id ? counted.get(id) : undefined;
-      if (previous) addUsage(previous, -1);
-      addUsage(usage, 1);
+      if (previous) addUsage(previous[0], -1, previous[1]);
+      const usageModel = model ?? state.model ?? '';
+      addUsage(usage, 1, usageModel);
       if (id) {
-        counted.set(id, usage);
+        counted.set(id, [usage, usageModel]);
         // le righe di uno stesso messaggio sono consecutive: bastano gli ultimi id (la mappa non cresce col transcript)
         if (counted.size > MAX_COUNTED) counted.delete(counted.keys().next().value!);
       }
@@ -480,6 +492,8 @@ export function createAccumulator(): Accumulator {
         preTokens: num(meta.preTokens),
         postTokens: num(meta.postTokens),
       };
+      // il contesto è cambiato ora, non al prossimo messaggio dell'assistente (#113); senza il dato, da ricalcolare
+      state.contextUsed = typeof meta.postTokens === 'number' && Number.isFinite(meta.postTokens) ? meta.postTokens : null;
     }
   };
 

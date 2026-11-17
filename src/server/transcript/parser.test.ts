@@ -147,6 +147,25 @@ describe('createAccumulator', () => {
     expect(acc.state.finished).toBe(false);
   });
 
+  it('token per modello: dopo un /model ogni messaggio resta del suo modello (#112)', () => {
+    const acc = createAccumulator();
+    const msg = (id: string, model: string, usage: [number, number, number, number]) =>
+      JSON.stringify({
+        type: 'assistant',
+        message: { id, model, content: [{ type: 'text', text: 'x' }], usage: { input_tokens: usage[0], output_tokens: usage[1], cache_read_input_tokens: usage[2], cache_creation_input_tokens: usage[3] } },
+      });
+    acc.ingest(msg('m1', 'claude-opus-4-5', [2, 8, 100, 10]));
+    acc.ingest(msg('m1', 'claude-opus-4-5', [2, 300, 100, 10]));
+    acc.ingest(msg('m2', 'claude-haiku-4-5', [1, 5, 200, 20]));
+    expect(acc.state.model).toBe('claude-haiku-4-5');
+    expect(Object.fromEntries(acc.state.tokensByModel)).toEqual({
+      'claude-opus-4-5': { input: 2, output: 300, cacheRead: 100, cacheCreation: 10, cacheCreation1h: 0, total: 412 },
+      'claude-haiku-4-5': { input: 1, output: 5, cacheRead: 200, cacheCreation: 20, cacheCreation1h: 0, total: 226 },
+    });
+    // i totali restano quelli di sempre
+    expect(acc.state.tokens).toEqual({ input: 3, output: 305, cacheRead: 300, cacheCreation: 30, cacheCreation1h: 0, total: 638 });
+  });
+
   it('le righe di metadati non cambiano lo stato di finished', () => {
     const acc = createAccumulator();
     acc.ingest(assistant('m1', [0, 0, 0, 0], [{ type: 'text', text: 'done' }]));
@@ -366,6 +385,20 @@ describe('turni, compattazioni e cache da 1 ora', () => {
     acc.ingest(row('system', '2026-01-01T12:00:00.000Z', { subtype: 'compact_boundary', compactMetadata: { trigger: 'manual', preTokens: 699_680, postTokens: 12_385 } }));
     expect(acc.state.compactions).toBe(2);
     expect(acc.state.lastCompaction).toEqual({ at: Date.parse('2026-01-01T12:00:00.000Z'), trigger: 'manual', preTokens: 699_680, postTokens: 12_385 });
+  });
+
+  it('compattazione: il contesto usato passa subito al valore post-compattazione (#113)', () => {
+    const acc = createAccumulator();
+    acc.ingest(assistant('m1', [10, 5, 250_000, 3_000]));
+    expect(acc.state.contextUsed).toBe(253_010);
+    acc.ingest(row('system', '2026-01-01T11:00:00.000Z', { subtype: 'compact_boundary', compactMetadata: { trigger: 'auto', preTokens: 253_010, postTokens: 7_593 } }));
+    expect(acc.state.contextUsed).toBe(7_593);
+    // senza postTokens il valore precedente non vale più: da ricalcolare al prossimo messaggio
+    acc.ingest(assistant('m2', [10, 5, 90_000, 0]));
+    acc.ingest(row('system', '2026-01-01T12:00:00.000Z', { subtype: 'compact_boundary', compactMetadata: { trigger: 'manual' } }));
+    expect(acc.state.contextUsed).toBeNull();
+    acc.ingest(assistant('m3', [10, 5, 8_000, 0]));
+    expect(acc.state.contextUsed).toBe(8_010);
   });
 
   it('separa la scrittura nella cache da 1 ora (cache_creation.ephemeral_1h_input_tokens)', () => {
