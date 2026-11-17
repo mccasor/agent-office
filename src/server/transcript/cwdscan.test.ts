@@ -46,7 +46,37 @@ describe('scanCwd', () => {
     expect((await scanCwd(file, '/')).match).toBe(true);
   });
 
+  it('sessione avviata in /a che tocca /b una volta: monitorando /b è scartata (#115)', async () => {
+    await writeFile(file, row('/a') + row('/b') + row('/a'));
+    for (let size = 1; size < 40; size++) {
+      expect(await scanCwd(file, '/b', 0, size)).toMatchObject({ match: false, rejected: true });
+    }
+  });
+
+  it('sessione avviata in /parent che lavora in /parent/b: inclusa, anche passando altrove (#115)', async () => {
+    await writeFile(file, row('/parent') + row('/altro') + row('/parent/b/src'));
+    for (let size = 1; size < 40; size++) expect((await scanCwd(file, '/parent/b', 0, size)).match).toBe(true);
+  });
+
+  it('ripresa incrementale: la cartella di avvio superiore resta nota tra le chiamate (#115)', async () => {
+    await writeFile(file, '{"type":"ai-title"}\n');
+    const none = await scanCwd(file, '/parent/b');
+    expect(none).toMatchObject({ match: false, rejected: false, started: false });
+    await appendFile(file, row('/parent'));
+    const first = await scanCwd(file, '/parent/b', none.offset, 8, none.started);
+    expect(first).toMatchObject({ match: false, rejected: false, started: true });
+    await appendFile(file, row('/altro') + row('/parent/b'));
+    expect((await scanCwd(file, '/parent/b', first.offset, 8, first.started)).match).toBe(true);
+  });
+
+  it('ripresa incrementale: la prima riga con cwd nei byte nuovi decide se scartare (#115)', async () => {
+    await writeFile(file, '{"type":"ai-title"}\n');
+    const none = await scanCwd(file, '/b');
+    await appendFile(file, row('/a') + row('/b'));
+    expect(await scanCwd(file, '/b', none.offset, 8, none.started)).toMatchObject({ match: false, rejected: true });
+  });
+
   it('file inesistente: nessun match, nessun errore', async () => {
-    expect(await scanCwd(join(dir, 'missing.jsonl'), '/w/app')).toEqual({ match: false, offset: 0 });
+    expect(await scanCwd(join(dir, 'missing.jsonl'), '/w/app')).toMatchObject({ match: false, offset: 0, rejected: false });
   });
 });
