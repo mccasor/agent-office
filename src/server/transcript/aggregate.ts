@@ -217,8 +217,11 @@ export function aggregate(
     });
   }
 
+  // lanciate dall'app (#120): con o senza transcript, la pagina offre il loro terminale
+  const launchedIds = new Set((opts.launched ?? []).map((l) => l.sessionId));
+  sessions = sessions.map((x) => (launchedIds.has(x.id) ? { ...x, launched: true } : x));
   const seen = new Set(sessions.map((x) => x.id));
-  for (const l of opts.launched ?? []) if (!seen.has(l.sessionId)) sessions.push(launchedSession(l));
+  for (const l of opts.launched ?? []) if (!seen.has(l.sessionId)) sessions.push({ ...launchedSession(l), launched: true });
 
   if (opts.onlyActive) {
     const active = new Set(sessions.filter((x) => x.active).map((x) => x.id));

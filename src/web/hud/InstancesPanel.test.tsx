@@ -172,3 +172,31 @@ describe('InstancesPanel', () => {
     expect(onPopOut).toHaveBeenCalledWith('s1');
   });
 });
+
+describe('InstancesPanel: apri il terminale (#120)', () => {
+  const L = '33333333-3333-4333-8333-333333333333';
+  const terminal = () => screen.queryByRole('button', { name: /terminale/i });
+  const at = (search: string) => window.history.replaceState(null, '', `/${search}`);
+  afterEach(() => {
+    at('');
+    vi.restoreAllMocks();
+  });
+
+  it('nell’app, sessione lanciata dall’app: il clic apre la finestra del suo terminale', () => {
+    at('?view=pixel&app=1');
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    render(<InstancesPanel sessions={[session({ id: L, launched: true })]} agents={[]} bosses={[boss(L)]} onSelect={() => {}} />);
+    fireEvent.click(terminal()!);
+    expect(open).toHaveBeenCalledWith(`${window.location.origin}/?terminal=${L}`);
+  });
+
+  it('nessun pulsante nel browser o per le sessioni non lanciate dall’app', () => {
+    at('?view=pixel');
+    const { unmount } = render(<InstancesPanel sessions={[session({ id: L, launched: true })]} agents={[]} bosses={[]} onSelect={() => {}} />);
+    expect(terminal()).toBeNull();
+    unmount();
+    at('?app=1');
+    render(<InstancesPanel sessions={[session({ id: L })]} agents={[]} bosses={[]} onSelect={() => {}} />);
+    expect(terminal()).toBeNull();
+  });
+});

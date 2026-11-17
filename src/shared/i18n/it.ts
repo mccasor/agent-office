@@ -369,6 +369,7 @@ export const it = {
   'context.usedOf': 'Contesto usato {project}',
   'popout.session': 'Apri {project} in una finestra',
   'popout.card': 'Apri la scheda in una finestra',
+  'popout.terminal': 'Apri il terminale di {project}',
   'card.aria': 'Scheda di {name}',
   'card.close': 'Chiudi la scheda',
   'card.closeHint': 'Chiudi (Esc)',

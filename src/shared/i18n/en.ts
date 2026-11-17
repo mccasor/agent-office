@@ -346,6 +346,7 @@ export const en: Texts = {
   'context.usedOf': 'Context used {project}',
   'popout.session': 'Open {project} in a window',
   'popout.card': 'Open the card in a window',
+  'popout.terminal': 'Open the terminal of {project}',
   'card.aria': '{name} card',
   'card.close': 'Close the card',
   'card.closeHint': 'Close (Esc)',

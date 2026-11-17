@@ -157,6 +157,18 @@ export function PopOutButton({ label, onClick }: { label: string; onClick: () =>
   );
 }
 
+/** Pulsante "apri il terminale" di un'istanza lanciata dall'app (#120), accanto a quello della finestra a sé. */
+export function TerminalButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="hud-popout" aria-label={label} title={label} onClick={onClick}>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="2" y="3" width="12" height="10" rx="1" />
+        <path d="M5 7l2 1.5L5 10M8.5 10.5h2.5" />
+      </svg>
+    </button>
+  );
+}
+
 /**
  * Contesto della sessione: etichetta, token usati sulla finestra e percentuale sopra una barra con le zone
  * colorate (arancione dal 70%, rosso dal 90%, come contextLevel); la barra prende il colore della zona in cui arriva.

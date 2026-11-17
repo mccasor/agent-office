@@ -310,6 +310,15 @@ describe('aggregate: sessioni lanciate dall’app (#119)', () => {
     expect(snap.sessions[0]).toMatchObject({ id: L, title: 'Primo prompt' });
   });
 
+  it('segnate con launched: true, con o senza transcript (#120); le altre senza il campo', () => {
+    const O = '44444444-4444-4444-8444-444444444444';
+    const files = [session({ title: 'Primo prompt', cwd: '/w/progetto' }, T - 500, L), session({ cwd: '/w/altro' }, T - 400, O)];
+    const by = new Map(aggregate(files, noMetas, T, { ...OPTS, launched: [launched] }).sessions.map((s) => [s.id, s]));
+    expect(by.get(L)?.launched).toBe(true);
+    expect(by.get(O)).not.toHaveProperty('launched');
+    expect(aggregate([], noMetas, T, { ...OPTS, launched: [launched] }).sessions[0]?.launched).toBe(true);
+  });
+
   it('voce rimossa e nessun transcript: sparita', () => {
     expect(aggregate([], noMetas, T, { ...OPTS, launched: [] }).sessions).toEqual([]);
   });
