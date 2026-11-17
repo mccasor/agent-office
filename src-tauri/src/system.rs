@@ -10,6 +10,11 @@ pub fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)
 }
 
+/// Cartella di Claude Code: `CLAUDE_CONFIG_DIR` se impostata, altrimenti `~/.claude` (come il server Node).
+pub fn claude_home() -> Option<PathBuf> {
+    std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty()).map(PathBuf::from).or_else(|| Some(home()?.join(".claude")))
+}
+
 /// Apre `url` nel browser di sistema (`open` su macOS, `xdg-open` su Linux). true se il comando è riuscito.
 pub fn open_url(url: &str) -> bool {
     #[cfg(target_os = "macos")]

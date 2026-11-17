@@ -20,6 +20,10 @@
 //! <uuid nuovo>` in una finestra `terminal-<uuid>` sua (più istanze insieme). Ogni processo avviato sta nel registro
 //! `~/.agent-office/launched.json` (launched.rs) finché non esce. Per provare senza interfaccia resta
 //! `AGENT_OFFICE_TERMINAL=<cartella>` all'avvio (e, se c'è, `AGENT_OFFICE_TERMINAL_SESSION=<uuid>`), che passa di qui.
+//!
+//! "Riprendi" (#121, resume.rs): `claude --resume <id>` nella cartella della sessione, finestra e registro con lo
+//! stesso session id; se la sessione è ancora aperta altrove, su conferma una copia (`--fork-session`) con un session
+//! id nuovo passato con `--session-id`.
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -332,6 +336,20 @@ pub fn claude_args(session_id: &str, options: &LaunchOptions) -> Result<Vec<Stri
     Ok(args)
 }
 
+/// Argomenti di `claude` per riprendere la sessione `session_id` (#121): `--resume <id>`; con `fork` (session id
+/// nuovo, per la sessione ancora aperta altrove) anche `--fork-session --session-id <fork>`, così il session id della
+/// copia è noto prima dell'avvio (finestra, registro). Modello e permessi restano i default della CLI. Pura.
+pub fn resume_args(session_id: &str, fork: Option<&str>) -> Result<Vec<String>, String> {
+    if let Some(bad) = std::iter::once(session_id).chain(fork).find(|id| !is_uuid(id)) {
+        return Err(tf("error.launchOption", &[("value", bad)]));
+    }
+    let mut args = vec!["--resume".to_string(), session_id.to_string()];
+    if let Some(fork) = fork {
+        args.extend(["--fork-session".to_string(), "--session-id".to_string(), fork.to_string()]);
+    }
+    Ok(args)
+}
+
 /// Session id nuovo (uuid v4) per `--session-id`.
 pub fn new_session_id() -> String {
     uuid::Uuid::new_v4().to_string()
@@ -359,13 +377,23 @@ fn only_terminal(window: &WebviewWindow) -> Result<(), String> {
 /// Nuova istanza: `claude` con un session id nuovo e `options` in `cwd`, nella sua finestra. Ritorna il session id.
 pub fn launch(app: &AppHandle, cwd: PathBuf, options: &LaunchOptions) -> Result<String, String> {
     let session_id = new_session_id();
-    open(app, cwd, &session_id, options)?;
+    open(app, cwd, &session_id, claude_args(&session_id, options)?)?;
     Ok(session_id)
 }
 
-/// Apre la finestra dell'istanza `session_id` con `claude` in `cwd` (o la riporta in primo piano se è già aperta).
-fn open(app: &AppHandle, cwd: PathBuf, session_id: &str, options: &LaunchOptions) -> Result<(), String> {
-    let args = claude_args(session_id, options)?;
+/// Riprende la sessione `session_id` (#121) in `cwd`, nella sua finestra; con `fork` in una copia con un session id
+/// nuovo (finestra e registro sono di quella). Ritorna il session id dell'istanza.
+pub fn resume(app: &AppHandle, cwd: PathBuf, session_id: &str, fork: bool) -> Result<String, String> {
+    let fork_id = fork.then(new_session_id);
+    let args = resume_args(session_id, fork_id.as_deref())?;
+    let id = fork_id.unwrap_or_else(|| session_id.to_string());
+    open(app, cwd, &id, args)?;
+    Ok(id)
+}
+
+/// Apre la finestra dell'istanza `session_id` con `claude` e gli argomenti `args` (già validati) in `cwd`, o la
+/// riporta in primo piano se è già aperta.
+fn open(app: &AppHandle, cwd: PathBuf, session_id: &str, args: Vec<String>) -> Result<(), String> {
     let label = label_for(session_id);
     if reveal(app, session_id) {
         return Ok(());
@@ -401,7 +429,9 @@ pub fn open_from_env(app: &AppHandle) {
     let Some(dir) = std::env::var_os("AGENT_OFFICE_TERMINAL").map(PathBuf::from) else { return };
     let cwd = if dir.is_dir() { dir } else { crate::system::home().unwrap_or_else(|| PathBuf::from("/")) };
     let session_id = std::env::var("AGENT_OFFICE_TERMINAL_SESSION").ok().filter(|s| is_uuid(s)).unwrap_or_else(new_session_id);
-    let _ = open(app, cwd, &session_id, &LaunchOptions::default());
+    if let Ok(args) = claude_args(&session_id, &LaunchOptions::default()) {
+        let _ = open(app, cwd, &session_id, args);
+    }
 }
 
 /// Mostra (anche se nascosta o ridotta) e porta in primo piano la finestra dell'istanza `session_id`, se esiste.
@@ -741,6 +771,18 @@ mod tests {
         assert!(claude_args(ID, &options(Some("gpt-4"), None)).is_err());
         assert!(claude_args(ID, &options(None, Some("yolo"))).is_err());
         assert!(claude_args(ID, &options(None, Some("PLAN"))).is_err());
+    }
+
+    #[test]
+    fn argomenti_per_riprendere() {
+        const FORK: &str = "6ba7b810-9dad-41d1-80b4-00c04fd430c8";
+        assert_eq!(resume_args(ID, None).unwrap(), ["--resume", ID]);
+        assert_eq!(resume_args(ID, Some(FORK)).unwrap(), ["--resume", ID, "--fork-session", "--session-id", FORK]);
+        // solo uuid, mai testo libero
+        assert!(resume_args("non-uuid", None).is_err());
+        assert!(resume_args(&format!("{ID} --dangerously-skip-permissions"), None).is_err());
+        assert!(resume_args(ID, Some("--help")).is_err());
+        assert!(resume_args(ID, Some("")).is_err());
     }
 
     #[test]

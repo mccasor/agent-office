@@ -2,7 +2,7 @@
 //! dell'ufficio (e delle schede stesse) si intercettano qui. Si accettano solo le schede del server locale
 //! (`http://127.0.0.1:<porta>/?card=agent|session&id=...`) e per ognuna si apre una finestra Tauri dedicata, riusata
 //! se è già aperta; `?terminal=<uuid>` (#120) mostra la finestra del terminale di un'istanza lanciata dall'app, se
-//! esiste; la pagina delle offerte su Ko-fi si apre nel browser di sistema; tutto il resto si nega. Nessun
+//! esiste; `?resume=<uuid>` (#121) riprende quella sessione nel terminale integrato (resume.rs); la pagina delle offerte su Ko-fi si apre nel browser di sistema; tutto il resto si nega. Nessun
 //! comando né permesso esposto alla pagina remota.
 //!
 //! La finestra prende l'altezza del contenuto: WKWebView ignora `window.resizeTo`/`resizeBy`, quindi la pagina (che
@@ -88,10 +88,21 @@ pub fn card_for(url: &Url, port: u16) -> Option<Card> {
 /// `http://127.0.0.1:<port>/?terminal=<uuid>`, nient'altro (né altri parametri né codifiche). Ritorna il session id.
 /// La finestra non carica mai questo URL: serve solo a dire quale terminale mostrare. Pura.
 pub fn terminal_for(url: &Url, port: u16) -> Option<String> {
+    uuid_param(url, port, "terminal=")
+}
+
+/// Sessione da riprendere nel terminale integrato (#121) chiesta da `url`: esattamente
+/// `http://127.0.0.1:<port>/?resume=<uuid>`, nient'altro, come `terminal_for`. Ritorna il session id. Pura.
+pub fn resume_for(url: &Url, port: u16) -> Option<String> {
+    uuid_param(url, port, "resume=")
+}
+
+/// Radice del server locale con la query esattamente `<prefix><uuid>`: il uuid. Pura.
+fn uuid_param(url: &Url, port: u16, prefix: &str) -> Option<String> {
     if !is_local_root(url, port) {
         return None;
     }
-    let id = url.query()?.strip_prefix("terminal=")?;
+    let id = url.query()?.strip_prefix(prefix)?;
     crate::pty::is_uuid(id).then(|| id.to_string())
 }
 
@@ -144,6 +155,10 @@ pub fn on_new_window(app: AppHandle, port: u16) -> impl Fn(Url, NewWindowFeature
             let _ = app.run_on_main_thread(move || {
                 crate::pty::reveal(&handle, &session_id);
             });
+        } else if let Some(session_id) = resume_for(&url, port) {
+            // #121: anche questo URL non lo carica nessuna finestra
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || crate::resume::start(handle, session_id));
         } else if is_donate(&url) {
             // in un thread: open_url aspetta il comando, e qui siamo nel callback di WebKit
             std::thread::spawn(|| crate::system::open_url(DONATE_URL));
@@ -247,6 +262,49 @@ mod tests {
             "file:///etc/passwd".into(),
         ] {
             assert_eq!(terminal(&url), None, "{url}");
+        }
+    }
+
+    fn resume(url: &str) -> Option<String> {
+        resume_for(&url.parse().unwrap(), 4318)
+    }
+
+    #[test]
+    fn sessione_da_riprendere() {
+        assert_eq!(resume(&format!("http://127.0.0.1:4318/?resume={ID}")).as_deref(), Some(ID));
+        assert_eq!(resume(&format!("http://127.0.0.1:4318?resume={ID}")).as_deref(), Some(ID));
+        // non è né una scheda né un terminale, e viceversa
+        assert_eq!(card(&format!("http://127.0.0.1:4318/?resume={ID}")), None);
+        assert_eq!(terminal(&format!("http://127.0.0.1:4318/?resume={ID}")), None);
+        assert_eq!(resume(&format!("http://127.0.0.1:4318/?terminal={ID}")), None);
+    }
+
+    #[test]
+    fn ripresa_rifiutata() {
+        for url in [
+            format!("https://127.0.0.1:4318/?resume={ID}"),
+            format!("http://localhost:4318/?resume={ID}"),
+            format!("http://127.0.0.1:4317/?resume={ID}"),
+            format!("http://127.0.0.1/?resume={ID}"),
+            format!("http://evil.example:4318/?resume={ID}"),
+            format!("http://127.0.0.1:4318/resume?resume={ID}"),
+            format!("http://127.0.0.1:4318/?resume={ID}&fork=1"),
+            format!("http://127.0.0.1:4318/?app=1&resume={ID}"),
+            format!("http://127.0.0.1:4318/?resume={ID}&resume={ID}"),
+            format!("http://127.0.0.1:4318/?resume={ID}#x"),
+            format!("http://u:p@127.0.0.1:4318/?resume={ID}"),
+            format!("http://127.0.0.1:4318/?Resume={ID}"),
+            format!("http://127.0.0.1:4318/?resume={}", ID.replace('-', "%2D")),
+            format!("http://127.0.0.1:4318/?resume={ID}%20--fork-session"),
+            "http://127.0.0.1:4318/?resume=--help".into(),
+            format!("http://127.0.0.1:4318/?resume= {ID}"),
+            format!("http://127.0.0.1:4318/?resume={}", &ID[1..]),
+            "http://127.0.0.1:4318/?resume=".into(),
+            "http://127.0.0.1:4318/?resume".into(),
+            "http://127.0.0.1:4318/?resume=../../etc".into(),
+            "file:///etc/passwd".into(),
+        ] {
+            assert_eq!(resume(&url), None, "{url}");
         }
     }
 
