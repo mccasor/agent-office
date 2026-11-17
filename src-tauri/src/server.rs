@@ -148,6 +148,15 @@ fn last_log_line(path: &Path) -> Option<String> {
     Some(if line.chars().count() > 90 { format!("{}…", line.chars().take(89).collect::<String>()) } else { line.to_string() })
 }
 
+/// Token casuale (256 bit, esadecimale) per questo avvio dell'app (#116): passato al server in AGENT_OFFICE_TOKEN,
+/// richiesto dalle future rotte di scrittura. None se /dev/urandom non è leggibile: il server se ne genera uno suo.
+/// Mai da scrivere nei log.
+fn launch_token() -> Option<String> {
+    let mut bytes = [0u8; 32];
+    File::open("/dev/urandom").ok()?.read_exact(&mut bytes).ok()?;
+    Some(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
 /// Avvia il server e lo riavvia se si chiude, con attese crescenti tra un tentativo fallito e l'altro.
 pub struct Supervisor {
     child: Option<Child>,
@@ -155,11 +164,13 @@ pub struct Supervisor {
     error: Option<String>,
     retry_at: Instant,
     failures: u32,
+    /// token di questo avvio dell'app, lo stesso per ogni riavvio del server
+    token: Option<String>,
 }
 
 impl Default for Supervisor {
     fn default() -> Self {
-        Supervisor { child: None, error: None, retry_at: Instant::now(), failures: 0 }
+        Supervisor { child: None, error: None, retry_at: Instant::now(), failures: 0, token: launch_token() }
     }
 }
 
@@ -220,7 +231,11 @@ impl Supervisor {
             Some((a, b)) => (Stdio::from(a), Stdio::from(b)),
             None => (Stdio::null(), Stdio::null()),
         };
-        let spawned = Command::new(node)
+        let mut cmd = Command::new(node);
+        if let Some(token) = &self.token {
+            cmd.env("AGENT_OFFICE_TOKEN", token);
+        }
+        let spawned = cmd
             .arg(app_dir.join("bin/agent-office.mjs"))
             .args(["--all", "--no-open", "--exit-with-stdin", "--port", &port.to_string()])
             // lingue preferite di macOS: il server ci risolve la lingua "system" come l'app (#93)
@@ -259,6 +274,14 @@ mod tests {
     fn versioni_di_nvm_dalla_piu_recente() {
         let names = ["v18.20.1", "v22.10.0", "v22.9.0", "system", "v24.0.0"].map(String::from).to_vec();
         assert_eq!(newest_first(names), ["v24.0.0", "v22.10.0", "v22.9.0", "v18.20.1"]);
+    }
+
+    #[test]
+    fn token_di_avvio_casuale_di_256_bit() {
+        let a = launch_token().unwrap();
+        assert_eq!(a.len(), 64);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_ne!(Some(a), launch_token());
     }
 
     #[test]
