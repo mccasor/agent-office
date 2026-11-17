@@ -79,7 +79,7 @@ describe('testi (#93)', () => {
 
   it('le chiavi usate da pannello, Impostazioni e splash sono in i18n.js', () => {
     const shipped = new Set(Object.keys(pick(PAGE_PREFIXES).it));
-    for (const page of ['panel.html', 'settings.html', 'index.html']) {
+    for (const page of ['panel.html', 'settings.html', 'index.html', 'terminal.html']) {
       const html = readFileSync(fileURLToPath(new URL(`../../../src-tauri/splash/${page}`, import.meta.url)), 'utf8');
       const used = [...html.matchAll(/\bT(\.n)?\('([\w.]+)'/g)];
       expect(used.length, page).toBeGreaterThan(0);

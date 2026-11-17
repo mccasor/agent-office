@@ -338,6 +338,12 @@ fn register_bundle() {
     quiet(Command::new("/usr/bin/mdimport").arg(bundle));
 }
 
+/// URL dell'ufficio sul server locale per la vista `view` e la sessione `focus` (già validati); `app=1` dice alla pagina
+/// che è nell'app (inApp in src/web/hud/fit.ts), come nel redirect dello splash. Pura.
+fn office_url(view: &str, focus: &str) -> String {
+    format!("http://127.0.0.1:{PORT}/?view={view}&session={focus}&app=1")
+}
+
 /// Mostra la finestra dell'ufficio sulla vista indicata ("pixel" o "list"), evidenziando la sessione `focus`;
 /// la crea alla prima apertura (passa dallo splash finché il server non risponde).
 fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
@@ -346,7 +352,8 @@ fn show_office(app: &AppHandle, view: &str, focus: Option<&str>) {
     if let Some(window) = app.get_webview_window(WINDOW_ID) {
         // cambio di vista senza ricaricare: l'ufficio resta com'è (posizioni); ricarica solo se serve
         let _ = window.eval(format!(
-            "window.agentOfficeFocus ? window.agentOfficeFocus('{view}', '{focus}') : location.assign('http://127.0.0.1:{PORT}/?view={view}&session={focus}')"
+            "window.agentOfficeFocus ? window.agentOfficeFocus('{view}', '{focus}') : location.assign('{}')",
+            office_url(view, focus)
         ));
         let _ = window.show();
         let _ = window.set_focus();
@@ -639,13 +646,51 @@ fn refresh_panel(app: &AppHandle) {
     }
 }
 
+/// Chiudere una finestra la nasconde (ufficio e pannello: l'app resta nella menu bar; terminale con il processo
+/// ancora vivo, #120) o la chiude davvero (schede, impostazioni, terminale col processo uscito). Pura.
+fn hides_on_close(label: &str, terminal_running: bool) -> bool {
+    if pty::is_terminal(label) {
+        return terminal_running;
+    }
+    !cards::is_card(label) && label != settings::SETTINGS_ID
+}
+
+/// voce "Esci" del menu dell'app su macOS (Cmd-Q)
+#[cfg(target_os = "macos")]
+const QUIT_MENU_ID: &str = "app-quit";
+
+/// Menu dell'app su macOS: quello predefinito di Tauri (servono Modifica e Cmd-C/Cmd-V nelle finestre), con "Esci"
+/// (Cmd-Q) che passa da `app.exit` e quindi da `RunEvent::ExitRequested` e dalla conferma (#120): la voce predefinita
+/// chiude l'app subito, senza chiedere.
+#[cfg(target_os = "macos")]
+fn app_menu(app: &AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, MenuItemKind};
+    let menu = Menu::default(app)?;
+    if let Some(MenuItemKind::Submenu(first)) = menu.items()?.first() {
+        // l'ultima voce del primo sottomenu è "Esci" predefinita (Menu::default)
+        let items = first.items()?;
+        if let Some(last @ MenuItemKind::Predefined(_)) = items.last() {
+            first.remove(last)?;
+            first.append(&MenuItem::with_id(app, QUIT_MENU_ID, i18n::t("tray.quit"), true, Some("CmdOrCtrl+Q"))?)?;
+        }
+    }
+    Ok(menu)
+}
+
 fn main() {
     // prima di tutto: il server sulla porta deve essere il nostro, non quello di una copia vecchia
     instance::take_over();
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         // selettore della cartella di "Nuova istanza", usato solo da Rust: nessuna capability lo concede alle pagine
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(app_menu).on_menu_event(|app, event| {
+        if event.id() == QUIT_MENU_ID {
+            app.exit(0);
+        }
+    });
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             panel_state,
             panel_action,
@@ -801,10 +846,8 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| match event {
-            // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede e le impostazioni si
-            // chiudono davvero
             WindowEvent::CloseRequested { api, .. }
-                if !cards::is_card(window.label()) && window.label() != settings::SETTINGS_ID && !pty::is_terminal(window.label()) =>
+                if hides_on_close(window.label(), pty::is_running(window.app_handle(), window.label())) =>
             {
                 api.prevent_close();
                 let _ = window.hide();
@@ -814,18 +857,29 @@ fn main() {
                 let _ = window.hide();
                 *window.app_handle().state::<Ui>().panel_hidden_at.lock().unwrap() = Some(Instant::now());
             }
-            // il terminale chiuso termina il suo processo
+            // il terminale chiuso davvero termina il suo processo
             WindowEvent::Destroyed if pty::is_terminal(window.label()) => pty::forget(window.app_handle(), window.label()),
             _ => {}
         })
         .build(tauri::generate_context!())
         .expect("avvio di Agent Office");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app, event| match event {
+        // pannello, tray, Cmd-Q (QUIT_MENU_ID) o ultima finestra: con istanze ancora in esecuzione si chiede conferma
+        // (#120); confermando si riprova a uscire e passa
+        RunEvent::ExitRequested { code, api, .. } => {
+            let running = pty::running_count(app);
+            if pty::must_confirm_quit(running, pty::quit_confirmed(), code) {
+                api.prevent_exit();
+                pty::ask_quit(app, running);
+            }
+        }
+        // uscita pulita: gruppi di processi dei `claude` lanciati (SIGHUP, poi SIGKILL) e server
+        RunEvent::Exit => {
             pty::kill_all(app);
             app.state::<Server>().0.lock().unwrap().stop();
         }
+        _ => {}
     });
 }
 
@@ -914,6 +968,26 @@ mod tests {
         assert!(!icon_changed(Some(&working), Status::Working, false));
         assert!(icon_changed(Some(&working), Status::Waiting, false));
         assert!(icon_changed(Some(&working), Status::Working, true));
+    }
+
+    #[test]
+    fn ufficio_in_modalita_app() {
+        assert_eq!(office_url("list", "s1"), format!("http://127.0.0.1:{PORT}/?view=list&session=s1&app=1"));
+        // anche il redirect dello splash
+        assert!(include_str!("../splash/index.html").contains("'/?view=' + view + '&app=1'"));
+    }
+
+    #[test]
+    fn chiudere_nasconde_o_chiude() {
+        let terminal = pty::label_for(&pty::new_session_id());
+        // terminale: nascosto finché il processo è vivo, poi chiuso davvero
+        assert!(hides_on_close(&terminal, true));
+        assert!(!hides_on_close(&terminal, false));
+        // ufficio e pannello si nascondono sempre; schede e impostazioni si chiudono
+        assert!(hides_on_close(WINDOW_ID, false));
+        assert!(hides_on_close(panel::PANEL_ID, false));
+        assert!(!hides_on_close("card-agent-a1", false));
+        assert!(!hides_on_close(settings::SETTINGS_ID, true));
     }
 
     #[test]

@@ -193,6 +193,7 @@ mod tests {
             include_str!("config.rs"),
             include_str!("i18n.rs"),
             include_str!("tray_menu.rs"),
+            include_str!("pty.rs"),
         ];
         let mut keys = vec![];
         for source in sources {
