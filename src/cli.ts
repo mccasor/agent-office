@@ -20,6 +20,7 @@ import { createGitReports } from './server/git/day.js';
 import { buildSnapshot } from './server/state/index.js';
 import { agentVerdict, endedCount, lastWrite } from './server/state/verdict.js';
 import { createSessionProcesses } from './server/sessions/index.js';
+import { createLaunchedWatcher, launchedFilePath } from './server/sessions/launched.js';
 import { createDayTracker } from './server/state/today.js';
 import { startServer } from './server/http/index.js';
 import { launchToken } from './server/http/guard.js';
@@ -102,6 +103,9 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   // per primo: tolto dall'ambiente prima che parta qualunque processo figlio (#116)
   const token = launchToken();
   const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+  // sessioni lanciate dall'app (#119): la stanza compare subito, prima del transcript
+  const launched = createLaunchedWatcher({ file: launchedFilePath({ dataDir }) });
+  await launched.start();
   const transcript = createTranscriptWatcher({
     cwd: opts.cwd,
     all: opts.all,
@@ -109,6 +113,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
     activeWindowMs: config.activeWindowMinutes * 60_000,
     // sessione attiva finché il suo processo di Claude Code è vivo (#111); `processes` è letto prima di start()
     alive: (sessionId) => processes.get(sessionId)?.process === 'alive',
+    launched: () => launched.current(),
   });
   const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
   // stato git: della cartella monitorata, oppure (con --all) della cartella di ciascuna sessione attiva
@@ -206,7 +211,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   // un solo snapshot (aggregate + buildSnapshot) per pubblicazione, al più uno al secondo sotto carico
   const throttle = createThrottle(() => publishNow(snapshot()), { delayMs: PUBLISH_DELAY_MS, intervalMs: PUBLISH_INTERVAL_MS });
   const publish = () => throttle.schedule();
-  const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish)];
+  const unsubscribe = [transcript.onChange(publish), hooks.onChange(publish), launched.onChange(publish)];
   const tick = setInterval(publish, TICK_MS);
   const processPoll = setInterval(() => {
     void processes.refresh().then((changed) => changed && publish(), () => {});
@@ -236,7 +241,7 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
       throttle.cancel();
       unwatchConfig();
       unsubscribe.forEach((off) => off());
-      await Promise.all([transcript.stop(), hooks.stop()]);
+      await Promise.all([transcript.stop(), hooks.stop(), launched.stop()]);
       await Promise.all([server.close(), history.flush(), today.flush()]);
     },
   };

@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { watch, type FSWatcher } from 'chokidar';
 import type { TranscriptSnapshot, Watcher } from '../../shared/types.js';
+import type { LaunchedSession } from '../sessions/launched.js';
 import { aggregate, pruneMetas, UNKNOWN_AGENT_TYPE, type AgentMeta } from './aggregate.js';
 import { createForeignDiscovery } from './discovery.js';
 import { encodeProjectPath } from './encode.js';
@@ -38,6 +39,11 @@ export interface TranscriptWatcherOptions {
    * se fermo da più della finestra di scoperta); assente = solo l'età del transcript
    */
   alive?: (sessionId: string) => boolean;
+  /**
+   * sessioni lanciate dall'app e ancora aperte (#119): compaiono subito (con `all`, o se la loro cwd è nella cartella
+   * monitorata), il loro transcript si cerca dal session id noto e finché ci sono contano come processo vivo
+   */
+  launched?: () => readonly LaunchedSession[];
   /** intervallo di ricalcolo degli stati dipendenti dal tempo (default 5 s) */
   tickMs?: number;
   now?: () => number;
@@ -99,7 +105,9 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
   const tickMs = opts.tickMs ?? 5_000;
   const now = opts.now ?? Date.now;
   const all = opts.all === true;
-  const alive = (sessionId: string) => opts.alive?.(sessionId) === true;
+  /** sessioni lanciate dall'app pertinenti: con `all` tutte, altrimenti quelle con la cwd nella cartella monitorata */
+  const launched = () => (opts.launched?.() ?? []).filter((l) => all || !outside(posixRel(opts.cwd, l.cwd)));
+  const alive = (sessionId: string) => opts.alive?.(sessionId) === true || launched().some((l) => l.sessionId === sessionId);
 
   const files = new Map<string, TrackedFile>();
   const metas = new Map<string, AgentMeta>();
@@ -107,6 +115,8 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
   let fsWatcher: FSWatcher | null = null;
   /** cartelle da seguire trovate dalla discovery prima che il watcher principale esista */
   let pendingFollow: string[] = [];
+  /** sessioni lanciate dall'app seguite in un'altra cartella di projects (senza passare dalla discovery) */
+  const followedLaunched = new Set<string>();
   let timer: NodeJS.Timeout | null = null;
   let running = false;
   let lastFullResync = -Infinity;
@@ -135,12 +145,12 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
     const slash = rel.indexOf('/');
     if (outside(rel) || slash < 0) return null;
     const p = parsePath(rel.slice(slash + 1));
-    return p && discovery.has(p.sessionId) ? p : null;
+    return p && (discovery.has(p.sessionId) || followedLaunched.has(p.sessionId)) ? p : null;
   };
 
   const compute = (): TranscriptSnapshot => {
     const loaded = [...files.values()].filter((f) => f.loaded).map((f) => ({ parsed: f.parsed, state: f.acc.state, mtime: f.mtime }));
-    return aggregate(loaded, metas, now(), { activeWindowMs, idleAfterMs, doneGraceMs, onlyActive: all, alive: opts.alive });
+    return aggregate(loaded, metas, now(), { activeWindowMs, idleAfterMs, doneGraceMs, onlyActive: all, alive, launched: launched() });
   };
 
   /**
@@ -276,9 +286,41 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
     } else {
       checks.push(discovery.resync());
     }
+    checks.push(findLaunched(full));
     // meta.json dei subagenti non più seguiti: si rileggono se il transcript riprende
     pruneMetas(metas, files.values());
     await Promise.all(checks);
+  };
+
+  /**
+   * Transcript delle sessioni lanciate dall'app non ancora seguito (#119): dal session id noto, nella cartella codificata
+   * della sua cwd; con `full` anche in tutte le cartelle di projects (path abbreviati). Rete di sicurezza per i casi
+   * che watcher e discovery non vedono (es. sessione in una sottocartella senza ancora righe con `cwd`).
+   */
+  const findLaunched = async (full: boolean): Promise<void> => {
+    const tracked = new Set([...files.values()].filter((f) => f.parsed.kind === 'session').map((f) => f.parsed.sessionId));
+    const missing = launched().filter((l) => !tracked.has(l.sessionId));
+    if (missing.length === 0) return;
+    const exists = (abs: string) => stat(abs).then((st) => st.isFile(), () => false);
+    const dirs = full ? await readdir(projectsRoot).catch(() => [] as string[]) : [];
+    for (const l of missing) {
+      const name = `${l.sessionId}.jsonl`;
+      let abs: string | undefined = join(projectsRoot, encodeProjectPath(l.cwd), name);
+      if (!(await exists(abs))) {
+        abs = undefined;
+        for (const dir of dirs) {
+          if (!(await exists(join(projectsRoot, dir, name)))) continue;
+          abs = join(projectsRoot, dir, name);
+          break;
+        }
+      }
+      if (!abs || !running) continue;
+      if (!all && outside(posixRel(projectDir, abs))) {
+        followedLaunched.add(l.sessionId);
+        follow(abs);
+      }
+      await processFile(abs);
+    }
   };
 
   const removeFile = (abs: string) => {

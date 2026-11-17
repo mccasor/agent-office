@@ -1,4 +1,5 @@
 import { estimateCost } from '../../shared/pricing.js';
+import type { LaunchedSession } from '../sessions/launched.js';
 import type { AgentOutcome, AgentState, AgentStatus, TokenUsage, TranscriptSession, TranscriptSnapshot } from '../../shared/types.js';
 import { classifyArea } from './classify.js';
 import { contextWindowFor } from './models.js';
@@ -28,6 +29,11 @@ export interface AggregateOptions {
   onlyActive?: boolean;
   /** processo di Claude Code della sessione vivo (#111): attiva anche col transcript fermo; assente = nessun dato */
   alive?: (sessionId: string) => boolean;
+  /**
+   * sessioni lanciate dall'app e ancora aperte (#119): senza transcript (prima del primo prompt) compaiono comunque,
+   * attive e in attesa del prompt; quando il transcript c'è vale quello
+   */
+  launched?: readonly LaunchedSession[];
 }
 
 export const UNKNOWN_AGENT_TYPE = 'unknown';
@@ -74,6 +80,36 @@ function agentStatus(s: FileSummary, updatedAt: number, t: number, opts: Aggrega
   if (done && (backgroundTasks === 0 || end === 'completed')) return 'done';
   if (!hasAssistant) return 'entering';
   return t - updatedAt > opts.idleAfterMs ? 'idle' : 'working';
+}
+
+/** Sessione lanciata dall'app senza transcript: stanza in attesa del primo prompt (pallino grigio), senza dati. */
+function launchedSession(l: LaunchedSession): TranscriptSession {
+  return {
+    id: l.sessionId,
+    title: null,
+    model: null,
+    effort: null,
+    context: { used: 0, window: null },
+    tokensUsed: emptyTokens(),
+    startedAt: l.launchedAt,
+    updatedAt: l.launchedAt,
+    active: true,
+    status: 'idle',
+    issues: [],
+    cwd: l.cwd,
+    branch: null,
+    waiting: false,
+    waitingKind: null,
+    waitingSince: null,
+    tool: null,
+    cost: null,
+    ownTokens: emptyTokens(),
+    ownCost: null,
+    turnStartedAt: null,
+    lastTurnMs: null,
+    compactions: 0,
+    lastCompaction: null,
+  };
 }
 
 /**
@@ -180,6 +216,9 @@ export function aggregate(
       ...(s.toolErrors ? { toolErrors: { ...s.toolErrors } } : {}),
     });
   }
+
+  const seen = new Set(sessions.map((x) => x.id));
+  for (const l of opts.launched ?? []) if (!seen.has(l.sessionId)) sessions.push(launchedSession(l));
 
   if (opts.onlyActive) {
     const active = new Set(sessions.filter((x) => x.active).map((x) => x.id));
