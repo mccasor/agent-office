@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Claude</title>
+  <!-- Terminale integrato (spike #118): xterm.js 6.0.0 e @xterm/addon-fit 0.11.0 copiati in vendor/xterm (licenza MIT
+       nella stessa cartella), senza CDN né build: la pagina è dentro l'app come le altre di splash/. Input e output solo
+       via IPC con Rust (pty.rs): niente server Node, niente disco. -->
+  <link rel="stylesheet" href="vendor/xterm/xterm.css" />
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+    #term { position: absolute; inset: 6px 0 0 8px; }
+  </style>
+</head>
+<body>
+  <div id="term"></div>
+  <script src="vendor/xterm/xterm.js"></script>
+  <script src="vendor/xterm/addon-fit.js"></script>
+  <script>
+    const { invoke, Channel } = window.__TAURI__.core;
+    const term = new Terminal({
+      fontFamily: 'Menlo, "DejaVu Sans Mono", "Ubuntu Mono", monospace',
+      fontSize: 13,
+      cursorBlink: true,
+      allowProposedApi: false,
+      macOptionIsMeta: true,
+      scrollback: 5000,
+      theme: { background: '#1e1e1e' },
+    });
+    const fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(document.getElementById('term'));
+    fit.fit();
+
+    let running = false;
+    const output = new Channel();
+    output.onmessage = (msg) => {
+      if (msg instanceof ArrayBuffer) term.write(new Uint8Array(msg));
+      else if (msg && 'exit' in msg) {
+        running = false;
+        term.write(`\r\n\x1b[2m[processo terminato${msg.exit == null ? '' : ` (${msg.exit})`}]\x1b[0m\r\n`);
+      }
+    };
+    term.onData((data) => running && invoke('pty_write', { data }).catch(() => {}));
+    term.onResize(({ cols, rows }) => running && invoke('pty_resize', { cols, rows }).catch(() => {}));
+    new ResizeObserver(() => fit.fit()).observe(document.getElementById('term'));
+
+    invoke('pty_start', { cols: term.cols, rows: term.rows, output })
+      .then(() => { running = true; term.focus(); })
+      .catch((e) => term.write(`\x1b[31m${e}\x1b[0m\r\n`));
+  </script>
+</body>
+</html>

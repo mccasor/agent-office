@@ -34,6 +34,7 @@ mod i18n;
 mod instance;
 mod notify;
 mod panel;
+mod pty;
 mod server;
 mod settings;
 mod system;
@@ -622,9 +623,14 @@ fn main() {
             settings_state,
             settings_set,
             settings_action,
-            settings_layout
+            settings_layout,
+            pty::pty_start,
+            pty::pty_write,
+            pty::pty_resize,
+            pty::pty_kill
         ])
         .manage(Server(Mutex::new(Supervisor::default())))
+        .manage(pty::Terminals::default())
         .setup(|app| {
             // solo menu bar: niente icona nel Dock
             #[cfg(target_os = "macos")]
@@ -650,6 +656,8 @@ fn main() {
                 wake: Mutex::new(wake),
             });
             panel::create(&handle)?;
+            // spike del terminale integrato (#118): AGENT_OFFICE_TERMINAL=<cartella>
+            pty::open_from_env(&handle);
             // prima apertura dopo un aggiornamento dal pannello: esito nel pannello e in una notifica
             if let Some(text) = updates::take_updated_from().and_then(|from| updates::updated_message(&from, &version(&handle))) {
                 set_notice(&handle, text.clone());
@@ -763,7 +771,9 @@ fn main() {
         .on_window_event(|window, event| match event {
             // chiudere l'ufficio lo nasconde: l'app resta nella menu bar; le finestre delle schede e le impostazioni si
             // chiudono davvero
-            WindowEvent::CloseRequested { api, .. } if !cards::is_card(window.label()) && window.label() != settings::SETTINGS_ID => {
+            WindowEvent::CloseRequested { api, .. }
+                if !cards::is_card(window.label()) && window.label() != settings::SETTINGS_ID && !pty::is_terminal(window.label()) =>
+            {
                 api.prevent_close();
                 let _ = window.hide();
             }
@@ -772,6 +782,8 @@ fn main() {
                 let _ = window.hide();
                 *window.app_handle().state::<Ui>().panel_hidden_at.lock().unwrap() = Some(Instant::now());
             }
+            // il terminale chiuso termina il suo processo
+            WindowEvent::Destroyed if pty::is_terminal(window.label()) => pty::forget(window.app_handle(), window.label()),
             _ => {}
         })
         .build(tauri::generate_context!())
@@ -779,6 +791,7 @@ fn main() {
 
     app.run(|app, event| {
         if let RunEvent::Exit = event {
+            pty::kill_all(app);
             app.state::<Server>().0.lock().unwrap().stop();
         }
     });
