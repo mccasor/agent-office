@@ -26,6 +26,8 @@ export interface AggregateOptions {
   doneGraceMs: number;
   /** solo il lavoro in corso: sessioni attive e i loro subagenti (modalità all) */
   onlyActive?: boolean;
+  /** processo di Claude Code della sessione vivo (#111): attiva anche col transcript fermo; assente = nessun dato */
+  alive?: (sessionId: string) => boolean;
 }
 
 export const UNKNOWN_AGENT_TYPE = 'unknown';
@@ -146,7 +148,7 @@ export function aggregate(
       tokensUsed: g.tokens,
       startedAt: s.firstAt ?? main.mtime,
       updatedAt,
-      active: t - updatedAt <= opts.activeWindowMs,
+      active: t - updatedAt <= opts.activeWindowMs || opts.alive?.(sessionId) === true,
       status: agentStatus(s, Math.max(s.lastAt ?? 0, main.mtime), t, opts),
       issues: [...s.issues],
       cwd: s.cwd,

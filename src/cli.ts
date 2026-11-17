@@ -104,6 +104,8 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
     all: opts.all,
     claudeHome,
     activeWindowMs: config.activeWindowMinutes * 60_000,
+    // sessione attiva finché il suo processo di Claude Code è vivo (#111); `processes` è letto prima di start()
+    alive: (sessionId) => processes.get(sessionId)?.process === 'alive',
   });
   const hooks = opts.all ? createAllHookEventsWatcher({ dataDir }) : createHookEventsWatcher({ cwd: opts.cwd, dataDir });
   // stato git: della cartella monitorata, oppure (con --all) della cartella di ciascuna sessione attiva
@@ -122,7 +124,9 @@ async function serve(opts: CliOptions, config: ServerConfig, dataDir: string | u
   const today = createDayTracker(Date.now(), { file: join(dataDir ?? join(homedir(), '.agent-office'), 'today.json') });
   // processi di Claude Code delle sessioni (#104): chi ha chiuso Claude Code non lascia agenti fantasma
   const processes = createSessionProcesses({ dir: join(claudeHome, 'sessions'), minIntervalMs: PROCESS_POLL_MS });
-  await Promise.all([transcript.start(), hooks.start(), history.start(), processes.refresh(true)]);
+  // prima i processi: la scansione iniziale dei transcript segue anche le sessioni vive ferme da tempo (#111)
+  await processes.refresh(true);
+  await Promise.all([transcript.start(), hooks.start(), history.start()]);
   await today.start();
   const alerts = { staleMs: config.staleAgentMinutes * 60_000, loopRepeats: config.loopRepeats };
   const snapshot = (): Snapshot => {

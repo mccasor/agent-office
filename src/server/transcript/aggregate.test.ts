@@ -152,6 +152,21 @@ describe('aggregate', () => {
     expect(only.agents.map((a) => a.id)).toEqual(['a1']);
   });
 
+  it('processo di Claude vivo: sessione attiva anche con il transcript fermo da più di activeWindowMs (#111)', () => {
+    const files = [session({ lastAt: T - 30 * 60_000 }, T - 30 * 60_000, 'viva'), agent('a1', {}, T - 30 * 60_000, 'viva'), session({ lastAt: T - 30 * 60_000 }, T - 30 * 60_000, 'morta')];
+    const alive = (id: string) => id === 'viva';
+    const snap = aggregate(files, noMetas, T, { ...OPTS, alive });
+    expect(snap.sessions.map((s) => [s.id, s.active]).sort()).toEqual([
+      ['morta', false],
+      ['viva', true],
+    ]);
+    const only = aggregate(files, noMetas, T, { ...OPTS, onlyActive: true, alive });
+    expect(only.sessions.map((s) => s.id)).toEqual(['viva']);
+    expect(only.agents.map((a) => a.id)).toEqual(['a1']);
+    // senza dati sul processo: solo la finestra di attività
+    expect(aggregate(files, noMetas, T, { ...OPTS, onlyActive: true }).sessions).toEqual([]);
+  });
+
   it('ordine: sessioni dalla più recente, agenti dal primo avviato', () => {
     const snap = aggregate(
       [session({}, T - 10, 'b'), session({}, T, 'c'), session({}, T - 10, 'a'), agent('z', { firstAt: T - 5 }), agent('y', { firstAt: T - 9 }), agent('x', { firstAt: T - 5 })],

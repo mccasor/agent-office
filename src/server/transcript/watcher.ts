@@ -33,6 +33,11 @@ export interface TranscriptWatcherOptions {
    * (default activeWindowMs + 1 h); quelli modificati dopo l'avvio sono valutati sempre
    */
   discoveryWindowMs?: number;
+  /**
+   * processo di Claude Code della sessione vivo (#111): la sessione resta attiva e il suo transcript seguito (anche
+   * se fermo da più della finestra di scoperta); assente = solo l'età del transcript
+   */
+  alive?: (sessionId: string) => boolean;
   /** intervallo di ricalcolo degli stati dipendenti dal tempo (default 5 s) */
   tickMs?: number;
   now?: () => number;
@@ -94,6 +99,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
   const tickMs = opts.tickMs ?? 5_000;
   const now = opts.now ?? Date.now;
   const all = opts.all === true;
+  const alive = (sessionId: string) => opts.alive?.(sessionId) === true;
 
   const files = new Map<string, TrackedFile>();
   const metas = new Map<string, AgentMeta>();
@@ -134,7 +140,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
 
   const compute = (): TranscriptSnapshot => {
     const loaded = [...files.values()].filter((f) => f.loaded).map((f) => ({ parsed: f.parsed, state: f.acc.state, mtime: f.mtime }));
-    return aggregate(loaded, metas, now(), { activeWindowMs, idleAfterMs, doneGraceMs, onlyActive: all });
+    return aggregate(loaded, metas, now(), { activeWindowMs, idleAfterMs, doneGraceMs, onlyActive: all, alive: opts.alive });
   };
 
   /**
@@ -176,7 +182,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
     const f = files.get(abs);
     if (!f && all && !started) {
       // scansione iniziale in modalità all: si leggono solo i transcript recenti
-      const recent = (s: Stats) => (s.mtimeMs >= now() - discoveryWindowMs ? track(abs, p) : undefined);
+      const recent = (s: Stats) => (s.mtimeMs >= now() - discoveryWindowMs || alive(p.sessionId) ? track(abs, p) : undefined);
       return st ? Promise.resolve(recent(st)) : stat(abs).then(recent, () => undefined);
     }
     return track(abs, p, f);
@@ -260,7 +266,7 @@ export function createTranscriptWatcher(opts: TranscriptWatcherOptions): Transcr
       // i subagenti restano finché è seguita la loro sessione, che li somma in token e costo
       let forgot = false;
       for (const [abs, f] of files) {
-        if (f.parsed.kind === 'session' && f.loaded && t - f.mtime > discoveryWindowMs) forgot = files.delete(abs);
+        if (f.parsed.kind === 'session' && f.loaded && t - f.mtime > discoveryWindowMs && !alive(f.parsed.sessionId)) forgot = files.delete(abs);
       }
       const followed = new Set([...files.values()].filter((f) => f.parsed.kind === 'session').map((f) => f.parsed.sessionId));
       for (const [abs, f] of files) {

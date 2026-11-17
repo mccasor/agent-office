@@ -359,6 +359,19 @@ describe('createTranscriptWatcher – modalità all (menu bar)', () => {
     expect(w.current().agents).toHaveLength(2);
   });
 
+  it('processo di Claude vivo: la sessione ferma resta attiva e seguita, anche se vecchia all’avvio (#111)', async () => {
+    let alive = true;
+    clock = T0 + 3 * 60 * 60_000;
+    const w = await startWatcher({ cwd: '/qualunque', all: true, discoveryWindowMs: 60 * 60_000, alive: (id) => alive && id === SESSION });
+    expect(w.current().sessions.map((s) => [s.id, s.active])).toEqual([[SESSION, true]]);
+    // il tick non dimentica il transcript finché il processo è vivo
+    await new Promise((r) => setTimeout(r, 200));
+    expect(w.current().sessions.map((s) => s.id)).toEqual([SESSION]);
+    // processo terminato: torna la finestra di attività
+    alive = false;
+    expect(w.current()).toEqual({ sessions: [], agents: [] });
+  });
+
   it('con all restano solo le sessioni attive e i loro subagenti', async () => {
     const w = await startWatcher({ cwd: '/qualunque', all: true, activeWindowMs: 10 * 60_000 });
     clock = T0 + 11 * 60_000;
